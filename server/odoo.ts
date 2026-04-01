@@ -1,0 +1,1709 @@
+import xmlrpc from "xmlrpc";
+import type { PaymentGroup, OrderSummary, FiscalSummary, FiscalPayment, RetentionRow, CreditSaleRow, SaldoFavorRow, NonFiscalSummary, NonFiscalPaymentGroup, NonFiscalCreditRow } from "../shared/schema.js";
+
+const ODOO_URL = process.env.ODOO_URL || "https://www.onprotec.shop";
+const ODOO_DB = process.env.ODOO_DB || "binaural-dev-onprotec-16-release-8815487";
+const ODOO_USERNAME = process.env.ODOO_USERNAME || "";
+const ODOO_PASSWORD = process.env.ODOO_PASSWORD || "";
+
+let cachedUid: number | null = null;
+
+// ========== CACHE SYSTEM ==========
+interface CacheEntry<T> {
+  value: T;
+  expires: number;
+}
+
+const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
+
+class SimpleCache {
+  private store = new Map<string, CacheEntry<any>>();
+
+  get<T>(key: string, ttl = DEFAULT_TTL): T | null {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expires) {
+      this.store.delete(key);
+      return null;
+    }
+    return entry.value as T;
+  }
+
+  set<T>(key: string, value: T, ttl = DEFAULT_TTL): void {
+    this.store.set(key, { value, expires: Date.now() + ttl });
+  }
+
+  delete(key: string): void {
+    this.store.delete(key);
+  }
+
+  clear(): void {
+    this.store.clear();
+  }
+
+  // For debugging
+  get size(): number {
+    return this.store.size;
+  }
+}
+
+// Cache instances - initialized on first use
+let rateCache: SimpleCache | null = null;
+let sessionCache: SimpleCache | null = null;
+let paymentMethodCache: SimpleCache | null = null;
+let creditSalesCache: SimpleCache | null = null;
+
+function getRateCache(): SimpleCache {
+  if (!rateCache) rateCache = new SimpleCache();
+  return rateCache;
+}
+
+function getSessionCache(): SimpleCache {
+  if (!sessionCache) sessionCache = new SimpleCache();
+  return sessionCache;
+}
+
+function getCreditSalesCache(): SimpleCache {
+  if (!creditSalesCache) creditSalesCache = new SimpleCache();
+  return creditSalesCache;
+}
+
+function getPaymentMethodCache(): SimpleCache {
+  if (!paymentMethodCache) paymentMethodCache = new SimpleCache();
+  return paymentMethodCache;
+}
+// ========== END CACHE SYSTEM ==========
+
+// POS Config → Journal mapping
+const CONFIG_JOURNAL_MAP: Record<number, { journalId: number; journalCode: string }> = {
+  1: { journalId: 15, journalCode: "FAC01" },
+  2: { journalId: 72, journalCode: "FAC02" },
+  7: { journalId: 131, journalCode: "FAC4" },
+  8: { journalId: 131, journalCode: "FAC4" },
+};
+
+// Payment method IDs for special categories
+const METHOD_RETENCION_IVA = 26;
+const METHOD_VENTA_CREDITO = 14;
+const METHOD_VENTA_CREDITO_2 = 33; // Second "Venta a crédito" (pay_later) used in Caja 1/2
+// WARNING: Method 38 is "Venta a crédito" in name but type=bank, journal=BNC Bs (Cashea).
+// It is actually a P.Movil BNC bank transfer. Do NOT include it in CREDIT_METHOD_IDS.
+const CREDIT_METHOD_IDS = [METHOD_VENTA_CREDITO, METHOD_VENTA_CREDITO_2]; // pay_later credit methods only
+const METHOD_SALDO_FAVOR = 25;
+const RIVAC_JOURNAL_ID = 1;
+const FISCAL_JOURNAL_IDS = new Set([15, 72, 131]); // FAC01, FAC02, FAC4
+
+// Configs that share a fiscal machine — their sessions should be merged for cuadre
+const COMPANION_CONFIGS: Record<number, number> = {
+  1: 7,   // Caja 1 ↔ CASHEA 1 (machine Z1F0019552)
+  7: 1,   // CASHEA 1 ↔ Caja 1
+  2: 8,   // Caja 2 ↔ CASHEA 2 (machine Z7C7044514)
+  8: 2,   // CASHEA 2 ↔ Caja 2
+};
+
+
+
+function getCommonClient() {
+  const url = new URL("/xmlrpc/2/common", ODOO_URL);
+  return xmlrpc.createSecureClient({
+    host: url.hostname,
+    port: 443,
+    path: url.pathname,
+  });
+}
+
+function getObjectClient() {
+  const url = new URL("/xmlrpc/2/object", ODOO_URL);
+  return xmlrpc.createSecureClient({
+    host: url.hostname,
+    port: 443,
+    path: url.pathname,
+  });
+}
+
+function authenticate(): Promise<number> {
+  if (cachedUid) return Promise.resolve(cachedUid);
+  return new Promise((resolve, reject) => {
+    const client = getCommonClient();
+    client.methodCall(
+      "authenticate",
+      [ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {}],
+      (err: any, uid: any) => {
+        if (err) {
+          console.error("Odoo auth error:", err.message);
+          return reject(err);
+        }
+        if (!uid || uid === false) return reject(new Error("Odoo authentication failed - invalid credentials"));
+        cachedUid = uid as number;
+        resolve(uid as number);
+      }
+    );
+  });
+}
+
+function executeKw(
+  model: string,
+  method: string,
+  args: any[],
+  kwargs: Record<string, any> = {}
+): Promise<any> {
+  return authenticate().then((uid) => {
+    return new Promise((resolve, reject) => {
+      const client = getObjectClient();
+      client.methodCall(
+        "execute_kw",
+        [ODOO_DB, uid, ODOO_PASSWORD, model, method, args, kwargs],
+        (err: any, result: any) => {
+          if (err) {
+            console.error(`Odoo error [${model}.${method}]:`, err.message || err);
+            return reject(err);
+          }
+          // Filter out binary/image fields
+          resolve(filterBinaryFields(result));
+        }
+      );
+    });
+  });
+}
+
+function filterBinaryFields(data: any): any {
+  if (Array.isArray(data)) {
+    return data.map(filterBinaryFields);
+  }
+  if (data && typeof data === "object") {
+    const filtered: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      // Skip binary fields
+      if (key.includes("Image") || key.includes("image") || key.includes("Binary") || 
+          key.includes("binary") || key.includes("Logo") || key.includes("logo") || 
+          key.includes("_bin") || key.includes("_file") || key.includes("attachment_ids") ||
+          key === "image_1920" || key === "image_1024" || key === "image_512" || key === "image_256" ||
+          key === "avatar_1920" || key === "avatar_1024" || key === "avatar_512" || key === "avatar_256") {
+        continue; // Skip binary fields
+      }
+      if (Array.isArray(value)) {
+        filtered[key] = value.map(filterBinaryFields);
+      } else if (value && typeof value === "object") {
+        filtered[key] = filterBinaryFields(value);
+      } else {
+        filtered[key] = value;
+      }
+    }
+    return filtered;
+  }
+  return data;
+}
+
+/**
+ * Returns all session IDs that should be merged for a cuadre.
+ * If the session's config has a companion (shared fiscal machine), finds the companion's
+ * session for the same date and returns both IDs.
+ */
+async function getRelatedSessionIds(sessionId: number): Promise<{ sessionIds: number[]; companionSessionName: string }> {
+  const session = await getSessionById(sessionId);
+  if (!session) return { sessionIds: [sessionId], companionSessionName: "" };
+
+  const configId = session.config_id[0];
+  const companionConfigId = COMPANION_CONFIGS[configId];
+  if (!companionConfigId) return { sessionIds: [sessionId], companionSessionName: "" };
+
+  const date = session.start_at?.split(" ")[0];
+  if (!date) return { sessionIds: [sessionId], companionSessionName: "" };
+
+  const companionSessions = await executeKw("pos.session", "search_read",
+    [[
+      ["config_id", "=", companionConfigId],
+      ["start_at", ">=", `${date} 00:00:00`],
+      ["start_at", "<=", `${date} 23:59:59`],
+      ["state", "in", ["opened", "closing_control", "closed"]],
+    ]],
+    { fields: ["id", "name", "config_id"], limit: 1 }
+  );
+
+  if (companionSessions?.length > 0) {
+    const cs = companionSessions[0];
+    const companionName = `${cs.config_id[1]} (${cs.name})`;
+    return { sessionIds: [sessionId, cs.id], companionSessionName: companionName };
+  }
+
+  return { sessionIds: [sessionId], companionSessionName: "" };
+}
+
+/**
+ * Returns the set of pos.order IDs for a session that belong to fiscal journals.
+ * Chain: pos.order → account.move → journal_id ∈ FISCAL_JOURNAL_IDS
+ */
+async function getFiscalOrderIds(sessionIds: number | number[]): Promise<Set<number>> {
+  const ids = Array.isArray(sessionIds) ? sessionIds : [sessionIds];
+  const orders = await executeKw("pos.order", "search_read",
+    [[["session_id", "in", ids]]],
+    { fields: ["id", "account_move"] }
+  );
+
+  if (!orders || orders.length === 0) return new Set();
+
+  const orderMoveMap: Record<number, number> = {};
+  const moveIds: number[] = [];
+  for (const o of orders) {
+    if (o.account_move) {
+      const moveId = Array.isArray(o.account_move) ? o.account_move[0] : o.account_move;
+      orderMoveMap[o.id] = moveId;
+      moveIds.push(moveId);
+    }
+  }
+
+  if (moveIds.length === 0) return new Set();
+
+  const moves = await executeKw("account.move", "read",
+    [moveIds],
+    { fields: ["journal_id"] }
+  );
+
+  const moveJournalMap: Record<number, number> = {};
+  for (const m of moves) {
+    moveJournalMap[m.id] = Array.isArray(m.journal_id) ? m.journal_id[0] : m.journal_id;
+  }
+
+  const fiscalOrderIds = new Set<number>();
+  for (const [orderId, moveId] of Object.entries(orderMoveMap)) {
+    const journalId = moveJournalMap[moveId];
+    if (journalId && FISCAL_JOURNAL_IDS.has(journalId)) {
+      fiscalOrderIds.add(Number(orderId));
+    }
+  }
+
+  return fiscalOrderIds;
+}
+
+export async function getSessions(date: string): Promise<any[]> {
+  const dateStart = `${date} 00:00:00`;
+  const dateEnd = `${date} 23:59:59`;
+  const sessions = await executeKw(
+    "pos.session",
+    "search_read",
+    [[
+      ["start_at", ">=", dateStart],
+      ["start_at", "<=", dateEnd],
+      ["state", "in", ["opened", "closing_control", "closed"]],
+    ]],
+    {
+      fields: [
+        "name", "config_id", "user_id", "state", "start_at", "stop_at",
+        "report_z", "serial_machine",
+        "cash_register_balance_start", "cash_register_balance_end",
+        "cash_register_balance_end_real", "cash_register_difference",
+        "total_payments_amount", "order_count",
+      ],
+    }
+  );
+  return sessions || [];
+}
+
+export async function getSessionById(sessionId: number): Promise<any> {
+  // Check cache first (1 minute TTL for sessions - they can change state)
+  const cache = getSessionCache();
+  const cacheKey = `session-${sessionId}`;
+  const cached = cache.get<any>(cacheKey);
+  if (cached !== null) {
+    return cached;
+  }
+
+  const sessions = await executeKw(
+    "pos.session",
+    "read",
+    [[sessionId]],
+    {
+      fields: [
+        "name", "config_id", "user_id", "state", "start_at", "stop_at",
+        "report_z", "serial_machine",
+        "cash_register_balance_start", "cash_register_balance_end",
+        "cash_register_balance_end_real", "cash_register_difference",
+        "total_payments_amount", "order_count",
+      ],
+    }
+  );
+  const session = sessions?.[0] || null;
+  if (session) {
+    cache.set(cacheKey, session, 60 * 1000); // 1 minute TTL
+  }
+  return session;
+}
+
+export async function getSessionPayments(sessionIds: number | number[], fiscalOnly: boolean = true): Promise<PaymentGroup[]> {
+  const ids = Array.isArray(sessionIds) ? sessionIds : [sessionIds];
+  const payments = await executeKw(
+    "pos.payment",
+    "search_read",
+    [[["session_id", "in", ids]]],
+    {
+      fields: ["amount", "payment_method_id", "pos_order_id"],
+    }
+  );
+
+  let filteredPayments = payments || [];
+
+  if (fiscalOnly) {
+    const fiscalOrderIds = await getFiscalOrderIds(ids);
+    filteredPayments = filteredPayments.filter((p: any) => {
+      const orderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+      return fiscalOrderIds.has(orderId);
+    });
+  }
+
+  // Get payment method details
+  const methodIds = [...new Set(filteredPayments.map((p: any) => p.payment_method_id[0]))];
+  let methodDetails: Record<number, { name: string; type: string }> = {};
+  if (methodIds.length > 0) {
+    const methods = await executeKw(
+      "pos.payment.method",
+      "read",
+      [methodIds],
+      { fields: ["name", "type"] }
+    );
+    for (const m of methods) {
+      methodDetails[m.id] = { name: m.name, type: m.type || "bank" };
+    }
+  }
+
+  // Group by method
+  const groups: Record<number, PaymentGroup> = {};
+  for (const p of filteredPayments) {
+    const methodId = p.payment_method_id[0];
+    const methodName = methodDetails[methodId]?.name || p.payment_method_id[1];
+    if (!groups[methodId]) {
+      groups[methodId] = {
+        methodId,
+        methodName,
+        methodType: methodDetails[methodId]?.type || "bank",
+        total: 0,
+        count: 0,
+      };
+    }
+    groups[methodId].total += p.amount;
+    groups[methodId].count += 1;
+  }
+
+  // Round totals
+  return Object.values(groups).map((g) => ({
+    ...g,
+    total: Math.round(g.total * 100) / 100,
+  }));
+}
+
+export async function getSessionSummary(sessionId: number): Promise<OrderSummary> {
+  const orders = await executeKw(
+    "pos.order",
+    "search_read",
+    [[["session_id", "=", sessionId]]],
+    {
+      fields: ["amount_total", "amount_tax", "igtf_amount"],
+    }
+  );
+
+  let totalSales = 0;
+  let totalTax = 0;
+  let totalIGTF = 0;
+  let orderCount = 0;
+  let refundCount = 0;
+  let refundAmount = 0;
+
+  for (const o of orders || []) {
+    totalSales += o.amount_total || 0;
+    totalTax += o.amount_tax || 0;
+    totalIGTF += o.igtf_amount || 0;
+    orderCount++;
+    if (o.amount_total < 0) {
+      refundCount++;
+      refundAmount += o.amount_total;
+    }
+  }
+
+  return {
+    totalSales: Math.round(totalSales * 100) / 100,
+    totalTax: Math.round(totalTax * 100) / 100,
+    totalIGTF: Math.round(totalIGTF * 100) / 100,
+    orderCount,
+    refundCount,
+    refundAmount: Math.round(refundAmount * 100) / 100,
+  };
+}
+
+export async function getDayRate(date: string): Promise<number> {
+  // Check cache first (5 minute TTL for rates)
+  const cache = getRateCache();
+  const cached = cache.get<number>(date);
+  if (cached !== null) {
+    return cached;
+  }
+
+  // VES currency id is 3 in Odoo
+  // company_rate gives Bs per USD directly (e.g., 451.51)
+  const rates = await executeKw(
+    "res.currency.rate",
+    "search_read",
+    [[ ["currency_id", "=", 3], ["name", "=", date] ]],
+    { fields: ["company_rate"], limit: 1 }
+  );
+  if (rates && rates.length > 0) {
+    const rate = rates[0].company_rate || 0;
+    cache.set(date, rate);
+    return rate;
+  }
+  // Fallback: get latest rate
+  const latestRates = await executeKw(
+    "res.currency.rate",
+    "search_read",
+    [[["currency_id", "=", 3]]],
+    { fields: ["company_rate", "name"], order: "name desc", limit: 1 }
+  );
+  const rate = latestRates?.[0]?.company_rate || 0;
+  cache.set(date, rate);
+  return rate;
+}
+
+export async function getRatesHistory(days: number = 30): Promise<Array<{date: string, rate: number}>> {
+  const rates = await executeKw(
+    "res.currency.rate",
+    "search_read",
+    [[["currency_id", "=", 3]]],
+    { fields: ["name", "company_rate"], order: "name desc", limit: days }
+  );
+  return (rates || []).map((r: any) => ({
+    date: r.name,
+    rate: r.company_rate || 0,
+  }));
+}
+
+export async function getPaymentMethods(): Promise<any[]> {
+  // Check cache first (15 minute TTL for payment methods - they rarely change)
+  const cache = getPaymentMethodCache();
+  const cacheKey = "active-methods";
+  const cached = cache.get<any[]>(cacheKey);
+  if (cached !== null) {
+    return cached;
+  }
+
+  const methods = await executeKw(
+    "pos.payment.method",
+    "search_read",
+    [[["active", "=", true]]],
+    {
+      fields: ["name", "type", "is_cash_count"],
+    }
+  );
+  const result = methods || [];
+  cache.set(cacheKey, result, 15 * 60 * 1000); // 15 minute TTL
+  return result;
+}
+
+// Export cache invalidation for when data changes
+export function invalidateCaches(): void {
+  getRateCache().clear();
+  getSessionCache().clear();
+  getPaymentMethodCache().clear();
+  getCreditSalesCache().clear();
+}
+
+// Export cache stats for debugging/monitoring
+export function getCacheStats(): { rate: number; session: number; paymentMethod: number; creditSales: number } {
+  return {
+    rate: getRateCache().size,
+    session: getSessionCache().size,
+    paymentMethod: getPaymentMethodCache().size,
+    creditSales: getCreditSalesCache().size,
+  };
+}
+
+export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary> {
+  // Get session to determine config_id and date
+  const session = await getSessionById(sessionId);
+  if (!session) throw new Error("Sesión no encontrada");
+
+  const configId = session.config_id[0];
+  const journalInfo = CONFIG_JOURNAL_MAP[configId];
+  if (!journalInfo) {
+    throw new Error(`No hay diario fiscal configurado para config_id ${configId}`);
+  }
+
+  const date = session.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+
+  // Get related sessions (companion fiscal machine merge)
+  const { sessionIds, companionSessionName } = await getRelatedSessionIds(sessionId);
+
+  // Determine main vs companion session IDs and their caja names (need this before filtering invoices)
+  const mainSessionId = sessionId;
+  const companionSessionId = sessionIds.find(sid => sid !== mainSessionId);
+  const mainCajaName = session.config_id[1] || "";
+  let companionCajaName = "";
+  let companionJournalCode = "";
+  let companionJournalId: number | undefined = undefined;
+  if (companionSessionId) {
+    const cs = await getSessionById(companionSessionId);
+    if (cs) {
+      companionCajaName = cs.config_id[1] || "";
+      const cj = CONFIG_JOURNAL_MAP[cs.config_id[0]];
+      if (cj) {
+        companionJournalCode = cj.journalCode;
+        companionJournalId = cj.journalId;
+      }
+    }
+  }
+
+  // Get exchange rate
+  const rate = await getDayRate(date);
+
+  // --- SESSION-BASED INVOICE QUERY ---
+  // Query invoices through POS sessions → orders → account.move
+  // This ensures we only get invoices from THIS session's orders, not all invoices
+  // on the shared journal (fixes FAC4 shared between CASHEA 1 and CASHEA 2).
+  const allOrders = await executeKw("pos.order", "search_read",
+    [[["session_id", "in", sessionIds]]],
+    { fields: ["id", "account_move", "session_id"] }
+  );
+
+  // Build order→move mapping, filtered to fiscal journals only
+  const moveIds: number[] = [];
+  const orderMoveMap: Record<number, number> = {};
+  const orderSessionMap: Record<number, number> = {};
+  for (const o of allOrders || []) {
+    if (o.account_move) {
+      const moveId = Array.isArray(o.account_move) ? o.account_move[0] : o.account_move;
+      orderMoveMap[o.id] = moveId;
+      orderSessionMap[o.id] = Array.isArray(o.session_id) ? o.session_id[0] : o.session_id;
+      moveIds.push(moveId);
+    }
+  }
+
+  // Read all moves and filter to fiscal journals + posted invoices/refunds
+  let invoices: any[] = [];
+  if (moveIds.length > 0) {
+    const allMoves = await executeKw("account.move", "read",
+      [moveIds],
+      {
+        fields: [
+          "id", "journal_id", "state", "move_type",
+          "amount_total", "amount_untaxed", "amount_tax",
+          "foreign_total_billed", "foreign_taxable_income", "foreign_rate",
+          "name",
+        ],
+      }
+    );
+    invoices = (allMoves || []).filter((m: any) => {
+      const jid = Array.isArray(m.journal_id) ? m.journal_id[0] : m.journal_id;
+      // Include invoices/NCs from both main and companion session journals (same fiscal machine)
+      const allowedJournals = new Set([
+        journalInfo.journalId,
+        ...(companionJournalId ? [companionJournalId] : [])
+      ]);
+      return allowedJournals.has(jid)
+        && m.state === "posted"
+        && (m.move_type === "out_invoice" || m.move_type === "out_refund");
+    });
+  }
+
+  // Build move→session mapping for per-caja tracking
+  const moveSessionMap: Record<number, number> = {};
+  for (const [orderId, moveId] of Object.entries(orderMoveMap)) {
+    moveSessionMap[moveId] = orderSessionMap[Number(orderId)];
+  }
+
+  let totalUSD = 0;
+  let totalTaxUSD = 0;
+  let totalVES = 0;
+  let invoiceCount = 0;
+  let ncCount = 0;
+  const invoiceNames: string[] = [];
+  const ncNames: string[] = [];
+  // Per-caja tracking
+  const mainInvoiceNames: string[] = [];
+  const mainNcNames: string[] = [];
+  const companionInvoiceNames: string[] = [];
+  const companionNcNames: string[] = [];
+  let mainInvoiceCount = 0;
+  let mainNcCount = 0;
+  let companionInvoiceCount = 0;
+  let companionNcCount = 0;
+
+  for (const inv of invoices) {
+    const isFromCompanion = companionSessionId && moveSessionMap[inv.id] === companionSessionId;
+    if (inv.move_type === "out_refund") {
+      ncCount++;
+      totalUSD -= inv.amount_total || 0;
+      totalTaxUSD -= inv.amount_tax || 0;
+      totalVES -= inv.foreign_total_billed || 0;
+      if (inv.name) {
+        ncNames.push(inv.name);
+        if (isFromCompanion) { companionNcNames.push(inv.name); companionNcCount++; }
+        else { mainNcNames.push(inv.name); mainNcCount++; }
+      }
+    } else {
+      invoiceCount++;
+      totalUSD += inv.amount_total || 0;
+      totalTaxUSD += inv.amount_tax || 0;
+      totalVES += inv.foreign_total_billed || 0;
+      if (inv.name) {
+        invoiceNames.push(inv.name);
+        if (isFromCompanion) { companionInvoiceNames.push(inv.name); companionInvoiceCount++; }
+        else { mainInvoiceNames.push(inv.name); mainInvoiceCount++; }
+      }
+    }
+  }
+
+  // Sort names to get first/last
+  invoiceNames.sort();
+  ncNames.sort();
+
+      // --- FALLBACK: Search NCs directly by journal+date if none found through POS orders ---
+    // Some NCs are created directly in accounting (not through POS refunds)
+    if (ncCount === 0) {
+      // Search in both main and companion journals (same fiscal machine)
+      const searchJournals = [journalInfo.journalId];
+      if (companionJournalId) searchJournals.push(companionJournalId);
+      
+      for (const journalId of searchJournals) {
+        const directNCs = await executeKw("account.move", "search_read", [[
+          ["journal_id", "=", journalId],
+          ["move_type", "=", "out_refund"],
+          ["state", "=", "posted"],
+          ["date", "=", date],
+        ]], {
+          fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id"],
+        });
+        // Exclude any NCs already counted from POS orders
+        const existingMoveIds = new Set(Object.values(orderMoveMap));
+        for (const nc of directNCs || []) {
+          if (existingMoveIds.has(nc.id)) continue;
+          const isFromCompanion = companionJournalId && (Array.isArray(nc.journal_id) ? nc.journal_id[0] : nc.journal_id) === companionJournalId;
+          ncCount++;
+          totalUSD -= nc.amount_total || 0;
+          totalTaxUSD -= nc.amount_tax || 0;
+          totalVES -= nc.foreign_total_billed || 0;
+          if (nc.name) {
+            ncNames.push(nc.name);
+            if (isFromCompanion) { companionNcNames.push(nc.name); companionNcCount++; }
+            else { mainNcNames.push(nc.name); mainNcCount++; }
+          }
+        }
+      }
+    }
+      // Re-sort NC names after fallback
+    ncNames.sort();
+    mainNcNames.sort();
+  mainInvoiceNames.sort();
+  mainNcNames.sort();
+  companionInvoiceNames.sort();
+  companionNcNames.sort();
+
+  // Get POS payments grouped by method from ALL related sessions, converted to Bs
+  // WARNING: All payment methods from fiscal journal orders must be included.
+  // The fiscal journal filter (getFiscalOrderIds) already ensures only invoice-journal
+  // payments are returned. Do NOT add additional method-ID exclusions here.
+  //
+  // Also get per-session payments to tag companion (CASHEA) methods with isCompanion
+  const posPayments = await getSessionPayments(sessionIds);
+
+  // Get companion-only payments to tag them
+  const companionMethodTotals: Record<number, number> = {};
+  if (companionSessionId) {
+    const companionPayments = await getSessionPayments([companionSessionId]);
+    for (const cp of companionPayments) {
+      companionMethodTotals[cp.methodId] = cp.total;
+    }
+  }
+
+  const payments: FiscalPayment[] = posPayments.map((p) => ({
+    methodId: p.methodId,
+    methodName: p.methodName,
+    totalUSD: p.total,
+    totalBs: Math.round(p.total * rate * 100) / 100,
+    // Mark as companion if ALL of this method's payments came from companion session
+    isCompanion: companionSessionId
+      ? (companionMethodTotals[p.methodId] || 0) === p.total
+      : false,
+  }));
+
+  // For delivery/diferencia methods, fetch individual order references
+  const deliveryDifMethods = payments.filter(p =>
+    p.methodName.toLowerCase().includes("delivery") || p.methodName.toLowerCase().includes("diferencia")
+  );
+  if (deliveryDifMethods.length > 0) {
+    const ddMethodIds = deliveryDifMethods.map(p => p.methodId);
+    const ddPayments = await executeKw("pos.payment", "search_read",
+      [[
+        ["session_id", "in", sessionIds],
+        ["payment_method_id", "in", ddMethodIds],
+      ]],
+      { fields: ["payment_method_id", "pos_order_id"] }
+    );
+    // Filter to fiscal orders only
+    const fiscalOids = await getFiscalOrderIds(sessionIds);
+    const fiscalDdPayments = (ddPayments || []).filter((p: any) => {
+      const oid = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+      return fiscalOids.has(oid);
+    });
+    // Group order IDs by method
+    const orderIdsByMethod: Record<number, Set<number>> = {};
+    for (const p of fiscalDdPayments) {
+      const mid = p.payment_method_id[0];
+      const oid = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+      if (!orderIdsByMethod[mid]) orderIdsByMethod[mid] = new Set();
+      orderIdsByMethod[mid].add(oid);
+    }
+    // Read order names
+    const allOids = [...new Set(fiscalDdPayments.map((p: any) => {
+      return Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+    }))];
+    let orderNameMap: Record<number, string> = {};
+    if (allOids.length > 0) {
+      const orders = await executeKw("pos.order", "read", [allOids], { fields: ["name"] });
+      for (const o of orders || []) {
+        orderNameMap[o.id] = o.name || `#${o.id}`;
+      }
+    }
+    // Attach orderRefs to payments
+    for (const pm of payments) {
+      if (orderIdsByMethod[pm.methodId]) {
+        pm.orderRefs = [...orderIdsByMethod[pm.methodId]].map(id => orderNameMap[id] || `#${id}`);
+      }
+    }
+  }
+
+  // Calculate special method totals
+  let totalRetencionesPOS = 0;
+  let totalCreditoPOS = 0;
+  let totalSaldoFavorPOS = 0;
+  for (const p of posPayments) {
+    if (p.methodId === METHOD_RETENCION_IVA) {
+      totalRetencionesPOS += p.total;
+    } else if (CREDIT_METHOD_IDS.includes(p.methodId)) {
+      totalCreditoPOS += p.total;
+    } else if (p.methodId === METHOD_SALDO_FAVOR) {
+      totalSaldoFavorPOS += p.total;
+    }
+  }
+
+  return {
+    journalId: journalInfo.journalId,
+    journalCode: journalInfo.journalCode,
+    invoiceCount,
+    ncCount,
+    totalUSD: Math.round(totalUSD * 100) / 100,
+    totalTaxUSD: Math.round(totalTaxUSD * 100) / 100,
+    totalVES: Math.round(totalVES * 100) / 100,
+    rate,
+    payments,
+    totalRetencionesPOS: Math.round(totalRetencionesPOS * 100) / 100,
+    totalCreditoPOS: Math.round(totalCreditoPOS * 100) / 100,
+    totalSaldoFavorPOS: Math.round(totalSaldoFavorPOS * 100) / 100,
+    firstInvoice: invoiceNames[0] || "",
+    lastInvoice: invoiceNames[invoiceNames.length - 1] || "",
+    firstNC: ncNames[0] || "",
+    lastNC: ncNames[ncNames.length - 1] || "",
+    companionSessionName,
+    // Per-caja ranges
+    mainJournalCode: journalInfo.journalCode,
+    mainCajaName,
+    mainFirstInvoice: mainInvoiceNames[0] || undefined,
+    mainLastInvoice: mainInvoiceNames[mainInvoiceNames.length - 1] || undefined,
+    mainInvoiceCount: mainInvoiceCount || undefined,
+    mainFirstNC: mainNcNames[0] || undefined,
+    mainLastNC: mainNcNames[mainNcNames.length - 1] || undefined,
+    mainNcCount: mainNcCount || undefined,
+    companionJournalCode: companionJournalCode || undefined,
+    companionCajaName: companionCajaName || undefined,
+    companionFirstInvoice: companionInvoiceNames[0] || undefined,
+    companionLastInvoice: companionInvoiceNames[companionInvoiceNames.length - 1] || undefined,
+    companionInvoiceCount: companionInvoiceCount || undefined,
+    companionFirstNC: companionNcNames[0] || undefined,
+    companionLastNC: companionNcNames[companionNcNames.length - 1] || undefined,
+    companionNcCount: companionNcCount || undefined,
+  };
+}
+
+/**
+ * Get IVA retentions for a session: cross-references POS retention payments
+ * with RIVAC journal entries to verify registration status.
+ */
+export async function getSessionRetentions(sessionId: number): Promise<RetentionRow[]> {
+  const session = await getSessionById(sessionId);
+  if (!session) throw new Error("Sesión no encontrada");
+
+  const configId = session.config_id[0];
+  const journalInfo = CONFIG_JOURNAL_MAP[configId];
+  if (!journalInfo) throw new Error(`No hay diario fiscal configurado para config_id ${configId}`);
+
+  const date = session.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+
+  // Get related sessions (companion fiscal machine merge)
+  const { sessionIds } = await getRelatedSessionIds(sessionId);
+
+  // --- SESSION-BASED INVOICE QUERY ---
+  // Query invoices through POS sessions → orders → account.move
+  // This ensures we only get invoices from THIS session's orders, not all invoices
+  // on the shared journal (fixes FAC4 shared between CASHEA 1 and CASHEA 2).
+  const allOrders = await executeKw("pos.order", "search_read",
+    [[["session_id", "in", sessionIds]]],
+    { fields: ["id", "account_move"] }
+  );
+
+  const moveIds: number[] = [];
+  for (const o of allOrders || []) {
+    if (o.account_move) {
+      const moveId = Array.isArray(o.account_move) ? o.account_move[0] : o.account_move;
+      moveIds.push(moveId);
+    }
+  }
+
+  // Read all moves and filter to fiscal journals + posted invoices
+  let invoices: any[] = [];
+  if (moveIds.length > 0) {
+    const allMoves = await executeKw("account.move", "read",
+      [moveIds],
+      { fields: ["id", "journal_id", "state", "move_type", "name", "partner_id", "amount_total"] }
+    );
+    invoices = (allMoves || []).filter((m: any) => {
+      const jid = Array.isArray(m.journal_id) ? m.journal_id[0] : m.journal_id;
+      return FISCAL_JOURNAL_IDS.has(jid)
+        && m.state === "posted"
+        && m.move_type === "out_invoice";
+    });
+  }
+
+  if (invoices.length === 0) return [];
+
+  // Extract invoice numbers from invoice names (e.g., "FAC01 00029888" → "00029888")
+  const invoiceMap: Record<string, { name: string; partner: string; total: number }> = {};
+  for (const inv of invoices) {
+    const parts = (inv.name || "").split(" ");
+    const invoiceNumber = parts[parts.length - 1]; // last part is the number
+    if (invoiceNumber) {
+      invoiceMap[invoiceNumber] = {
+        name: inv.name,
+        partner: inv.partner_id ? inv.partner_id[1] : "",
+        total: inv.amount_total || 0,
+      };
+    }
+  }
+
+  // 2. Get POS payments with method=26 (Retención de IVA) for all related sessions, filtered by fiscal journal
+  const allRetentionPayments = await executeKw(
+    "pos.payment",
+    "search_read",
+    [[
+      ["session_id", "in", sessionIds],
+      ["payment_method_id", "=", METHOD_RETENCION_IVA],
+    ]],
+    {
+      fields: ["amount", "pos_order_id"],
+    }
+  );
+
+  const fiscalOrderIds = await getFiscalOrderIds(sessionIds);
+  const retentionPayments = (allRetentionPayments || []).filter((p: any) => {
+    const orderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+    return fiscalOrderIds.has(orderId);
+  });
+
+  // Map POS orders to invoices to get per-invoice retention amounts
+  const orderIds = [...new Set(retentionPayments.map((p: any) => p.pos_order_id[0]))];
+  const orderInvoiceMap: Record<number, string> = {};
+  if (orderIds.length > 0) {
+    const orders = await executeKw(
+      "pos.order",
+      "read",
+      [orderIds],
+      { fields: ["account_move"] }
+    );
+    // Batch read all moves at once
+    const moveIds = orders?.filter((o: any) => o.account_move && o.account_move.length > 0).map((o: any) => o.account_move[0]) || [];
+    const moveInvoiceMap: Record<number, string> = {};
+    if (moveIds.length > 0) {
+      const moves = await executeKw(
+        "account.move",
+        "read",
+        [moveIds],
+        { fields: ["name"] }
+      );
+      for (const m of moves || []) {
+        const parts = (m.name || "").split(" ");
+        moveInvoiceMap[m.id] = parts[parts.length - 1];
+      }
+    }
+    for (const order of orders || []) {
+      if (order.account_move && order.account_move.length > 0) {
+        const moveId = order.account_move[0];
+        orderInvoiceMap[order.id] = moveInvoiceMap[moveId] || "";
+      }
+    }
+  }
+
+  // Build per-invoice retention amounts from POS
+  const posRetentionByInvoice: Record<string, number> = {};
+  for (const p of retentionPayments || []) {
+    const orderId = p.pos_order_id[0];
+    const invoiceNumber = orderInvoiceMap[orderId];
+    if (invoiceNumber) {
+      posRetentionByInvoice[invoiceNumber] = (posRetentionByInvoice[invoiceNumber] || 0) + p.amount;
+    }
+  }
+
+  // 3. Search RIVAC journal (id=1) entries where name contains any invoice number
+  const invoiceNumbers = Object.keys(posRetentionByInvoice);
+  if (invoiceNumbers.length === 0) return [];
+
+  const results: RetentionRow[] = [];
+
+  for (const invoiceNumber of invoiceNumbers) {
+    // Search RIVAC entries where name contains the invoice number, filtered by session date
+    const rivacEntries = await executeKw(
+      "account.move",
+      "search_read",
+      [[
+        ["journal_id", "=", RIVAC_JOURNAL_ID],
+        ["name", "ilike", invoiceNumber],
+        ["date", "=", date],
+        ["state", "=", "posted"],
+      ]],
+      {
+        fields: ["name", "amount_total"],
+        limit: 5,
+      }
+    );
+
+    const invInfo = invoiceMap[invoiceNumber] || { name: invoiceNumber, partner: "", total: 0 };
+    const posAmount = Math.round((posRetentionByInvoice[invoiceNumber] || 0) * 100) / 100;
+
+    if (rivacEntries && rivacEntries.length > 0) {
+      // Retention found in RIVAC
+      const rivacEntry = rivacEntries[0];
+      results.push({
+        invoiceNumber,
+        partner: invInfo.partner,
+        posTotalUSD: posAmount,
+        retentionAmount: Math.round((rivacEntry.amount_total || 0) * 100) / 100,
+        rivacEntryName: rivacEntry.name || "",
+        status: "registered",
+      });
+    } else {
+      // Retention in POS but not yet in RIVAC
+      results.push({
+        invoiceNumber,
+        partner: invInfo.partner,
+        posTotalUSD: posAmount,
+        retentionAmount: 0,
+        rivacEntryName: "",
+        status: "pending",
+      });
+    }
+  }
+
+  return results;
+}
+
+// DEBUG: Get credit sales with full invoice data
+export async function getCreditSalesDebug(sessionId: number): Promise<any> {
+  const session = await getSessionById(sessionId);
+  if (!session) return { error: "Session not found" };
+  const sessionDate = (session.start_at || "").substring(0, 10);
+  const rate = await getDayRate(sessionDate);
+
+  const { sessionIds } = await getRelatedSessionIds(sessionId);
+
+  // Get credit payments from POS
+  const allCreditPayments = await executeKw(
+    "pos.payment",
+    "search_read",
+    [[
+      ["session_id", "in", sessionIds],
+      ["payment_method_id", "in", CREDIT_METHOD_IDS],
+    ]],
+    { fields: ["amount", "pos_order_id"] }
+  );
+
+  const fiscalOrderIds = await getFiscalOrderIds(sessionIds);
+  const creditPayments = (allCreditPayments || []).filter((p: any) => {
+    const orderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+    return fiscalOrderIds.has(orderId);
+  });
+
+  if (creditPayments.length === 0) return { invoices: [], debug: { rate, sessionDate, sessionIds } };
+
+  const orderPayments: Record<number, number> = {};
+  for (const p of creditPayments) {
+    const orderId = p.pos_order_id[0];
+    orderPayments[orderId] = (orderPayments[orderId] || 0) + p.amount;
+  }
+  const orderIds = Object.keys(orderPayments).map(Number);
+
+  // Get orders with invoices
+  const orders = await executeKw(
+    "pos.order",
+    "search_read",
+    [[["id", "in", orderIds]]],
+    { fields: ["id", "name", "account_move", "partner_id"] }
+  );
+
+  // Get retenciones from POS
+  const retenciones = await executeKw(
+    "pos.payment",
+    "search_read",
+    [[
+      ["session_id", "in", sessionIds],
+      ["payment_method_id", "=", METHOD_RETENCION_IVA],
+    ]],
+    { fields: ["amount", "pos_order_id"] }
+  );
+  const retencionesByOrder: Record<number, number> = {};
+  for (const r of retenciones || []) {
+    const oid = r.pos_order_id[0];
+    retencionesByOrder[oid] = (retencionesByOrder[oid] || 0) + Math.abs(r.amount);
+  }
+
+  // Get delivery payments
+  const deliveryPayments = await executeKw(
+    "pos.payment",
+    "search_read",
+    [[
+      ["session_id", "in", sessionIds],
+    ]],
+    { fields: ["amount", "pos_order_id", "payment_method_id"] }
+  );
+  const methods = await executeKw(
+    "pos.payment.method",
+    "search_read",
+    [[["active", "=", true]]],
+    { fields: ["id", "name"] }
+  );
+  const methodMap: Record<number, string> = {};
+  for (const m of methods || []) {
+    methodMap[m.id] = m.name;
+  }
+  const deliveryByOrder: Record<number, number> = {};
+  for (const p of deliveryPayments || []) {
+    const methodName = methodMap[p.payment_method_id[0]] || "";
+    if (methodName.toLowerCase().includes("delivery")) {
+      const oid = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+      deliveryByOrder[oid] = (deliveryByOrder[oid] || 0) + Math.abs(p.amount);
+    }
+  }
+
+  // Process each invoice
+  const invoices = [];
+  for (const order of orders || []) {
+    if (!order.account_move || order.account_move.length === 0) continue;
+    const moveId = order.account_move[0];
+
+    // Read invoice - ONLY specify safe fields (avoid payment_state which triggers broken computed field)
+    let invoice: any = null;
+    try {
+      const moves = await executeKw(
+        "account.move",
+        "read",
+        [[moveId]],
+        { fields: ["name", "partner_id", "amount_total", "amount_residual", "currency_id"] }
+      );
+      invoice = moves?.[0];
+    } catch (err: any) {
+      // If read fails due to broken computed field, try with minimal fields
+      const moves = await executeKw(
+        "account.move",
+        "read",
+        [[moveId]],
+        { fields: ["name", "partner_id", "amount_total", "amount_residual"] }
+      );
+      invoice = moves?.[0];
+    }
+    if (!invoice) continue;
+
+    // Get real payments from reconciled lines
+    // Find all credit lines on this invoice
+    const creditLines = await executeKw(
+      "account.move.line",
+      "search_read",
+      [[
+        ["move_id", "=", moveId],
+        ["account_type", "=", "asset_receivable"],
+        ["credit", ">", 0],
+      ]],
+      { fields: ["credit", "currency_id", "journal_id", "name"] }
+    );
+
+    // Sum all payments from reconciled credit lines
+    let pagoReal = 0;
+    let journalName = "";
+    for (const line of creditLines || []) {
+      pagoReal += Math.abs(line.credit || 0);
+      if (line.journal_id && !journalName) {
+        journalName = Array.isArray(line.journal_id) ? line.journal_id[1] : "Journal";
+      }
+    }
+
+    const retencion = Math.round((retencionesByOrder[order.id] || 0) * 100) / 100;
+    const delivery = Math.round((deliveryByOrder[order.id] || 0) * 100) / 100;
+    const montoFactura = Math.round((invoice.amount_total || 0) * 100) / 100;
+    
+    // Saldo = Factura - Pago - Retencion
+    const saldo = Math.round((montoFactura - pagoReal - retencion) * 100) / 100;
+
+    // Determine payment state from credit lines (avoid payment_state which triggers broken computed field)
+    let paymentState = "not_paid";
+    if (creditLines && creditLines.length > 0) {
+      paymentState = pagoReal >= montoFactura ? "paid" : "partial";
+    }
+
+    invoices.push({
+      invoiceNumber: invoice.name,
+      partner: invoice.partner_id ? invoice.partner_id[1] : "",
+      montoFactura,
+      pagoReal,
+      retencion,
+      delivery,
+      saldo,
+      paymentState
+    });
+  }
+
+  return { invoices, debug: { rate, sessionDate, sessionIds } };
+}
+
+/**
+ * Get credit sales for a session: POS payments with method_id=14 (Venta a crédito),
+ * then traces abonos via account.partial.reconcile.
+ */
+export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]> {
+  // Check cache first (5 minute TTL)
+  const cache = getCreditSalesCache();
+  const cached = cache.get<CreditSaleRow[]>(String(sessionId));
+  if (cached) return cached;
+
+  // 0. Get session date for filtering abonos
+  const session = await getSessionById(sessionId);
+  if (!session) return [];
+  const sessionDate = (session.start_at || "").substring(0, 10);
+  const rate = await getDayRate(sessionDate);
+
+  // Get related sessions (companion fiscal machine merge)
+  const { sessionIds } = await getRelatedSessionIds(sessionId);
+
+  // 1. Get POS payments with credit method (14, 33 = pay_later) for all related sessions, filtered by fiscal journal
+  const allCreditPayments = await executeKw(
+    "pos.payment",
+    "search_read",
+    [[
+      ["session_id", "in", sessionIds],
+      ["payment_method_id", "in", CREDIT_METHOD_IDS],
+    ]],
+    {
+      fields: ["amount", "pos_order_id"],
+    }
+  );
+
+  const fiscalOrderIds = await getFiscalOrderIds(sessionIds);
+  const creditPayments = (allCreditPayments || []).filter((p: any) => {
+    const orderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+    return fiscalOrderIds.has(orderId);
+  });
+
+  if (creditPayments.length === 0) return [];
+
+  // Group payments by order
+  const orderPayments: Record<number, number> = {};
+  for (const p of creditPayments) {
+    const orderId = p.pos_order_id[0];
+    orderPayments[orderId] = (orderPayments[orderId] || 0) + p.amount;
+  }
+
+  const orderIds = Object.keys(orderPayments).map(Number);
+
+          // Also get retention payments (method 26) for these same orders to track overlap
+    const allRetPaymentsForOrders = await executeKw(
+      "pos.payment",
+      "search_read",
+      [[
+        ["pos_order_id", "in", orderIds],
+        ["payment_method_id", "=", METHOD_RETENCION_IVA],
+      ]],
+      { fields: ["amount", "pos_order_id"] }
+    );
+    const retentionByOrder: Record<number, number> = {};
+    for (const rp of allRetPaymentsForOrders || []) {
+      const oid = rp.pos_order_id[0];
+      retentionByOrder[oid] = (retentionByOrder[oid] || 0) + rp.amount;
+    }
+
+  // 2. Get pos.order → account_move (invoice)
+  const orders = await executeKw(
+    "pos.order",
+    "read",
+    [orderIds],
+    { fields: ["account_move", "partner_id"] }
+  );
+
+  // Get all payments for credit orders (to calculate paymentTotal)
+  const allOrderPayments = await executeKw(
+    "pos.payment",
+    "search_read",
+    [[["pos_order_id", "in", orderIds]]],
+    { fields: ["amount", "pos_order_id", "payment_method_id"] }
+  );
+
+  // Get payment method names for excedente detection
+  const paymentMethods = await executeKw(
+    "pos.payment.method",
+    "search_read",
+    [[["active", "=", true]]],
+    { fields: ["name", "id"] }
+  );
+  const paymentMethodsMap: Record<number, string> = {};
+  for (const m of paymentMethods || []) {
+    paymentMethodsMap[m.id] = m.name;
+  }
+
+  // Group all payments by order
+  const allPaymentsByOrder: Record<number, any[]> = {};
+  for (const p of allOrderPayments || []) {
+    const orderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+    if (!allPaymentsByOrder[orderId]) allPaymentsByOrder[orderId] = [];
+    allPaymentsByOrder[orderId].push(p);
+  }
+
+  const results: CreditSaleRow[] = [];
+
+  // Batch read all invoices at once
+  const moveIds = (orders || [])
+    .filter((o: any) => o.account_move && o.account_move.length > 0)
+    .map((o: any) => o.account_move[0]);
+
+  let invoiceMap: Record<number, any> = {};
+  if (moveIds.length > 0) {
+    try {
+      const moves = await executeKw(
+        "account.move",
+        "read",
+        [moveIds],
+        {
+          fields: ["name", "partner_id", "amount_total", "amount_residual", "currency_id", "amount_total_signed"],
+        }
+      );
+      for (const m of moves || []) {
+        invoiceMap[m.id] = m;
+      }
+    } catch {
+      // Fallback: try with minimal fields
+      try {
+        const moves = await executeKw(
+          "account.move",
+          "read",
+          [moveIds],
+          {
+            fields: ["name", "partner_id", "amount_total", "amount_residual"],
+          }
+        );
+        for (const m of moves || []) {
+          invoiceMap[m.id] = m;
+        }
+      } catch {
+        // Ignore errors
+      }
+    }
+  }
+
+  for (const order of orders || []) {
+    if (!order.account_move || order.account_move.length === 0) continue;
+
+    const moveId = order.account_move[0];
+    const creditAmountPOS = Math.round((orderPayments[order.id] || 0) * 100) / 100;
+    const invoice = invoiceMap[moveId];
+    if (!invoice) continue;
+
+    if (!invoice) continue;
+
+    const invoiceParts = (invoice.name || "").split(" ");
+    const invoiceNumber = invoiceParts[invoiceParts.length - 1];
+    const partner = invoice.partner_id ? invoice.partner_id[1] : (order.partner_id ? order.partner_id[1] : "");
+    const invoiceTotal = Math.round((invoice.amount_total || 0) * 100) / 100;
+    const partnerId = invoice.partner_id ? (Array.isArray(invoice.partner_id) ? invoice.partner_id[0] : invoice.partner_id) : null;
+    
+    // Get retention from POS payments (method 26)
+    const retentionAmountUsd = Math.round((retentionByOrder[order.id] || 0) * 100) / 100;
+    
+    // Get delivery from POS payments
+    let deliveryAmountUsd = 0;
+    const orderAllPayments = allPaymentsByOrder[order.id] || [];
+    for (const p of orderAllPayments) {
+      const methodName = paymentMethodsMap[p.payment_method_id[0]] || "";
+      if (methodName.toLowerCase().includes("delivery")) {
+        deliveryAmountUsd += Math.abs(p.amount);
+      }
+    }
+
+    // Get real payment amounts from Odoo accounting (debit lines on receivable account by partner)
+    let abonoAmount = 0;
+    let abonoAmountBs = 0;
+    let abonoJournal = "—";
+    const abonoByJournal: Record<string, { usd: number; bs: number }> = {};
+    let paymentLines: any[] = [];
+
+    if (partnerId) {
+      try {
+        // Extract the correlativo from invoice name (e.g., "INV/2026/00030221" -> "00030221")
+        const correlativo = invoiceNumber.split("/").pop() || invoiceNumber;
+
+        // Find REAL PAYMENTS from account.payment matching the invoice correlativo and date
+        const payments = await executeKw(
+          "account.payment",
+          "search_read",
+          [[
+            ["ref", "=", correlativo],
+            ["date", "=", sessionDate],
+            ["state", "=", "posted"],
+          ]],
+          { fields: ["name", "ref", "journal_id", "amount", "currency_id", "payment_type"] }
+        ) || [];
+
+        const journalsSeen = new Set<string>();
+        for (const payment of payments) {
+          // Only count incoming payments (not outbound refunds)
+          const paymentType = payment.payment_type || "";
+          if (paymentType !== "inbound") continue;
+          
+          const amount = Math.round((payment.amount || 0) * 100) / 100;
+
+          // Check currency - if VES (id 3), amount is already in Bs
+          const currencyId = Array.isArray(payment.currency_id) ? payment.currency_id[0] : payment.currency_id;
+          if (currencyId === 3) {
+            // VES: amount is already in Bs, convert to USD for abonoAmount
+            const amountUsd = rate > 0 ? Math.round((amount / rate) * 100) / 100 : 0;
+            abonoAmount += amountUsd;
+            abonoAmountBs += amount; // Already in Bs
+          } else {
+            // USD or other: convert to Bs
+            const amountBs = Math.round((amount * rate) * 100) / 100;
+            abonoAmount += amount;
+            abonoAmountBs += amountBs;
+          }
+
+          if (payment.journal_id) {
+            const journalName = Array.isArray(payment.journal_id) ? payment.journal_id[1] : "Journal";
+            
+            if (!journalsSeen.has(journalName)) {
+              journalsSeen.add(journalName);
+              if (abonoJournal === "—") {
+                abonoJournal = journalName;
+              } else {
+                abonoJournal += ", " + journalName;
+              }
+            }
+
+            // Track by journal
+            if (!abonoByJournal[journalName]) {
+              abonoByJournal[journalName] = { usd: 0, bs: 0 };
+            }
+            if (currencyId === 3) {
+              abonoByJournal[journalName].bs += amount;
+            } else {
+              abonoByJournal[journalName].usd += amount;
+            }
+          }
+        }
+      } catch {
+        // Ignore errors fetching payments
+      }
+    }
+
+    // Get partner's account balance (saldo a favor = credit - debit on receivable account)
+    let partnerBalance = 0;
+    
+    if (partnerId) {
+      try {
+        // Get all receivable lines for this partner
+        const partnerLines = await executeKw(
+          "account.move.line",
+          "search_read",
+          [[
+            ["partner_id", "=", partnerId],
+            ["account_type", "=", "asset_receivable"],
+          ]],
+          { fields: ["credit", "debit", "currency_id"] }
+        ) || [];
+
+        // Calculate balance: sum of credits (what partner owes) - sum of debits (payments received)
+        let totalCredit = 0;
+        let totalDebit = 0;
+        for (const line of partnerLines) {
+          const credit = Math.abs(line.credit || 0);
+          const debit = Math.abs(line.debit || 0);
+          totalCredit += credit;
+          totalDebit += debit;
+        }
+        
+        // Balance = totalCredit - totalDebit
+        // Positive = partner owes money
+        // Negative = partner has overpaid (saldo a favor)
+        partnerBalance = Math.round((totalCredit - totalDebit) * 100) / 100;
+      } catch {
+        // Ignore errors fetching partner balance
+      }
+    }
+
+    // Saldo = Total Factura - Abonos - Retención
+    // Positivo = cuenta por cobrar (cliente debe)
+    // Negativo = saldo a favor (excedente/sobrante)
+    const saldoReal = Math.round((invoiceTotal - abonoAmount - retentionAmountUsd) * 100) / 100;
+    
+    // Excedente = delivery (terceros)
+    const excedenteUsd = Math.round(deliveryAmountUsd * 100) / 100;
+    const excedenteBs = Math.round(excedenteUsd * rate * 100) / 100;
+
+    // Determine payment state based on saldo
+    // Si saldo > 0: partial (debe dinero)
+    // Si saldo <= 0: paid (pagado o saldo a favor)
+    let paymentState = "not_paid";
+    if (abonoAmount > 0) {
+      paymentState = saldoReal > 0 ? "partial" : "paid";
+    }
+
+    // Total pagado = abono + delivery
+    const paymentTotalUsd = Math.round((abonoAmount + excedenteUsd) * 100) / 100;
+    const paymentTotalBs = Math.round(paymentTotalUsd * rate * 100) / 100;
+
+    // generaSaldoFavor = true si saldo es negativo (hay excedente)
+    const generaSaldoFavor = saldoReal < 0;
+
+    results.push({
+      invoiceNumber,
+      partner,
+      invoiceTotal,
+      creditAmountPOS,
+      retentionAmountPOS: retentionAmountUsd,
+      abonoAmount,
+      abonoAmountBs,
+      abonoJournal,
+      abonoByJournal,
+      residual: saldoReal,
+      paymentState,
+      paymentTotalBs,
+      paymentTotalUsd,
+      excedenteBs,
+      excedenteUsd,
+      excedenteConcepto: excedenteUsd > 0 ? "delivery" : "",
+      generaSaldoFavor,
+    });
+  }
+
+  // Cache results for 5 minutes
+  cache.set(String(sessionId), results, 5 * 60 * 1000);
+
+  return results;
+}
+
+/**
+ * Get individual saldo a favor (payment method 25) operations with detail.
+ * Filtered to fiscal-journal orders only.
+ */
+export async function getSaldoFavorDetail(sessionId: number): Promise<SaldoFavorRow[]> {
+  const session = await getSessionById(sessionId);
+  if (!session) throw new Error("Sesión no encontrada");
+
+  const date = session.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+  const rate = await getDayRate(date);
+
+  // Get related sessions (companion fiscal machine merge)
+  const { sessionIds } = await getRelatedSessionIds(sessionId);
+
+  // Get all saldo a favor payments for all related sessions
+  const allPayments = await executeKw(
+    "pos.payment",
+    "search_read",
+    [[
+      ["session_id", "in", sessionIds],
+      ["payment_method_id", "=", METHOD_SALDO_FAVOR],
+    ]],
+    {
+      fields: ["amount", "pos_order_id"],
+    }
+  );
+
+  if (!allPayments || allPayments.length === 0) return [];
+
+  // Filter by fiscal orders
+  const fiscalOrderIds = await getFiscalOrderIds(sessionIds);
+  const payments = allPayments.filter((p: any) => {
+    const orderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+    return fiscalOrderIds.has(orderId);
+  });
+
+  if (payments.length === 0) return [];
+
+  // Get order details
+  const orderIds = [...new Set(payments.map((p: any) =>
+    Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id
+  ))];
+
+  const orders = await executeKw(
+    "pos.order",
+    "read",
+    [orderIds],
+    { fields: ["name", "partner_id", "account_move"] }
+  );
+
+  const orderMap: Record<number, any> = {};
+  for (const o of orders || []) {
+    orderMap[o.id] = o;
+  }
+
+  // Get invoice names
+  const moveIds = (orders || [])
+    .filter((o: any) => o.account_move && o.account_move.length > 0)
+    .map((o: any) => o.account_move[0]);
+
+  const moveMap: Record<number, string> = {};
+  if (moveIds.length > 0) {
+    const moves = await executeKw(
+      "account.move",
+      "read",
+      [moveIds],
+      { fields: ["name"] }
+    );
+    for (const m of moves || []) {
+      moveMap[m.id] = m.name || "";
+    }
+  }
+
+  const results: SaldoFavorRow[] = [];
+  for (const p of payments) {
+    const orderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+    const order = orderMap[orderId];
+    const moveId = order?.account_move?.[0];
+    const invoiceName = moveId ? (moveMap[moveId] || "") : "";
+    const amount = Math.round((p.amount || 0) * 100) / 100;
+
+    results.push({
+      orderName: order?.name || "",
+      partner: order?.partner_id ? order.partner_id[1] : "",
+      invoiceNumber: invoiceName,
+      amount,
+      amountBs: Math.round(amount * rate * 100) / 100,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Get non-fiscal operations (recibos): orders that do NOT have invoices in fiscal journals.
+ * These are the inverse of fiscal orders — all amounts in USD (divisas).
+ */
+export async function getNonFiscalSummary(sessionId: number): Promise<NonFiscalSummary> {
+  // Get related sessions (companion fiscal machine merge)
+  const { sessionIds } = await getRelatedSessionIds(sessionId);
+
+  // Get all orders for the sessions
+  const allOrders = await executeKw("pos.order", "search_read",
+    [[["session_id", "in", sessionIds]]],
+    { fields: ["id", "account_move", "name", "partner_id", "amount_total"] }
+  );
+
+  if (!allOrders || allOrders.length === 0) {
+    return { receiptCount: 0, totalUSD: 0, payments: [], creditSales: [], totalCreditUSD: 0 };
+  }
+
+  // Get fiscal order IDs
+  const fiscalOrderIds = await getFiscalOrderIds(sessionIds);
+
+  // Non-fiscal orders = orders NOT in fiscal set
+  const nfOrders = allOrders.filter((o: any) => !fiscalOrderIds.has(o.id));
+
+  if (nfOrders.length === 0) {
+    return { receiptCount: 0, totalUSD: 0, payments: [], creditSales: [], totalCreditUSD: 0 };
+  }
+
+  const nfOrderIds = new Set(nfOrders.map((o: any) => o.id));
+  const totalUSD = Math.round(nfOrders.reduce((sum: number, o: any) => sum + (o.amount_total || 0), 0) * 100) / 100;
+
+  // Get payments for non-fiscal orders
+  const allPayments = await executeKw("pos.payment", "search_read",
+    [[["session_id", "in", sessionIds]]],
+    { fields: ["amount", "payment_method_id", "pos_order_id"] }
+  );
+
+  const nfPayments = (allPayments || []).filter((p: any) => {
+    const orderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+    return nfOrderIds.has(orderId);
+  });
+
+  // Get payment method details (POS method names)
+  const methodIds = [...new Set(nfPayments.map((p: any) => p.payment_method_id[0]))];
+  let methodDetails: Record<number, { name: string }> = {};
+  if (methodIds.length > 0) {
+    const methods = await executeKw("pos.payment.method", "read",
+      [methodIds],
+      { fields: ["name"] }
+    );
+    for (const m of methods) {
+      methodDetails[m.id] = { name: m.name };
+    }
+  }
+
+  // Group payments by method
+  const groups: Record<number, NonFiscalPaymentGroup> = {};
+  for (const p of nfPayments) {
+    const methodId = p.payment_method_id[0];
+    const methodName = methodDetails[methodId]?.name || p.payment_method_id[1];
+    if (!groups[methodId]) {
+      groups[methodId] = { methodId, methodName, totalUSD: 0, count: 0 };
+    }
+    groups[methodId].totalUSD += p.amount;
+    groups[methodId].count += 1;
+  }
+
+  const payments: NonFiscalPaymentGroup[] = Object.values(groups).map((g) => ({
+    ...g,
+    totalUSD: Math.round(g.totalUSD * 100) / 100,
+  }));
+
+  // Identify credit sales among NF orders (pay_later methods)
+  const creditSales: NonFiscalCreditRow[] = [];
+  let totalCreditUSD = 0;
+
+  const nfCreditPayments = nfPayments.filter((p: any) =>
+    CREDIT_METHOD_IDS.includes(p.payment_method_id[0])
+  );
+
+  if (nfCreditPayments.length > 0) {
+    // Group credit amounts by order
+    const creditByOrder: Record<number, number> = {};
+    for (const p of nfCreditPayments) {
+      const orderId = Array.isArray(p.pos_order_id) ? p.pos_order_id[0] : p.pos_order_id;
+      creditByOrder[orderId] = (creditByOrder[orderId] || 0) + p.amount;
+    }
+
+    const orderMap: Record<number, any> = {};
+    for (const o of nfOrders) {
+      orderMap[o.id] = o;
+    }
+
+    for (const [orderIdStr, creditAmount] of Object.entries(creditByOrder)) {
+      const order = orderMap[Number(orderIdStr)];
+      if (order) {
+        const roundedAmount = Math.round(creditAmount * 100) / 100;
+        totalCreditUSD += roundedAmount;
+        creditSales.push({
+          orderName: order.name || `#${order.id}`,
+          partner: order.partner_id ? order.partner_id[1] : "",
+          amountUSD: roundedAmount,
+        });
+      }
+    }
+    totalCreditUSD = Math.round(totalCreditUSD * 100) / 100;
+  }
+
+  return {
+    receiptCount: nfOrders.length,
+    totalUSD,
+    payments,
+    creditSales,
+    totalCreditUSD,
+  };
+  
+}
