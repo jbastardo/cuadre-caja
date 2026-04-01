@@ -1100,7 +1100,7 @@ export async function getCreditSalesDebug(sessionId: number): Promise<any> {
         "account.move",
         "read",
         [[moveId]],
-        { fields: ["name", "partner_id", "amount_total", "amount_residual", "currency_id"] }
+        { fields: ["name", "partner_id", "amount_total", "amount_residual", "currency_id", "move_type"] }
       );
       invoice = moves?.[0];
     } catch (err: any) {
@@ -1109,11 +1109,15 @@ export async function getCreditSalesDebug(sessionId: number): Promise<any> {
         "account.move",
         "read",
         [[moveId]],
-        { fields: ["name", "partner_id", "amount_total", "amount_residual"] }
+        { fields: ["name", "partner_id", "amount_total", "amount_residual", "move_type"] }
       );
       invoice = moves?.[0];
     }
     if (!invoice) continue;
+
+    // Check if this is a credit note (out_refund) - negate the amount if so
+    const isRefund = invoice.move_type === "out_refund";
+    const sign = isRefund ? -1 : 1;
 
     // Get real payments from reconciled lines
     // Find all credit lines on this invoice
@@ -1140,24 +1144,24 @@ export async function getCreditSalesDebug(sessionId: number): Promise<any> {
 
     const retencion = Math.round((retencionesByOrder[order.id] || 0) * 100) / 100;
     const delivery = Math.round((deliveryByOrder[order.id] || 0) * 100) / 100;
-    const montoFactura = Math.round((invoice.amount_total || 0) * 100) / 100;
+    const montoFactura = Math.round((invoice.amount_total || 0) * 100) / 100 * sign;
     
-    // Saldo = Factura - Pago - Retencion
-    const saldo = Math.round((montoFactura - pagoReal - retencion) * 100) / 100;
+    // Saldo = Factura - Pago - Retencion (apply sign to retencion too for refunds)
+    const saldo = Math.round((montoFactura - (pagoReal * sign) - (retencion * sign)) * 100) / 100;
 
     // Determine payment state from credit lines (avoid payment_state which triggers broken computed field)
-    let paymentState = "not_paid";
-    if (creditLines && creditLines.length > 0) {
-      paymentState = pagoReal >= montoFactura ? "paid" : "partial";
+    let paymentState = isRefund ? "refunded" : "not_paid";
+    if (!isRefund && creditLines && creditLines.length > 0) {
+      paymentState = pagoReal >= Math.abs(montoFactura) ? "paid" : "partial";
     }
 
     invoices.push({
       invoiceNumber: invoice.name,
       partner: invoice.partner_id ? invoice.partner_id[1] : "",
       montoFactura,
-      pagoReal,
-      retencion,
-      delivery,
+      pagoReal: pagoReal * sign,
+      retencion: retencion * sign,
+      delivery: delivery * sign,
       saldo,
       paymentState
     });
