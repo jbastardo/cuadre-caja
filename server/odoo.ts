@@ -1286,7 +1286,7 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
         "read",
         [moveIds],
         {
-          fields: ["name", "partner_id", "amount_total", "amount_residual", "currency_id", "amount_total_signed"],
+          fields: ["name", "partner_id", "amount_total", "amount_residual", "currency_id", "amount_total_signed", "move_type"],
         }
       );
       for (const m of moves || []) {
@@ -1300,7 +1300,7 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
           "read",
           [moveIds],
           {
-            fields: ["name", "partner_id", "amount_total", "amount_residual"],
+            fields: ["name", "partner_id", "amount_total", "amount_residual", "move_type"],
           }
         );
         for (const m of moves || []) {
@@ -1320,16 +1320,19 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
     const invoice = invoiceMap[moveId];
     if (!invoice) continue;
 
+    // Check if this is a credit note (out_refund) - negate the amount if so
+    const isRefund = invoice.move_type === "out_refund";
+    const sign = isRefund ? -1 : 1;
+
     if (!invoice) continue;
 
     const invoiceParts = (invoice.name || "").split(" ");
     const invoiceNumber = invoiceParts[invoiceParts.length - 1];
     const partner = invoice.partner_id ? invoice.partner_id[1] : (order.partner_id ? order.partner_id[1] : "");
-    const invoiceTotal = Math.round((invoice.amount_total || 0) * 100) / 100;
-    const partnerId = invoice.partner_id ? (Array.isArray(invoice.partner_id) ? invoice.partner_id[0] : invoice.partner_id) : null;
+    const invoiceTotal = Math.round((invoice.amount_total || 0) * 100) / 100 * sign;
     
     // Get retention from POS payments (method 26)
-    const retentionAmountUsd = Math.round((retentionByOrder[order.id] || 0) * 100) / 100;
+    const retentionAmountUsd = Math.round((retentionByOrder[order.id] || 0) * 100) / 100 * sign;
     
     // Get delivery from POS payments
     let deliveryAmountUsd = 0;
@@ -1340,6 +1343,9 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
         deliveryAmountUsd += Math.abs(p.amount);
       }
     }
+    deliveryAmountUsd = deliveryAmountUsd * sign;
+
+    const partnerId = invoice.partner_id ? (Array.isArray(invoice.partner_id) ? invoice.partner_id[0] : invoice.partner_id) : null;
 
     // Get real payment amounts from Odoo accounting (debit lines on receivable account by partner)
     let abonoAmount = 0;
@@ -1462,8 +1468,8 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
     // Determine payment state based on saldo
     // Si saldo > 0: partial (debe dinero)
     // Si saldo <= 0: paid (pagado o saldo a favor)
-    let paymentState = "not_paid";
-    if (abonoAmount > 0) {
+    let paymentState = isRefund ? "refunded" : "not_paid";
+    if (!isRefund && abonoAmount > 0) {
       paymentState = saldoReal > 0 ? "partial" : "paid";
     }
 
