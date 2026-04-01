@@ -1459,7 +1459,10 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
     // Saldo = Total Factura - Abonos - Retención
     // Positivo = cuenta por cobrar (cliente debe)
     // Negativo = saldo a favor (excedente/sobrante)
-    const saldoReal = Math.round((invoiceTotal - abonoAmount - retentionAmountUsd) * 100) / 100;
+    // For refunds, don't subtract retention separately since the invoice total already reflects it
+    const saldoReal = isRefund 
+      ? Math.round((invoiceTotal - abonoAmount) * 100) / 100
+      : Math.round((invoiceTotal - abonoAmount - retentionAmountUsd) * 100) / 100;
     
     // Excedente = delivery (terceros)
     const excedenteUsd = Math.round(deliveryAmountUsd * 100) / 100;
