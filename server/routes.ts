@@ -178,7 +178,8 @@ router.get("/api/cuadres", async (req: Request, res: Response) => {
     const filters = {
       fecha: query(req, "fecha"),
       caja: query(req, "caja"),
-      estado: query(req, "estado")
+      estado: query(req, "estado"),
+      cerrado: query(req, "cerrado")
     };
     const data = await sheets.getCuadres(filters);
     res.json(data);

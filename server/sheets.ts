@@ -277,12 +277,16 @@ function cuadreToRow(c: Cuadre): any[] {
   ];
 }
 
-export async function getCuadres(filters?: { fecha?: string; caja?: string; estado?: string }): Promise<Cuadre[]> {
+export async function getCuadres(filters?: { fecha?: string; caja?: string; estado?: string; cerrado?: string }): Promise<Cuadre[]> {
   const rows = await getSheetData("Cuadres");
   let cuadres = rows.slice(1).map(rowToCuadre);
   if (filters?.fecha) cuadres = cuadres.filter((c) => c.fecha === filters.fecha);
   if (filters?.caja) cuadres = cuadres.filter((c) => c.caja === filters.caja);
   if (filters?.estado) cuadres = cuadres.filter((c) => c.estado === filters.estado);
+  if (filters?.cerrado) {
+    const isCerrado = filters.cerrado === "si";
+    cuadres = cuadres.filter((c) => (c.cerradoPor ? true : false) === isCerrado);
+  }
   return cuadres;
 }
 

@@ -18,13 +18,15 @@ export default function CuadreList() {
   const [, navigate] = useLocation();
   const [fecha, setFecha] = useState("");
   const [estado, setEstado] = useState("all");
+  const [cerrado, setCerrado] = useState("all");
 
   const params = new URLSearchParams();
   if (fecha) params.set("fecha", fecha);
   if (estado && estado !== "all") params.set("estado", estado);
+  if (cerrado && cerrado !== "all") params.set("cerrado", cerrado);
 
   const { data: cuadres, isLoading } = useQuery<Cuadre[]>({
-    queryKey: ["cuadres", fecha, estado],
+    queryKey: ["cuadres", fecha, estado, cerrado],
     queryFn: async () => {
       const res = await fetch(`/api/cuadres?${params.toString()}`);
       if (!res.ok) throw new Error("Error al cargar cuadres");
@@ -56,6 +58,16 @@ export default function CuadreList() {
               <SelectItem value="cuadrado">Cuadrado</SelectItem>
               <SelectItem value="descuadrado">Descuadrado</SelectItem>
               <SelectItem value="pendiente">Pendiente</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={cerrado} onValueChange={setCerrado}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Cerrado" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="si">Cerrados</SelectItem>
+              <SelectItem value="no">Abiertos</SelectItem>
             </SelectContent>
           </Select>
           {fecha && (
