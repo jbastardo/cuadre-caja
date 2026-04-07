@@ -89,8 +89,8 @@ export default function CuadreReport() {
   if (!cuadre) return <div className="p-8 text-center">Cuadre no encontrado</div>;
 
   return (
-    <div className="min-h-screen bg-gray-100 pb-12 no-print">
-      <div className="max-w-4xl mx-auto p-4 flex justify-between items-center">
+    <div className="min-h-screen bg-gray-100 pb-12">
+      <div className="max-w-4xl mx-auto p-4 flex justify-between items-center no-print">
         <Button variant="ghost" onClick={() => setLocation(`/cuadre/${id}`)}>
           <ArrowLeft className="h-4 w-4 mr-2" /> Volver
         </Button>
