@@ -117,12 +117,18 @@ export default function CuadreReport() {
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="border p-2">
               <div className="font-bold border-b mb-1">SEGÚN ODOO POS</div>
-              <div>Pagos directos: {formatBs(cuadre.totalMetodosPOS || cuadre.totalMetodosReal)}</div>
+              <div>Pagos directos: {formatBs(cuadre.totalMetodosReal)}</div>
               <div>Retenciones IVA: {formatBs(cuadre.totalRetencionesPOS)}</div>
               <div>Ventas a crédito: {formatBs(cuadre.totalCreditoPOS)}</div>
               <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorPOS)}</div>
               {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
-              <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(cuadre.totalMetodosPOS || cuadre.totalMetodosReal)}</div>
+              <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(
+                cuadre.totalMetodosReal +
+                cuadre.totalRetencionesPOS +
+                cuadre.totalCreditoPOS +
+                cuadre.totalSaldoFavorPOS +
+                cuadre.totalDeducciones
+              )}</div>
             </div>
             <div className="border p-2">
               <div className="font-bold border-b mb-1">VERIFICADO REAL</div>
@@ -134,10 +140,18 @@ export default function CuadreReport() {
               <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorReal)}</div>
               {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
               <div>Ajustes manuales: {formatBs(cuadre.totalAjustesManuales)}</div>
-              <div className="font-bold border-t mt-1">TOTAL VERIFICADO: {formatBs(cuadre.totalJustificadoReal || cuadre.totalJustificado)}</div>
+              <div className="font-bold border-t mt-1">TOTAL VERIFICADO: {formatBs(
+                cuadre.totalMetodosReal +
+                cuadre.totalRetencionesReal +
+                cuadre.totalAbonosReal +
+                cuadre.totalCxCPendiente +
+                cuadre.totalSaldoFavorReal +
+                cuadre.totalDeducciones +
+                cuadre.totalAjustesManuales
+              )}</div>
             </div>
           </div>
-          <div className="text-xs mt-2 font-bold">Total Métodos + Deducciones: {formatBs(cuadre.totalJustificadoReal || cuadre.totalJustificado)}</div>
+          <div className="text-xs mt-2 font-bold">Total Métodos + Deducciones: {formatBs(cuadre.totalMetodosReal + cuadre.totalDeducciones)}</div>
         </div>
 
         <div className="mb-4 p-3 border rounded">
