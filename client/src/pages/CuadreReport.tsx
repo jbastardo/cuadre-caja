@@ -23,6 +23,9 @@ export default function CuadreReport() {
   if (isLoading) return <div className="p-8 text-center">Cargando...</div>;
   if (!cuadre) return <div className="p-8 text-center">Cuadre no encontrado</div>;
 
+  // Calculate SUM of all method POS amounts for "SEGÚN ODOO POS"
+  const totalPOS_Pagos = (cuadre.metodos || []).reduce((sum: number, m: any) => sum + (m.montoPOS_Bs || 0), 0);
+
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="max-w-[210mm] mx-auto p-4 flex justify-between items-center no-print">
@@ -117,12 +120,12 @@ export default function CuadreReport() {
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="border p-2">
               <div className="font-bold border-b mb-1">SEGÚN ODOO POS</div>
-              <div>Pagos directos: {formatBs(cuadre.totalMetodosReal)}</div>
+              <div>Pagos directos: {formatBs(totalPOS_Pagos)}</div>
               <div>Retenciones IVA: {formatBs(cuadre.totalRetencionesPOS)}</div>
               <div>Ventas a crédito: {formatBs(cuadre.totalCreditoPOS)}</div>
               <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorPOS)}</div>
               {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
-              <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(cuadre.totalMetodosReal)}</div>
+              <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(totalPOS_Pagos + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS + cuadre.totalDeducciones)}</div>
             </div>
             <div className="border p-2">
               <div className="font-bold border-b mb-1">VERIFICADO REAL</div>
