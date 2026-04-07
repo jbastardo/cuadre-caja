@@ -23,9 +23,6 @@ export default function CuadreReport() {
   if (isLoading) return <div className="p-8 text-center">Cargando...</div>;
   if (!cuadre) return <div className="p-8 text-center">Cuadre no encontrado</div>;
 
-  // Calculate SUM of all method POS amounts for "SEGÚN ODOO POS"
-  const totalPOS_Pagos = (cuadre.metodos || []).reduce((sum: number, m: any) => sum + (m.montoPOS_Bs || 0), 0);
-
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="max-w-[210mm] mx-auto p-4 flex justify-between items-center no-print">
@@ -120,27 +117,27 @@ export default function CuadreReport() {
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="border p-2">
               <div className="font-bold border-b mb-1">SEGÚN ODOO POS</div>
-              <div>Pagos directos: {formatBs(totalPOS_Pagos)}</div>
+              <div>Pagos directos: {formatBs(cuadre.totalMetodosReal)}</div>
               <div>Retenciones IVA: {formatBs(cuadre.totalRetencionesPOS)}</div>
               <div>Ventas a crédito: {formatBs(cuadre.totalCreditoPOS)}</div>
               <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorPOS)}</div>
-              {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
-              <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(totalPOS_Pagos + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS + cuadre.totalDeducciones)}</div>
+              {cuadre.totalDeducciones !== 0 && <div>Deducciones (Delivery/Dif.): {formatBs(cuadre.totalDeducciones)}</div>}
+              <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(cuadre.totalMetodosReal)}</div>
             </div>
             <div className="border p-2">
               <div className="font-bold border-b mb-1">VERIFICADO REAL</div>
               <div>Pagos directos: {formatBs(cuadre.totalMetodosReal)}</div>
-              <div>Retenciones reg: {formatBs(cuadre.totalRetencionesReal)}</div>
-              {cuadre.retencionesPorCobrar > 0 && <div className="text-amber-600">Por cobrar: {formatBs(cuadre.retencionesPorCobrar)}</div>}
-              <div>Abonos crédito: {formatBs(cuadre.totalAbonosReal)}</div>
+              <div>Retenciones registradas: {formatBs(cuadre.totalRetencionesReal)}</div>
+              {cuadre.retencionesPorCobrar > 0 && <div className="text-amber-600">Retenciones por cobrar: {formatBs(cuadre.retencionesPorCobrar)}</div>}
+              <div>Abonos crédito recibidos: {formatBs(cuadre.totalAbonosReal)}</div>
               <div>CxC pendientes: {formatBs(cuadre.totalCxCPendiente)}</div>
               <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorReal)}</div>
-              {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
+              {cuadre.totalDeducciones !== 0 && <div>Deducciones (Delivery/Dif.): {formatBs(cuadre.totalDeducciones)}</div>}
               <div>Ajustes manuales: {formatBs(cuadre.totalAjustesManuales)}</div>
               <div className="font-bold border-t mt-1">TOTAL VERIFICADO: {formatBs(cuadre.totalJustificado)}</div>
             </div>
           </div>
-          <div className="text-xs mt-2 font-bold">Total Métodos + Deducciones: {formatBs(cuadre.totalJustificado)}</div>
+          <div className="text-xs mt-2 font-bold">Total Métodos + Deducciones (Bs): {formatBs(cuadre.totalJustificado)}</div>
         </div>
 
         <div className="mb-4 p-3 border rounded">
@@ -155,7 +152,7 @@ export default function CuadreReport() {
               {Math.abs(cuadre.diferencia) < 0.01 ? 'CUADRADO' : 'DESCUADRADO'}
             </div>
           </div>
-          {cuadre.difCambiaria > 0 && <div className="text-xs mt-2">Dif. Cambiaria: {formatBs(cuadre.difCambiaria)}</div>}
+          {cuadre.difCambiaria > 0 && <div className="text-xs mt-2">Dif. Cambiaria (info contabilidad): {formatBs(cuadre.difCambiaria)}</div>}
         </div>
 
         <div className="mb-4">
