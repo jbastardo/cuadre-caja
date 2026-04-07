@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { formatBs, getStatusLabel, formatDateTime } from "@/lib/utils";
-import type { CuadreDetail } from "@shared/schema";
+import { formatBs, formatUSD, getStatusLabel, formatDateTime } from "@/lib/utils";
+import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow } from "@shared/schema";
 import { ArrowLeft, Printer } from "lucide-react";
 
 const METHOD_NAME_OVERRIDES: Record<number, string> = {
@@ -41,26 +41,6 @@ export default function CuadreReport() {
 
   const rate = cuadre?.tasaDia || 1;
 
-  const section3Methods = useMemo(() => {
-    if (!cuadre?.metodos) return [];
-    return cuadre.metodos.filter((m: any) => !SECTION3_EXCLUDED_IDS.has(m.methodId));
-  }, [cuadre?.metodos]);
-
-  // Calculate totals from metodos array directly
-  const totalPOS_Pagos = useMemo(() => {
-    if (!cuadre?.metodos) return 0;
-    return cuadre.metodos
-      .filter((m: any) => !SECTION3_EXCLUDED_IDS.has(m.methodId))
-      .reduce((sum: number, m: any) => sum + (m.montoPOS_Bs || 0), 0);
-  }, [cuadre?.metodos]);
-
-  const totalReal_Pagos = useMemo(() => {
-    if (!cuadre?.metodos) return 0;
-    return cuadre.metodos
-      .filter((m: any) => !SECTION3_EXCLUDED_IDS.has(m.methodId))
-      .reduce((sum: number, m: any) => sum + (m.montoReal_Bs || m.montoReal || 0), 0);
-  }, [cuadre?.metodos]);
-
   if (isLoading) return <div className="p-8 text-center">Cargando...</div>;
   if (!cuadre) return <div className="p-8 text-center">Cuadre no encontrado</div>;
 
@@ -75,212 +55,222 @@ export default function CuadreReport() {
         </Button>
       </div>
 
-      <div className="max-w-[210mm] mx-auto bg-white p-6 print:p-0" id="report-content" style={{ fontSize: '9px', lineHeight: '1.3' }}>
-        {/* Encabezado */}
-        <div className="flex justify-between items-center mb-4 border-b-2 pb-2">
-          <div>
-            <h1 className="text-xl font-bold uppercase">Cuadre de Caja</h1>
-            <p className="text-sm">{cuadre.caja} | {cuadre.fecha} | Estado: {getStatusLabel(cuadre.estado)}</p>
-          </div>
-          <div className="text-right text-sm">
-            <p className="font-bold">Tasa: {formatBs(rate)}</p>
-            <p>Cajero: {cuadre.cajero}</p>
-          </div>
+      <div className="max-w-[210mm] mx-auto bg-white p-8 print:p-0" id="report-content" style={{ fontSize: '11px', lineHeight: '1.4' }}>
+        {/* ENCABEZADO */}
+        <div className="text-center mb-4 border-b-2 pb-2">
+          <h1 className="text-2xl font-bold">CUADRE DE CAJA</h1>
+          <p className="text-sm">{cuadre.caja} | Fecha: {cuadre.fecha} | Estado: {getStatusLabel(cuadre.estado)}</p>
+          <p className="text-sm">Cajero: {cuadre.cajero} | Tasa: {formatBs(rate)}</p>
         </div>
 
-        {/* 1. DATOS REPORTE Z - Completo */}
-        <div className="mb-4 border-b pb-2">
-          <h2 className="font-bold text-sm border-b mb-2">1. DATOS DEL REPORTE Z</h2>
-          <div className="grid grid-cols-4 gap-2 text-xs mb-2">
-            <div><span className="text-muted-foreground">Serial:</span> {cuadre.serialMachine || cuadre.maquinaFiscal}</div>
-            <div><span className="text-muted-foreground">Z:</span> {cuadre.zNumero}</div>
-            <div><span className="text-muted-foreground">Facturas:</span> {cuadre.primeraFacturaZ} - {cuadre.ultimaFacturaZ}</div>
-            <div><span className="text-muted-foreground">NC:</span> {cuadre.primeraNCZ || '-'} - {cuadre.ultimaNCZ || '-'}</div>
+        {/* 1. DATOS REPORTE Z */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">1. Resumen de Ventas (Fiscal)</h2>
+          <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+            <div>Serial Impresora: {cuadre.serialMachine || cuadre.maquinaFiscal}</div>
+            <div>Reporte Z: {cuadre.zNumero}</div>
+            <div>Facturas: {cuadre.primeraFacturaZ} - {cuadre.ultimaFacturaZ}</div>
+            <div>Notas Crédito: {cuadre.primeraNCZ || '-'} - {cuadre.ultimaNCZ || '-'}</div>
           </div>
-          <div className="grid grid-cols-6 gap-2 text-xs font-medium">
-            <div>V.Bruta: {formatBs(cuadre.ventaBrutaZ)}</div>
-            <div>N.Crédito: {formatBs(cuadre.notasCreditoZ)}</div>
-            <div>V.Neta: {formatBs(cuadre.ventaNetaZ)}</div>
-            <div>Base Imp: {formatBs(cuadre.baseImponibleZ)}</div>
+          <div className="grid grid-cols-3 gap-2 text-xs font-medium">
+            <div>Venta Bruta: {formatBs(cuadre.ventaBrutaZ)}</div>
+            <div>Notas Crédito: {formatBs(cuadre.notasCreditoZ)}</div>
+            <div>Venta Neta: {formatBs(cuadre.ventaNetaZ)}</div>
+            <div>Base Imponible: {formatBs(cuadre.baseImponibleZ)}</div>
             <div>IVA: {formatBs(cuadre.ivaZ)}</div>
             <div>IGTF: {formatBs(cuadre.igtfZ)}</div>
           </div>
         </div>
 
-        {/* 3. MÉTODOS DE PAGO - Completo */}
-        <div className="mb-4 border-b pb-2">
-          <h2 className="font-bold text-sm border-b mb-2">3. MÉTODOS DE PAGO (Bs)</h2>
+        {/* 2. IGTF */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">2. IGTF Percibido</h2>
+          <div className="text-xs">Total IGTF: {formatBs(cuadre.igtfZ * rate)}</div>
+        </div>
+
+        {/* 3. MÉTODOS DE PAGO */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">3. Resumen por Métodos de Pago</h2>
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-gray-50">
                 <th className="text-left py-1">Método</th>
-                <th className="text-right py-1">POS</th>
-                <th className="text-right py-1">Real</th>
+                <th className="text-right py-1">Monto POS (USD)</th>
+                <th className="text-right py-1">Monto POS (Bs)</th>
+                <th className="text-right py-1">Monto Real (Bs)</th>
               </tr>
             </thead>
             <tbody>
-              {section3Methods.map((m: any, i: number) => (
+              {(cuadre.metodos || []).map((m: any, i: number) => (
                 <tr key={i} className="border-b">
                   <td className="py-1">{getMethodDisplayName(m.metodoId, m.metodoNombre)}</td>
+                  <td className="text-right py-1">{formatUSD(m.montoPOS_USD)}</td>
                   <td className="text-right py-1">{formatBs(m.montoPOS_Bs)}</td>
                   <td className="text-right py-1">{formatBs(m.montoReal_Bs || m.montoReal || m.montoPOS_Bs)}</td>
                 </tr>
               ))}
-              <tr className="font-bold bg-gray-50">
-                <td className="py-1">TOTAL</td>
-                <td className="text-right py-1">{formatBs(totalPOS_Pagos)}</td>
-                <td className="text-right py-1">{formatBs(totalReal_Pagos)}</td>
-              </tr>
             </tbody>
           </table>
         </div>
 
-        {/* 4. RETENCIONES IVA - Total */}
-        <div className="mb-4 border-b pb-2">
-          <h2 className="font-bold text-sm border-b mb-2">4. RETENCIONES IVA</h2>
-          <div className="text-xs flex justify-between">
-            <span>Total Retenciones:</span>
-            <span className="font-bold">{formatBs(cuadre.totalRetencionesReal)}</span>
-            {cuadre.retencionesPorCobrar > 0 && (
-              <span className="text-amber-600">| Por cobrar: {formatBs(cuadre.retencionesPorCobrar)}</span>
-            )}
-          </div>
-        </div>
-
-        {/* 5. VENTAS A CRÉDITO - Resumen + Detalle */}
-        <div className="mb-4 border-b pb-2">
-          <h2 className="font-bold text-sm border-b mb-2">5. VENTAS A CRÉDITO (CxC)</h2>
-          <div className="grid grid-cols-4 gap-2 text-xs mb-2">
-            <div><span className="text-muted-foreground">Total Crédito:</span> {formatBs(cuadre.totalCreditoPOS)}</div>
-            <div><span className="text-muted-foreground">Abonos:</span> <span className="text-green-700">{formatBs(cuadre.totalAbonosReal)}</span></div>
-            <div><span className="text-muted-foreground">CxC Pendiente:</span> <span className="text-amber-700">{formatBs(cuadre.totalCxCPendiente)}</span></div>
-            <div><span className="text-muted-foreground">Saldo a Favor:</span> {formatBs(cuadre.totalSaldoFavorReal)}</div>
-          </div>
-          {/* Detalle CxC Pendientes */}
-          {cuadre.creditSales && cuadre.creditSales.filter((c: any) => c.residual > 0).length > 0 && (
-            <div className="mt-2 text-xs">
-              <span className="font-medium">Detalle CxC Pendientes:</span>
-              <div className="grid grid-cols-1 gap-1 mt-1">
-                {cuadre.creditSales.filter((c: any) => c.residual > 0).map((c: any, i: number) => (
-                  <div key={i} className="flex justify-between">
-                    <span>{c.invoiceNumber} — {c.partner}</span>
-                    <span className="text-amber-700">{formatBs(c.residual * rate)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+        {/* 4. RETENCIONES IVA */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">4. Retenciones IVA</h2>
+          <div className="text-xs">Total Retenciones POS: {formatBs(cuadre.totalRetencionesPOS * rate)} | Total Real: {formatBs(cuadre.totalRetencionesReal * rate)}</div>
+          {cuadre.retencionesPorCobrar > 0 && (
+            <div className="text-xs text-amber-600">Retenciones por cobrar: {formatBs(cuadre.retencionesPorCobrar * rate)}</div>
           )}
         </div>
 
-        {/* 8. RESUMEN DEL CUADRE - EXACTO como formulario sin recalcular */}
-        <div className="mb-4 border-b pb-2">
-          <h2 className="font-bold text-sm border-b mb-2">8. RESUMEN DEL CUADRE</h2>
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            <div className="border p-2">
-              <div className="font-bold border-b mb-2">SEGÚN ODOO POS</div>
-              <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(totalPOS_Pagos)}</span></div>
-              <div className="flex justify-between"><span>Retenciones IVA:</span><span>{formatBs(cuadre.totalRetencionesPOS)}</span></div>
-              <div className="flex justify-between"><span>Ventas a crédito:</span><span>{formatBs(cuadre.totalCreditoPOS)}</span></div>
-              <div className="flex justify-between"><span>Saldos a favor:</span><span>{formatBs(cuadre.totalSaldoFavorPOS)}</span></div>
-              {cuadre.totalDeducciones !== 0 && (
-                <div className="flex justify-between"><span>Deducciones (Delivery/Dif.):</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
-              )}
-              <div className="flex justify-between font-bold border-t mt-1 pt-1">
-                <span>TOTAL POS:</span>
-                <span>{formatBs(cuadre.totalMetodosReal)}</span>
-              </div>
-            </div>
-            <div className="border p-2">
-              <div className="font-bold border-b mb-2">VERIFICADO REAL</div>
-              <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(totalReal_Pagos)}</span></div>
-              <div className="flex justify-between"><span>Retenciones registradas:</span><span>{formatBs(cuadre.totalRetencionesReal)}</span></div>
-              {cuadre.retencionesPorCobrar > 0 && (
-                <div className="flex justify-between text-amber-600"><span>Retenciones por cobrar:</span><span>{formatBs(cuadre.retencionesPorCobrar)}</span></div>
-              )}
-              <div className="flex justify-between text-green-700"><span>Abonos crédito recibidos:</span><span>{formatBs(cuadre.totalAbonosReal)}</span></div>
-              <div className="flex justify-between text-amber-700"><span>CxC pendientes:</span><span>{formatBs(cuadre.totalCxCPendiente)}</span></div>
-              <div className="flex justify-between"><span>Saldos a favor:</span><span>{formatBs(cuadre.totalSaldoFavorReal)}</span></div>
-              {cuadre.totalDeducciones !== 0 && (
-                <div className="flex justify-between"><span>Deducciones (Delivery/Dif.):</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
-              )}
-              <div className="flex justify-between"><span>Ajustes manuales:</span><span>{formatBs(cuadre.totalAjustesManuales)}</span></div>
-              <div className="flex justify-between font-bold border-t mt-1 pt-1">
-                <span>TOTAL VERIFICADO:</span>
-                <span>{formatBs(cuadre.totalJustificado)}</span>
-              </div>
-            </div>
+        {/* 5. VENTAS A CRÉDITO */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">5. Ventas a Crédito (CxC)</h2>
+          <div className="text-xs mb-2">
+            <div>Total Crédito POS: {formatBs(cuadre.totalCreditoPOS * rate)} | Total Abonos: {formatBs(cuadre.totalAbonosReal * rate)} | CxC Pendiente: {formatBs(cuadre.totalCxCPendiente * rate)}</div>
+            <div>Saldo a Favor: {formatBs(cuadre.totalSaldoFavorReal * rate)}</div>
           </div>
-          
-          {/* Total Métodos + Deducciones */}
-          <div className="mt-3 text-xs border-t pt-2">
-            <div className="flex justify-between font-bold">
-              <span>Total Métodos + Deducciones (Bs):</span>
-              <span>{formatBs(cuadre.totalJustificado)}</span>
-            </div>
-          </div>
+          {(cuadre.creditSales || []).length > 0 && (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="text-left py-1">Factura</th>
+                  <th className="text-left py-1">Cliente</th>
+                  <th className="text-right py-1">Total (Bs)</th>
+                  <th className="text-right py-1">Abono (Bs)</th>
+                  <th className="text-right py-1">CxC (Bs)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(cuadre.creditSales || []).map((c: any, i: number) => (
+                  <tr key={i} className="border-b">
+                    <td className="py-1">{c.invoiceNumber}</td>
+                    <td className="py-1">{c.partner}</td>
+                    <td className="text-right py-1">{formatBs(c.invoiceTotal * rate)}</td>
+                    <td className="text-right py-1">{c.abonoAmount > 0 ? formatBs(c.abonoAmount * rate) : '-'}</td>
+                    <td className="text-right py-1">{c.residual > 0 ? formatBs(c.residual * rate) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
-        {/* Diferencia - Exacta como formulario */}
-        <div className="mb-4 border-b pb-2">
-          <div className="bg-blue-50 p-3 rounded">
-            <div className="text-sm font-bold mb-1">Venta Neta Z (Bs) — referencia fiscal:</div>
-            <div className="text-lg font-bold">{formatBs(cuadre.ventaNetaZ)}</div>
+        {/* 6. SALDOS A FAVOR */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">6. Saldos a Favor Generados</h2>
+          <div className="text-xs">Total Saldo a Favor POS: {formatBs(cuadre.totalSaldoFavorPOS * rate)} | Total Real: {formatBs(cuadre.totalSaldoFavorReal * rate)}</div>
+          {(cuadre.saldosFavor || []).length > 0 && (
+            <table className="w-full text-xs mt-1">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="text-left py-1">Factura</th>
+                  <th className="text-left py-1">Cliente</th>
+                  <th className="text-right py-1">Monto (USD)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(cuadre.saldosFavor || []).map((s: any, i: number) => (
+                  <tr key={i} className="border-b">
+                    <td className="py-1">{s.invoiceNumber}</td>
+                    <td className="py-1">{s.partner}</td>
+                    <td className="text-right py-1">{formatUSD(s.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* 7. DEDUCCIONES */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">7. Deducciones</h2>
+          <div className="text-xs">Total Deducciones: {formatBs(cuadre.totalDeducciones)}</div>
+        </div>
+
+        {/* 8. RESUMEN DEL CUADRE */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">8. Resumen del Cuadre</h2>
+          <div className="grid grid-cols-2 gap-4 text-xs">
+            <div className="border p-2">
+              <div className="font-bold border-b mb-1">SEGÚN ODOO POS</div>
+              <div>Pagos directos: {formatBs(cuadre.totalMetodosReal)}</div>
+              <div>Retenciones IVA: {formatBs(cuadre.totalRetencionesPOS * rate)}</div>
+              <div>Ventas a crédito: {formatBs(cuadre.totalCreditoPOS * rate)}</div>
+              <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorPOS * rate)}</div>
+              {cuadre.totalDeducciones !== 0 && <div>Deducciones (Delivery/Dif.): {formatBs(cuadre.totalDeducciones)}</div>}
+              <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesPOS * rate + cuadre.totalCreditoPOS * rate + cuadre.totalSaldoFavorPOS * rate + cuadre.totalDeducciones)}</div>
+            </div>
+            <div className="border p-2">
+              <div className="font-bold border-b mb-1">VERIFICADO REAL</div>
+              <div>Pagos directos: {formatBs(cuadre.totalMetodosReal)}</div>
+              <div>Retenciones registradas: {formatBs(cuadre.totalRetencionesReal * rate)}</div>
+              {cuadre.retencionesPorCobrar > 0 && <div className="text-amber-600">Retenciones por cobrar: {formatBs(cuadre.retencionesPorCobrar * rate)}</div>}
+              <div>Abonos crédito recibidos: {formatBs(cuadre.totalAbonosReal * rate)}</div>
+              <div>CxC pendientes: {formatBs(cuadre.totalCxCPendiente * rate)}</div>
+              <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorReal * rate)}</div>
+              {cuadre.totalDeducciones !== 0 && <div>Deducciones (Delivery/Dif.): {formatBs(cuadre.totalDeducciones)}</div>}
+              <div>Ajustes manuales: {formatBs(cuadre.totalAjustesManuales)}</div>
+              <div className="font-bold border-t mt-1">TOTAL VERIFICADO: {formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesReal * rate + cuadre.totalAbonosReal * rate + cuadre.totalCxCPendiente * rate + cuadre.totalSaldoFavorReal * rate + cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</div>
+            </div>
           </div>
-          <div className="mt-2 text-center">
+          <div className="text-xs mt-2 font-bold">Total Métodos + Deducciones (Bs): {formatBs(cuadre.totalMetodosReal + cuadre.totalDeducciones)}</div>
+        </div>
+
+        {/* DIFERENCIA */}
+        <div className="mb-4 p-3 border rounded">
+          <div className="text-sm font-bold mb-1">Venta Neta Z (Bs) — referencia fiscal:</div>
+          <div className="text-lg font-bold">{formatBs(cuadre.ventaNetaZ)}</div>
+          <div className="text-center mt-2">
             <div className="text-sm font-bold">Diferencia:</div>
             <div className={`text-lg font-bold ${Math.abs(cuadre.diferencia) < 0.01 ? 'text-green-600' : cuadre.diferencia > 0 ? 'text-green-600' : 'text-red-600'}`}>
               {formatBs(cuadre.diferencia)}
             </div>
-            <div className={`text-xs font-bold mt-1 ${Math.abs(cuadre.diferencia) < 0.01 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'} inline-block px-2 py-1 rounded`}>
+            <div className={`text-xs font-bold mt-1 ${Math.abs(cuadre.diferencia) < 0.01 ? 'bg-green-100' : 'bg-red-100'} inline-block px-2 py-1 rounded`}>
               {Math.abs(cuadre.diferencia) < 0.01 ? 'CUADRADO' : 'DESCUADRADO'}
             </div>
           </div>
-          {cuadre.diferencia !== 0 && (
-            <div className="mt-2 text-xs text-muted-foreground">
-              {cuadre.diferencia > 0 ? (
-                <p><strong>¿Qué significa esta diferencia?</strong></p>
-              ) : (
-                <p><strong>¿Qué significa esta diferencia?</strong></p>
-              )}
-              {cuadre.diferencia > 0 ? (
-                <p>Sobra dinero (Bs {formatBs(cuadre.diferencia)}): Se justificó más de lo reportado en Z.</p>
-              ) : (
-                <p>Falta dinero (Bs {formatBs(Math.abs(cuadre.diferencia))}): Se justificó menos de lo reportado en Z.</p>
-              )}
-              <p className="mt-1">Posibles causas: pago duplicado, cobro no facturado, monto de método verificado mayor al real, o abono registrado que no corresponde al día.</p>
-              <p className="mt-1">Use la sección "Ajustes y Excepciones" para registrar diferencias que no se pueden conciliar automáticamente.</p>
+          {cuadre.difCambiaria > 0 && <div className="text-xs mt-2">Dif. Cambiaria (info contabilidad): {formatBs(cuadre.difCambiaria)}</div>}
+        </div>
+
+        {/* 9. AJUSTES MANUALES */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">9. Ajustes Manuales</h2>
+          {(cuadre.ajustesManuales || []).length > 0 ? (
+            <div className="text-xs">
+              {(cuadre.ajustesManuales || []).map((a: any, i: number) => (
+                <div key={i} className="flex justify-between">
+                  <span>{a.descripcion || 'Ajuste'}</span>
+                  <span>{formatBs(a.monto)}</span>
+                </div>
+              ))}
+              <div className="font-bold mt-1">Total: {formatBs(cuadre.totalAjustesManuales)}</div>
             </div>
-          )}
-          {cuadre.difCambiaria > 0 && (
-            <div className="mt-2 text-xs text-muted-foreground">
-              <span>Dif. Cambiaria (info contabilidad): {formatBs(cuadre.difCambiaria)}</span>
-            </div>
+          ) : (
+            <div className="text-xs text-gray-500">Sin ajustes manuales</div>
           )}
         </div>
 
-        {/* Observaciones */}
-        {cuadre.observaciones && (
-          <div className="mb-4">
-            <h2 className="font-bold text-sm border-b mb-2">OBSERVACIONES</h2>
-            <p className="text-xs">{cuadre.observaciones}</p>
-          </div>
-        )}
+        {/* 10. OBSERVACIONES */}
+        <div className="mb-4">
+          <h2 className="font-bold text-sm border-b mb-2">10. Observaciones</h2>
+          <div className="text-xs">{cuadre.observaciones || 'Sin observaciones'}</div>
+        </div>
 
-        {/* Footer */}
-        <div className="mt-6 pt-4 border-t flex justify-between">
+        {/* FOOTER */}
+        <div className="mt-8 pt-4 border-t flex justify-between">
           <div className="text-center">
-            <div className="border-b w-40 mb-2 h-8"></div>
+            <div className="border-b w-48 mb-2 h-10"></div>
             <span className="text-xs font-bold">Cajero: {cuadre.cajero}</span>
           </div>
           <div className="text-center">
-            <div className="border-b w-40 mb-2 h-8"></div>
+            <div className="border-b w-48 mb-2 h-10"></div>
             <span className="text-xs font-bold">Supervisor</span>
           </div>
         </div>
-        
+
         {cuadre.cerradoPor && (
-          <p className="text-[8px] text-center mt-4 text-muted-foreground">
-            Cerrado por: {cuadre.cerradoPor} el {formatDateTime(cuadre.cerradoEn || "")}
+          <p className="text-[10px] text-center mt-4 text-gray-500">
+            Cerrado por: {cuadre.cerradoPor} el {formatDateTime(cuadre.cerradoEn || '')}
           </p>
         )}
       </div>
