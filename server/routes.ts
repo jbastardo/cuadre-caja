@@ -194,6 +194,15 @@ router.get("/api/cuadres/:id", async (req: Request, res: Response) => {
     const cuadre = await sheets.getCuadreById(id);
     if (!cuadre) return res.status(404).json({ error: "Cuadre no encontrado" });
 
+    // Get serial machine from Odoo session
+    let serialMachine = "";
+    try {
+      const session = await odoo.getSessionById(cuadre.sessionId);
+      serialMachine = session?.serial_machine || "";
+    } catch (e) {
+      console.warn("Fallo al obtener session para serial:", id);
+    }
+
     // Hidratación de datos desde Odoo (Opcional/Resiliente)
     let extraData: {
       creditSales: CreditSaleRow[];
@@ -212,7 +221,7 @@ router.get("/api/cuadres/:id", async (req: Request, res: Response) => {
       console.warn("Fallo hidratación de Odoo para cuadre:", id);
     }
 
-    res.json({ ...cuadre, ...extraData });
+    res.json({ ...cuadre, serialMachine, ...extraData });
   } catch (err) {
     res.status(500).json({ error: "Error al obtener detalle de cuadre" });
   }

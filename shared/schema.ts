@@ -177,6 +177,7 @@ export const cuadreSchema = z.object({
   sessionId: z.number(),
   sessionName: z.string(),
   cajero: z.string(),
+  serialMachine: z.string().optional(),
 
   // Z Report data (manual, fiscal source)
   zNumero: z.string(),
