@@ -120,9 +120,9 @@ export default function CuadreReport() {
           <h2 className="font-bold text-sm border-b mb-2">4. RETENCIONES IVA</h2>
           <div className="text-xs flex justify-between">
             <span>Total Retenciones:</span>
-            <span className="font-bold">{formatBs(cuadre.totalRetencionesReal * rate)}</span>
+            <span className="font-bold">{formatBs(cuadre.totalRetencionesReal)}</span>
             {cuadre.retencionesPorCobrar > 0 && (
-              <span className="text-amber-600">| Por cobrar: {formatBs(cuadre.retencionesPorCobrar * rate)}</span>
+              <span className="text-amber-600">| Por cobrar: {formatBs(cuadre.retencionesPorCobrar)}</span>
             )}
           </div>
         </div>
@@ -131,11 +131,25 @@ export default function CuadreReport() {
         <div className="mb-4 border-b pb-2">
           <h2 className="font-bold text-sm border-b mb-2">5. VENTAS A CRÉDITO (CxC)</h2>
           <div className="grid grid-cols-4 gap-2 text-xs mb-2">
-            <div><span className="text-muted-foreground">Total Crédito:</span> {formatBs(cuadre.totalCreditoPOS * rate)}</div>
-            <div><span className="text-muted-foreground">Abonos:</span> <span className="text-green-700">{formatBs(cuadre.totalAbonosReal * rate)}</span></div>
-            <div><span className="text-muted-foreground">CxC Pendiente:</span> <span className="text-amber-700">{formatBs(cuadre.totalCxCPendiente * rate)}</span></div>
-            <div><span className="text-muted-foreground">Saldo a Favor:</span> {formatBs(cuadre.totalSaldoFavorReal * rate)}</div>
+            <div><span className="text-muted-foreground">Total Crédito:</span> {formatBs(cuadre.totalCreditoPOS)}</div>
+            <div><span className="text-muted-foreground">Abonos:</span> <span className="text-green-700">{formatBs(cuadre.totalAbonosReal)}</span></div>
+            <div><span className="text-muted-foreground">CxC Pendiente:</span> <span className="text-amber-700">{formatBs(cuadre.totalCxCPendiente)}</span></div>
+            <div><span className="text-muted-foreground">Saldo a Favor:</span> {formatBs(cuadre.totalSaldoFavorReal)}</div>
           </div>
+          {/* Detalle CxC Pendientes */}
+          {cuadre.creditSales && cuadre.creditSales.filter((c: any) => c.residual > 0).length > 0 && (
+            <div className="mt-2 text-xs">
+              <span className="font-medium">Detalle CxC Pendientes:</span>
+              <div className="grid grid-cols-1 gap-1 mt-1">
+                {cuadre.creditSales.filter((c: any) => c.residual > 0).map((c: any, i: number) => (
+                  <div key={i} className="flex justify-between">
+                    <span>{c.invoiceNumber} — {c.partner}</span>
+                    <span className="text-amber-700">{formatBs(c.residual * rate)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 8. RESUMEN DEL CUADRE - Completo como en formulario */}
@@ -145,34 +159,34 @@ export default function CuadreReport() {
             <div className="border p-2">
               <div className="font-bold border-b mb-2">SEGÚN ODOO POS</div>
               <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(cuadre.totalMetodosReal)}</span></div>
-              <div className="flex justify-between"><span>Retenciones IVA:</span><span>{formatBs(cuadre.totalRetencionesPOS * rate)}</span></div>
-              <div className="flex justify-between"><span>Ventas a crédito:</span><span>{formatBs(cuadre.totalCreditoPOS * rate)}</span></div>
-              <div className="flex justify-between"><span>Saldos a favor:</span><span>{formatBs(cuadre.totalSaldoFavorPOS * rate)}</span></div>
+              <div className="flex justify-between"><span>Retenciones IVA:</span><span>{formatBs(cuadre.totalRetencionesPOS)}</span></div>
+              <div className="flex justify-between"><span>Ventas a crédito:</span><span>{formatBs(cuadre.totalCreditoPOS)}</span></div>
+              <div className="flex justify-between"><span>Saldos a favor:</span><span>{formatBs(cuadre.totalSaldoFavorPOS)}</span></div>
               {cuadre.totalDeducciones > 0 && (
                 <div className="flex justify-between"><span>Deducciones:</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
               )}
               <div className="flex justify-between font-bold border-t mt-1 pt-1">
                 <span>TOTAL POS:</span>
-                <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesPOS * rate + cuadre.totalCreditoPOS * rate + cuadre.totalSaldoFavorPOS * rate + cuadre.totalDeducciones)}</span>
+                <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS + cuadre.totalDeducciones)}</span>
               </div>
             </div>
             <div className="border p-2">
               <div className="font-bold border-b mb-2">VERIFICADO REAL</div>
               <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(cuadre.totalMetodosReal)}</span></div>
-              <div className="flex justify-between"><span>Retenciones reg:</span><span>{formatBs(cuadre.totalRetencionesReal * rate)}</span></div>
+              <div className="flex justify-between"><span>Retenciones reg:</span><span>{formatBs(cuadre.totalRetencionesReal)}</span></div>
               {cuadre.retencionesPorCobrar > 0 && (
-                <div className="flex justify-between text-amber-600"><span>Retenc. x cobrar:</span><span>{formatBs(cuadre.retencionesPorCobrar * rate)}</span></div>
+                <div className="flex justify-between text-amber-600"><span>Retenc. x cobrar:</span><span>{formatBs(cuadre.retencionesPorCobrar)}</span></div>
               )}
-              <div className="flex justify-between text-green-700"><span>Abonos crédito:</span><span>{formatBs(cuadre.totalAbonosReal * rate)}</span></div>
-              <div className="flex justify-between text-amber-700"><span>CxC pendientes:</span><span>{formatBs(cuadre.totalCxCPendiente * rate)}</span></div>
-              <div className="flex justify-between"><span>Saldos a favor:</span><span>{formatBs(cuadre.totalSaldoFavorReal * rate)}</span></div>
+              <div className="flex justify-between text-green-700"><span>Abonos crédito:</span><span>{formatBs(cuadre.totalAbonosReal)}</span></div>
+              <div className="flex justify-between text-amber-700"><span>CxC pendientes:</span><span>{formatBs(cuadre.totalCxCPendiente)}</span></div>
+              <div className="flex justify-between"><span>Saldos a favor:</span><span>{formatBs(cuadre.totalSaldoFavorReal)}</span></div>
               {cuadre.totalDeducciones > 0 && (
                 <div className="flex justify-between"><span>Deducciones:</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
               )}
               <div className="flex justify-between"><span>Ajustes manuales:</span><span>{formatBs(cuadre.totalAjustesManuales)}</span></div>
               <div className="flex justify-between font-bold border-t mt-1 pt-1">
                 <span>TOTAL REAL:</span>
-                <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesReal * rate + cuadre.totalAbonosReal * rate + cuadre.totalCxCPendiente * rate + cuadre.totalSaldoFavorReal * rate + cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</span>
+                <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesReal + cuadre.totalAbonosReal + cuadre.totalCxCPendiente + cuadre.totalSaldoFavorReal + cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</span>
               </div>
             </div>
           </div>
