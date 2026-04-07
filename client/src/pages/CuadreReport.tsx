@@ -3,417 +3,155 @@ import { useQuery } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { formatBs, formatUSD, getStatusLabel, formatDateTime } from "@/lib/utils";
-import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow, SaldoFavorRow } from "@shared/schema";
+import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow } from "@shared/schema";
 import { ArrowLeft, Printer } from "lucide-react";
-
-// Method name display overrides (CASHEA companion methods have wrong names in Odoo)
-const METHOD_NAME_OVERRIDES: Record<number, string> = {
-  38: "P.Movil BNC",
-  42: "PXC Cashea",
-};
-
-// Same IDs used in CuadreForm for filtering
-const RETENCION_IVA_METHOD_ID = 26;
-const CREDITO_METHOD_IDS = [14, 33];
-const SALDO_FAVOR_METHOD_ID = 25;
-const SECTION3_EXCLUDED_IDS = new Set([RETENCION_IVA_METHOD_ID, ...CREDITO_METHOD_IDS, SALDO_FAVOR_METHOD_ID]);
-
-function isDeliveryOrDiferencia(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.includes("delivery") || lower.includes("diferencia");
-}
-
-function getMethodDisplayName(methodId: number, methodName: string): string {
-  return METHOD_NAME_OVERRIDES[methodId] || methodName;
-}
-
-function getPaymentStateLabel(state: string): string {
-  if (state === "paid") return "Pagada";
-  if (state === "partial") return "Parcial";
-  return "Pendiente";
-}
-
-function getPaymentStateBadgeClass(state: string): string {
-  if (state === "paid") return "bg-green-100 text-green-700";
-  if (state === "partial") return "bg-yellow-100 text-yellow-700";
-  return "bg-gray-100 text-gray-500";
-}
 
 export default function CuadreReport() {
   const [, params] = useRoute("/cuadre/:id/report");
   const [, setLocation] = useLocation();
   const id = params?.id;
 
-  // FIXED: queryKey uses /api/cuadres/:id (with 's')
   const {
-  data: cuadre,
-  isLoading,
-  error,
-} = useQuery({
-  queryKey: [`/api/cuadres/${id}`],
-  enabled: !!id,
-  staleTime: 0,
-  refetchOnWindowFocus: true,
-  refetchOnReconnect: true,
-  queryFn: async () => {
-    const response = await fetch(`/api/cuadres/${id}`, {
-      method: "GET",
-      credentials: "include",
-      headers: {
-        Accept: "application/json",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-      },
-    });
+    data: cuadre,
+    isLoading,
+  } = useQuery({
+    queryKey: [`/api/cuadres/${id}`],
+    enabled: !!id,
+    staleTime: 0,
+    queryFn: async () => {
+      const response = await fetch(`/api/cuadres/${id}`);
+      if (!response.ok) throw new Error("Error al cargar cuadre");
+      return response.json();
+    },
+  });
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(
-        `No se pudo obtener el cuadre (${response.status}) ${text || ""}`.trim()
-      );
-    }
+  const rate = cuadre?.tasaDia || 1;
 
-    return response.json();
-  },
-});
-
-  const rate = cuadre?.tasa || cuadre?.tasaDia || 1;
-
-  // Calculamos totales para la sección 3 (Resumen de Métodos)
-  const section3Methods = useMemo(() => {
-    if (!cuadre?.metodos) return [];
-    return cuadre.metodos.filter(m => !SECTION3_EXCLUDED_IDS.has(m.methodId));
-  }, [cuadre?.metodos]);
-
-  if (isLoading) return <div className="p-8 text-center">Cargando reporte...</div>;
+  if (isLoading) return <div className="p-8 text-center">Cargando...</div>;
   if (!cuadre) return <div className="p-8 text-center">Cuadre no encontrado</div>;
 
   return (
-    <div className="min-h-screen bg-gray-100 pb-12">
-      <div className="max-w-4xl mx-auto p-4 flex justify-between items-center no-print">
-        <Button variant="ghost" onClick={() => setLocation(`/cuadre/${id}`)}>
-          <ArrowLeft className="h-4 w-4 mr-2" /> Volver
+    <div className="min-h-screen bg-gray-100">
+      <div className="max-w-[210mm] mx-auto p-4 flex justify-between items-center no-print">
+        <Button variant="ghost" size="sm" onClick={() => setLocation(`/cuadre/${id}`)}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Volver
         </Button>
-        <Button onClick={() => window.print()}>
-          <Printer className="h-4 w-4 mr-2" /> Imprimir
+        <Button size="sm" onClick={() => window.print()}>
+          <Printer className="h-4 w-4 mr-1" /> Imprimir
         </Button>
       </div>
 
-      <div className="max-w-4xl mx-auto bg-white shadow-lg p-8 print:shadow-none print:p-0" id="report-content">
-        {/* Encabezado del Reporte */}
-        <div className="flex justify-between items-start mb-6">
+      <div className="max-w-[210mm] mx-auto bg-white p-4 print:p-0" id="report-content" style={{ fontSize: '10px' }}>
+        {/* Encabezado */}
+        <div className="flex justify-between items-center mb-3 border-b pb-2">
           <div>
-            <h1 className="text-2xl font-bold uppercase">Cuadre de Caja</h1>
-            <p className="text-sm text-muted-foreground">ID: {cuadre.id} | Estado: {getStatusLabel(cuadre.estado)}</p>
+            <h1 className="text-lg font-bold uppercase">Cuadre de Caja</h1>
+            <p className="text-xs">{cuadre.caja} - {cuadre.fecha}</p>
           </div>
-          <div className="text-right">
-            <p className="font-bold">{cuadre.caja}</p>
-            <p className="text-sm">{formatDateTime(cuadre.fecha)}</p>
-            <p className="text-sm font-medium">Tasa: {formatBs(rate)}</p>
+          <div className="text-right text-xs">
+            <p className="font-bold">Z: {cuadre.zNumero}</p>
+            <p>{getStatusLabel(cuadre.estado)}</p>
+            <p>Tasa: {formatBs(rate)}</p>
           </div>
         </div>
 
-        {/* 1. Resumen Fiscal */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">1. Resumen de Ventas (Fiscal)</h2>
-        {cuadre.fiscalSummary ? (
-          <div className="space-y-3 mb-6">
-            {/* Info cajero y maquina */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm bg-gray-50 p-3 rounded">
-              <div>
-                <span className="text-muted-foreground text-xs block">Cajero</span>
-                <span className="font-medium">{cuadre.cajero || "—"}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground text-xs block">Serial Impresora</span>
-                <span className="font-medium">{cuadre.serialMachine || "—"}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground text-xs block">Reporte Z</span>
-                <span className="font-medium">{cuadre.zNumero || "—"}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground text-xs block">Diario Fiscal</span>
-                <span className="font-medium">{cuadre.fiscalSummary.journalCode}</span>
-              </div>
-            </div>
-            
-            {/* Rango de facturas */}
-            <div className="text-sm">
-              <span className="text-muted-foreground">Facturas: </span>
-              <span className="font-medium">{cuadre.fiscalSummary.firstInvoice || "—"}</span>
-              {cuadre.fiscalSummary.firstInvoice !== cuadre.fiscalSummary.lastInvoice && (
-                <span> - {cuadre.fiscalSummary.lastInvoice}</span>
-              )}
-              <span className="ml-3 text-muted-foreground">({cuadre.fiscalSummary.invoiceCount || 0} facturas)</span>
-            </div>
-            
-            {/* Notas de credito si hay */}
-            {cuadre.fiscalSummary.ncCount > 0 && (
-              <div className="text-sm">
-                <span className="text-muted-foreground">Notas de Crédito: </span>
-                <span className="font-medium text-red-600">{cuadre.fiscalSummary.firstNC || "—"}</span>
-                {cuadre.fiscalSummary.firstNC !== cuadre.fiscalSummary.lastNC && (
-                  <span> - {cuadre.fiscalSummary.lastNC}</span>
-                )}
-                <span className="ml-3 text-muted-foreground">({cuadre.fiscalSummary.ncCount} NC)</span>
-              </div>
-            )}
-
-            {/* Montos */}
-            <div className="grid grid-cols-2 gap-x-8 gap-y-1 mt-2 pt-2 border-t">
-              <div className="flex justify-between text-sm">
-                <span>Base Imponible (USD):</span>
-                <span className="font-medium">{formatUSD(cuadre.fiscalSummary.totalUSD - cuadre.fiscalSummary.totalTaxUSD)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span>IVA (USD):</span>
-                <span className="font-medium">{formatUSD(cuadre.fiscalSummary.totalTaxUSD)}</span>
-              </div>
-              <div className="flex justify-between text-sm border-t pt-1 font-bold">
-                <span>Total Ventas (USD):</span>
-                <span>{formatUSD(cuadre.fiscalSummary.totalUSD)}</span>
-              </div>
-              <div className="flex justify-between text-sm border-t pt-1 font-bold">
-                <span>Total Ventas (Bs):</span>
-                <span>{formatBs(cuadre.fiscalSummary.totalVES)}</span>
-              </div>
-            </div>
+        {/* Sección 1: Datos del Reporte Z */}
+        <div className="mb-3">
+          <h2 className="font-bold text-xs border-b mb-1">1. DATOS REPORTE Z</h2>
+          <div className="grid grid-cols-5 gap-1 text-xs">
+            <div><span className="text-muted-foreground">Cajero:</span> {cuadre.cajero}</div>
+            <div><span className="text-muted-foreground">Serial:</span> {cuadre.serialMachine || cuadre.maquinaFiscal}</div>
+            <div><span className="text-muted-foreground">Facturas:</span> {cuadre.primeraFacturaZ} - {cuadre.ultimaFacturaZ}</div>
+            <div><span className="text-muted-foreground">NC:</span> {cuadre.primeraNCZ || '-'} - {cuadre.ultimaNCZ || '-'}</div>
+            <div><span className="text-muted-foreground">Venta Neta:</span> {formatBs(cuadre.ventaNetaZ)}</div>
           </div>
-        ) : (
-          <p className="text-xs text-muted-foreground italic mb-6">Sin resumen fiscal disponible</p>
-        )}
-
-        {/* 2. IGTF */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">2. IGTF Percibido</h2>
-        <div className="flex justify-between text-sm mb-6">
-          <span>Total IGTF (Bs):</span>
-          <span className="font-medium">{formatBs(cuadre.igtfZ * rate)}</span>
+          <div className="grid grid-cols-4 gap-1 text-xs mt-1">
+            <div><span className="text-muted-foreground">Venta Bruta:</span> {formatBs(cuadre.ventaBrutaZ)}</div>
+            <div><span className="text-muted-foreground">Notas Crédito:</span> {formatBs(cuadre.notasCreditoZ)}</div>
+            <div><span className="text-muted-foreground">Base Imponible:</span> {formatBs(cuadre.baseImponibleZ)}</div>
+            <div><span className="text-muted-foreground">IVA:</span> {formatBs(cuadre.ivaZ)}</div>
+            <div><span className="text-muted-foreground">IGTF:</span> {formatBs(cuadre.igtfZ)}</div>
+            <div><span className="text-muted-foreground">Exento:</span> {formatBs(cuadre.exentoZ)}</div>
+          </div>
         </div>
 
-        {/* 3. Métodos de Pago */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">3. Resumen por Métodos de Pago</h2>
-        <table className="w-full mb-6 border-collapse">
-          <thead>
-            <tr className="border-b bg-gray-50">
-              <th className="text-left py-1 px-2 text-sm font-medium text-gray-500">Método</th>
-              <th className="text-right py-1 px-2 text-sm font-medium text-gray-500">Monto (USD)</th>
-              <th className="text-right py-1 px-2 text-sm font-medium text-gray-500">Monto (Bs)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {section3Methods.map((m, i) => (
-              <tr key={i} className="border-b">
-                <td className="py-1 px-2 text-sm">{getMethodDisplayName(m.metodoId, m.metodoNombre)}</td>
-                <td className="py-1 px-2 text-right text-sm">{formatUSD(m.montoPOS_USD)}</td>
-                <td className="py-1 px-2 text-right text-sm">{formatBs(m.montoPOS_Bs)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* Sección 3: Métodos de Pago - Solo totales */}
+        <div className="mb-3">
+          <h2 className="font-bold text-xs border-b mb-1">3. MÉTODOS DE PAGO</h2>
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <div><span className="text-muted-foreground">Total POS:</span> {formatBs(cuadre.totalMetodosReal)}</div>
+            <div><span className="text-muted-foreground">Retenciones:</span> {formatBs(cuadre.totalRetencionesReal * rate)}</div>
+            <div><span className="text-muted-foreground">Ventas Crédito:</span> {formatBs(cuadre.totalCreditoPOS * rate)}</div>
+          </div>
+        </div>
 
-        {/* 4. Retenciones IVA */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">4. Retenciones IVA</h2>
-        <div className="flex justify-between text-sm mb-6">
-          <span>Total Retenciones (Bs):</span>
-          <span className="font-medium">
-            {formatBs((cuadre.retenciones?.reduce((sum, r) => sum + r.retentionAmount, 0) || 0) * rate)}
+        {/* Sección 5: CxC - Resumen */}
+        <div className="mb-3">
+          <h2 className="font-bold text-xs border-b mb-1">5. VENTAS A CRÉDITO (CxC)</h2>
+          <div className="grid grid-cols-4 gap-2 text-xs">
+            <div><span className="text-muted-foreground">Total:</span> {formatBs(cuadre.totalCreditoPOS * rate)}</div>
+            <div><span className="text-muted-foreground">Abonos:</span> {formatBs(cuadre.totalAbonosReal * rate)}</div>
+            <div><span className="text-muted-foreground">CxC Pendiente:</span> {formatBs(cuadre.totalCxCPendiente * rate)}</div>
+            <div><span className="text-muted-foreground">Saldo Fav:</span> {formatBs(cuadre.totalSaldoFavorReal * rate)}</div>
+          </div>
+        </div>
+
+        {/* Sección 8: Resumen del Cuadre */}
+        <div className="mb-3">
+          <h2 className="font-bold text-xs border-b mb-1">8. RESUMEN DEL CUADRE</h2>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="border p-1">
+              <div className="font-bold border-b mb-1">SEGÚN ODOO POS</div>
+              <div className="flex justify-between"><span>Pagos:</span><span>{formatBs(cuadre.totalMetodosReal)}</span></div>
+              <div className="flex justify-between"><span>Retenciones:</span><span>{formatBs(cuadre.totalRetencionesPOS * rate)}</span></div>
+              <div className="flex justify-between"><span>Crédito:</span><span>{formatBs(cuadre.totalCreditoPOS * rate)}</span></div>
+              <div className="flex justify-between"><span>Saldo Fav:</span><span>{formatBs(cuadre.totalSaldoFavorPOS * rate)}</span></div>
+              <div className="flex justify-between"><span>Deducciones:</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
+              <div className="flex justify-between font-bold border-t"><span>TOTAL:</span><span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesPOS * rate + cuadre.totalCreditoPOS * rate + cuadre.totalSaldoFavorPOS * rate + cuadre.totalDeducciones)}</span></div>
+            </div>
+            <div className="border p-1">
+              <div className="font-bold border-b mb-1">VERIFICADO REAL</div>
+              <div className="flex justify-between"><span>Pagos:</span><span>{formatBs(cuadre.totalMetodosReal)}</span></div>
+              <div className="flex justify-between"><span>Retenc. Reg:</span><span>{formatBs(cuadre.totalRetencionesReal * rate)}</span></div>
+              <div className="flex justify-between"><span>Abonos:</span><span>{formatBs(cuadre.totalAbonosReal * rate)}</span></div>
+              <div className="flex justify-between"><span>CxC Pend:</span><span>{formatBs(cuadre.totalCxCPendiente * rate)}</span></div>
+              <div className="flex justify-between"><span>Saldo Fav:</span><span>{formatBs(cuadre.totalSaldoFavorReal * rate)}</span></div>
+              <div className="flex justify-between"><span>Deducc:</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
+              <div className="flex justify-between"><span>Ajustes:</span><span>{formatBs(cuadre.totalAjustesManuales)}</span></div>
+              <div className="flex justify-between font-bold border-t"><span>TOTAL:</span><span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesReal * rate + cuadre.totalAbonosReal * rate + cuadre.totalCxCPendiente * rate + cuadre.totalSaldoFavorReal * rate + cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</span></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Diferencia */}
+        <div className="mb-3 text-center">
+          <span className={`font-bold text-sm px-4 py-1 ${Math.abs(cuadre.diferencia) < 1 ? 'bg-green-100' : cuadre.diferencia > 0 ? 'bg-green-100' : 'bg-red-100'}`}>
+            DIFERENCIA: {formatBs(cuadre.diferencia)}
           </span>
         </div>
 
-        {/* 5. Ventas a Crédito - Solo resumen de abonos y CXC pendientes */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">5. Ventas a Crédito (CxC)</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-          <div className="bg-gray-50 p-3 rounded">
-            <p className="text-xs text-muted-foreground uppercase">Total Facturado</p>
-            <p className="text-lg font-bold">
-              {formatBs((cuadre.creditSales?.reduce((sum, c) => sum + c.invoiceTotal * rate, 0) || 0))}
-            </p>
-          </div>
-          <div className="bg-gray-50 p-3 rounded">
-            <p className="text-xs text-muted-foreground uppercase">Total Abonado</p>
-            <p className="text-lg font-bold text-green-600">
-              {formatBs((cuadre.creditSales?.reduce((sum, c) => sum + (c.abonoAmountBs > 0 ? c.abonoAmountBs : c.abonoAmount * rate), 0) || 0))}
-            </p>
-          </div>
-          <div className="bg-gray-50 p-3 rounded">
-            <p className="text-xs text-muted-foreground uppercase">CxC Pendiente</p>
-            <p className="text-lg font-bold text-red-600">
-              {formatBs((cuadre.creditSales?.filter(c => c.residual > 0).reduce((sum, c) => sum + c.residual * rate, 0) || 0))}
-            </p>
-          </div>
-          <div className="bg-gray-50 p-3 rounded">
-            <p className="text-xs text-muted-foreground uppercase">Saldo a Favor</p>
-            <p className="text-lg font-bold text-amber-600">
-              {formatBs((cuadre.creditSales?.filter(c => c.generaSaldoFavor).reduce((sum, c) => sum + Math.abs(c.residual) * rate, 0) || 0))}
-            </p>
-          </div>
-        </div>
-        {/* Detalle solo de CXC pendientes */}
-        {(cuadre.creditSales?.filter(c => c.residual > 0).length ?? 0) > 0 && (
-          <div className="overflow-x-auto mb-6">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b bg-gray-50">
-                  <th className="text-left py-1 px-2 text-xs font-medium text-gray-500">Factura</th>
-                  <th className="text-left py-1 px-2 text-xs font-medium text-gray-500">Cliente</th>
-                  <th className="text-right py-1 px-2 text-xs font-medium text-gray-500">Total (Bs)</th>
-                  <th className="text-right py-1 px-2 text-xs font-medium text-gray-500">Abono (Bs)</th>
-                  <th className="text-right py-1 px-2 text-xs font-medium text-gray-500">Pendiente (Bs)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cuadre.creditSales!.filter(c => c.residual > 0).map((c, i) => (
-                  <tr key={i} className="border-b">
-                    <td className="py-1 px-2 text-xs">{c.invoiceNumber}</td>
-                    <td className="py-1 px-2 text-xs truncate max-w-[100px]">{c.partner}</td>
-                    <td className="py-1 px-2 text-xs text-right">{formatBs(c.invoiceTotal * rate)}</td>
-                    <td className="py-1 px-2 text-xs text-right">
-                      {formatBs(c.abonoAmountBs > 0 ? c.abonoAmountBs : c.abonoAmount * rate)}
-                    </td>
-                    <td className="py-1 px-2 text-xs text-right font-medium text-red-600">
-                      {formatBs(c.residual * rate)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* Observaciones */}
+        {cuadre.observaciones && (
+          <div className="mb-3">
+            <h2 className="font-bold text-xs border-b mb-1">OBSERVACIONES</h2>
+            <p className="text-xs">{cuadre.observaciones}</p>
           </div>
         )}
 
-        {/* 6. Saldos a Favor - Solo totales */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">6. Saldos a Favor</h2>
-        <div className="flex justify-between text-sm mb-6">
-          <span>Total Saldos a Favor (Bs):</span>
-          <span className="font-medium text-amber-600">
-            {formatBs((cuadre.saldosFavor?.reduce((sum, s) => sum + s.amountBs, 0) || 0))}
-          </span>
-        </div>
-
-        {/* 8. Resumen del Cuadre - Completo */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">8. Resumen del Cuadre</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 p-4 bg-gray-50 rounded">
-          {/* SEGÚN ODOO POS */}
-          <div className="space-y-2">
-            <h3 className="font-semibold text-sm border-b pb-1">SEGÚN ODOO POS</h3>
-            <div className="flex justify-between text-sm">
-              <span>Pagos directos:</span>
-              <span className="font-medium">{formatBs(cuadre.totalMetodosReal)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Retenciones IVA:</span>
-              <span className="font-medium">{formatBs(cuadre.totalRetencionesPOS * rate)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Ventas a crédito:</span>
-              <span className="font-medium">{formatBs(cuadre.totalCreditoPOS * rate)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Saldos a favor:</span>
-              <span className="font-medium">{formatBs(cuadre.totalSaldoFavorPOS * rate)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Deducciones:</span>
-              <span className="font-medium">{formatBs(cuadre.totalDeducciones)}</span>
-            </div>
-            <div className="flex justify-between text-sm font-bold border-t pt-1">
-              <span>TOTAL POS:</span>
-              <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesPOS * rate + cuadre.totalCreditoPOS * rate + cuadre.totalSaldoFavorPOS * rate + cuadre.totalDeducciones)}</span>
-            </div>
-          </div>
-
-          {/* VERIFICADO REAL */}
-          <div className="space-y-2">
-            <h3 className="font-semibold text-sm border-b pb-1">VERIFICADO REAL</h3>
-            <div className="flex justify-between text-sm">
-              <span>Pagos directos:</span>
-              <span className="font-medium">{formatBs(cuadre.totalMetodosReal)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Retenciones registradas:</span>
-              <span className="font-medium">{formatBs(cuadre.totalRetencionesReal * rate)}</span>
-            </div>
-            {cuadre.retencionesPorCobrar > 0 && (
-              <div className="flex justify-between text-sm">
-                <span>Retenciones por cobrar:</span>
-                <span className="font-medium text-amber-600">{formatBs(cuadre.retencionesPorCobrar * rate)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-sm">
-              <span>Abonos crédito recibidos:</span>
-              <span className="font-medium text-green-700">{formatBs(cuadre.totalAbonosReal * rate)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>CxC pendientes:</span>
-              <span className="font-medium text-amber-700">{formatBs(cuadre.totalCxCPendiente * rate)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Saldos a favor:</span>
-              <span className="font-medium">{formatBs(cuadre.totalSaldoFavorReal * rate)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Deducciones:</span>
-              <span className="font-medium">{formatBs(cuadre.totalDeducciones)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Ajustes manuales:</span>
-              <span className="font-medium">{formatBs(cuadre.totalAjustesManuales)}</span>
-            </div>
-            <div className="flex justify-between text-sm font-bold border-t pt-1">
-              <span>TOTAL REAL:</span>
-              <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesReal * rate + cuadre.totalAbonosReal * rate + cuadre.totalCxCPendiente * rate + cuadre.totalSaldoFavorReal * rate + cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 7. Diferencia */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">7. Diferencia de Cuadre</h2>
-        <div className={`flex justify-between text-lg p-4 rounded mb-6 ${cuadre.diferencia < -1 ? "bg-red-50 text-red-700" : cuadre.diferencia > 1 ? "bg-green-50 text-green-700" : "bg-gray-50"}`}>
-          <span className="font-bold">Diferencia:</span>
-          <span className="font-bold">{formatBs(cuadre.diferencia)}</span>
-        </div>
-
-        {/* 9. Ajustes Manuales */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 mt-4 uppercase">9. Ajustes Manuales</h2>
-        {cuadre.ajustesManuales && cuadre.ajustesManuales.length > 0 ? (
-          <>
-            <div className="grid gap-1 mb-2">
-              {cuadre.ajustesManuales.map((a, i) => (
-                <div key={i} className="flex justify-between text-sm border-b py-1 border-dotted">
-                  <span>{a.descripcion || "Ajuste manual"}</span>
-                  <span className="font-medium">{formatBs(a.monto)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="text-right text-sm font-bold mt-2 mb-4">
-              Total ajustes: {formatBs(cuadre.totalAjustesManuales)}
-            </div>
-          </>
-        ) : (
-          <p className="text-xs text-muted-foreground mb-4 italic">Sin ajustes manuales</p>
-        )}
-
-        {/* 10. Observaciones */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 mt-4 uppercase">10. Observaciones</h2>
-        {cuadre.observaciones ? (
-          <p className="mb-6 text-sm">{cuadre.observaciones}</p>
-        ) : (
-          <p className="text-xs text-muted-foreground mb-6 italic">Sin observaciones</p>
-        )}
-
-        {/* Footer para Firmas */}
-        <div className="mt-12 grid grid-cols-2 gap-12 pt-4">
+        {/* Footer */}
+        <div className="mt-4 pt-2 border-t flex justify-between text-xs">
           <div className="text-center">
-            <div className="border-b border-black mb-1 h-12"></div>
-            <p className="text-xs font-bold uppercase">Cajero: {cuadre.cajero}</p>
+            <div className="border-b w-32 mb-1"></div>
+            <span>Cajero: {cuadre.cajero}</span>
           </div>
           <div className="text-center">
-            <div className="border-b border-black mb-1 h-12"></div>
-            <p className="text-xs font-bold uppercase">Supervisor</p>
+            <div className="border-b w-32 mb-1"></div>
+            <span>Supervisor</span>
           </div>
         </div>
-
+        
         {cuadre.cerradoPor && (
-          <p className="text-[10px] text-muted-foreground mt-8 text-center italic border-t pt-2">
+          <p className="text-[8px] text-center mt-2 text-muted-foreground">
             Cerrado por: {cuadre.cerradoPor} el {formatDateTime(cuadre.cerradoEn || "")}
           </p>
         )}
