@@ -123,9 +123,14 @@ export default function CuadreReport() {
                 <tr key={i} className="border-b">
                   <td className="py-1">{getMethodDisplayName(m.metodoId, m.metodoNombre)}</td>
                   <td className="text-right py-1">{formatBs(m.montoPOS_Bs)}</td>
-                  <td className="text-right py-1">{formatBs(m.montoReal_Bs || m.montoPOS_Bs)}</td>
+                  <td className="text-right py-1">{formatBs(m.montoReal_Bs || m.montoReal || m.montoPOS_Bs)}</td>
                 </tr>
               ))}
+              <tr className="font-bold bg-gray-50">
+                <td className="py-1">TOTAL</td>
+                <td className="text-right py-1">{formatBs(totalPOS_Pagos)}</td>
+                <td className="text-right py-1">{formatBs(totalReal_Pagos)}</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -167,13 +172,13 @@ export default function CuadreReport() {
           )}
         </div>
 
-        {/* 8. RESUMEN DEL CUADRE - EXACTO como formulario */}
+        {/* 8. RESUMEN DEL CUADRE - EXACTO como formulario sin recalcular */}
         <div className="mb-4 border-b pb-2">
           <h2 className="font-bold text-sm border-b mb-2">8. RESUMEN DEL CUADRE</h2>
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="border p-2">
               <div className="font-bold border-b mb-2">SEGÚN ODOO POS</div>
-              <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(cuadre.totalMetodosReal > 0 ? cuadre.totalMetodosReal : cuadre.totalMetodosReal)}</span></div>
+              <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(totalPOS_Pagos)}</span></div>
               <div className="flex justify-between"><span>Retenciones IVA:</span><span>{formatBs(cuadre.totalRetencionesPOS)}</span></div>
               <div className="flex justify-between"><span>Ventas a crédito:</span><span>{formatBs(cuadre.totalCreditoPOS)}</span></div>
               <div className="flex justify-between"><span>Saldos a favor:</span><span>{formatBs(cuadre.totalSaldoFavorPOS)}</span></div>
@@ -182,12 +187,12 @@ export default function CuadreReport() {
               )}
               <div className="flex justify-between font-bold border-t mt-1 pt-1">
                 <span>TOTAL POS:</span>
-                <span>{formatBs(totalPOS_Pagos + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS + cuadre.totalDeducciones)}</span>
+                <span>{formatBs(cuadre.totalMetodosReal)}</span>
               </div>
             </div>
             <div className="border p-2">
               <div className="font-bold border-b mb-2">VERIFICADO REAL</div>
-              <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(cuadre.totalMetodosReal)}</span></div>
+              <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(totalReal_Pagos)}</span></div>
               <div className="flex justify-between"><span>Retenciones registradas:</span><span>{formatBs(cuadre.totalRetencionesReal)}</span></div>
               {cuadre.retencionesPorCobrar > 0 && (
                 <div className="flex justify-between text-amber-600"><span>Retenciones por cobrar:</span><span>{formatBs(cuadre.retencionesPorCobrar)}</span></div>
@@ -201,7 +206,7 @@ export default function CuadreReport() {
               <div className="flex justify-between"><span>Ajustes manuales:</span><span>{formatBs(cuadre.totalAjustesManuales)}</span></div>
               <div className="flex justify-between font-bold border-t mt-1 pt-1">
                 <span>TOTAL VERIFICADO:</span>
-                <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesReal + cuadre.totalAbonosReal + cuadre.totalCxCPendiente + cuadre.totalSaldoFavorReal + cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</span>
+                <span>{formatBs(cuadre.totalJustificado)}</span>
               </div>
             </div>
           </div>
@@ -210,7 +215,7 @@ export default function CuadreReport() {
           <div className="mt-3 text-xs border-t pt-2">
             <div className="flex justify-between font-bold">
               <span>Total Métodos + Deducciones (Bs):</span>
-              <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalDeducciones)}</span>
+              <span>{formatBs(cuadre.totalJustificado)}</span>
             </div>
           </div>
         </div>
