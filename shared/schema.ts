@@ -217,6 +217,8 @@ export const cuadreSchema = z.object({
   totalSaldoFavorPOS: z.number(),
   totalSaldoFavorReal: z.number(),
   totalAjustesManuales: z.number(),
+  totalMetodosPOS: z.number().optional(),  // From form display (calculated internally)
+  totalJustificadoReal: z.number().optional(), // From form display (calculated internally)
 
   estado: z.enum(["cuadrado", "descuadrado", "pendiente"]),
   observaciones: z.string(),
@@ -274,6 +276,10 @@ export const createCuadreSchema = z.object({
   totalSaldoFavorPOS: z.number().optional().default(0),
   totalSaldoFavorReal: z.number().optional().default(0),
   totalAjustesManuales: z.number().optional().default(0),
+
+  // Values directly from form display (calculated internally)
+  totalMetodosPOS: z.number().optional().default(0),
+  totalJustificadoReal: z.number().optional().default(0),
 
   // NUEVO: observación de saldos a favor
   saldoFavorObs: z.string().optional(),

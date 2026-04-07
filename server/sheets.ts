@@ -227,6 +227,8 @@ function rowToCuadre(row: string[]): Cuadre {
     totalAjustesManuales: Number(row[37]) || 0,
     retencionesPorCobrar: Number(row[40]) || 0,
     saldoFavorObs: row[41] || "",
+    totalMetodosPOS: Number(row[42]) || 0,
+    totalJustificadoReal: Number(row[43]) || 0,
   };
 }
 
@@ -274,6 +276,8 @@ function cuadreToRow(c: Cuadre): any[] {
     c.ultimaNCZ,
     c.retencionesPorCobrar || 0,
     c.saldoFavorObs || "",
+    c.totalMetodosPOS || 0,
+    c.totalJustificadoReal || 0,
   ];
 }
 
