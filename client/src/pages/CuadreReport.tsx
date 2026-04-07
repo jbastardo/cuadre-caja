@@ -116,22 +116,67 @@ export default function CuadreReport() {
         {/* 1. Resumen Fiscal */}
         <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">1. Resumen de Ventas (Fiscal)</h2>
         {cuadre.fiscalSummary ? (
-          <div className="grid grid-cols-2 gap-x-8 gap-y-1 mb-6">
-            <div className="flex justify-between text-sm">
-              <span>Base Imponible (USD):</span>
-              <span className="font-medium">{formatUSD(cuadre.fiscalSummary.totalUSD - cuadre.fiscalSummary.totalTaxUSD)}</span>
+          <div className="space-y-3 mb-6">
+            {/* Info cajero y maquina */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm bg-gray-50 p-3 rounded">
+              <div>
+                <span className="text-muted-foreground text-xs block">Cajero</span>
+                <span className="font-medium">{cuadre.cajero || "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground text-xs block">Serial Impresora</span>
+                <span className="font-medium">{cuadre.serialMachine || "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground text-xs block">Reporte Z</span>
+                <span className="font-medium">{cuadre.zNumero || "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground text-xs block">Diario Fiscal</span>
+                <span className="font-medium">{cuadre.fiscalSummary.journalCode}</span>
+              </div>
             </div>
-            <div className="flex justify-between text-sm">
-              <span>IVA (USD):</span>
-              <span className="font-medium">{formatUSD(cuadre.fiscalSummary.totalTaxUSD)}</span>
+            
+            {/* Rango de facturas */}
+            <div className="text-sm">
+              <span className="text-muted-foreground">Facturas: </span>
+              <span className="font-medium">{cuadre.fiscalSummary.firstInvoice || "—"}</span>
+              {cuadre.fiscalSummary.firstInvoice !== cuadre.fiscalSummary.lastInvoice && (
+                <span> - {cuadre.fiscalSummary.lastInvoice}</span>
+              )}
+              <span className="ml-3 text-muted-foreground">({cuadre.fiscalSummary.invoiceCount || 0} facturas)</span>
             </div>
-            <div className="flex justify-between text-sm border-t pt-1 font-bold">
-              <span>Total Ventas (USD):</span>
-              <span>{formatUSD(cuadre.fiscalSummary.totalUSD)}</span>
-            </div>
-            <div className="flex justify-between text-sm border-t pt-1 font-bold">
-              <span>Total Ventas (Bs):</span>
-              <span>{formatBs(cuadre.fiscalSummary.totalVES)}</span>
+            
+            {/* Notas de credito si hay */}
+            {cuadre.fiscalSummary.ncCount > 0 && (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Notas de Crédito: </span>
+                <span className="font-medium text-red-600">{cuadre.fiscalSummary.firstNC || "—"}</span>
+                {cuadre.fiscalSummary.firstNC !== cuadre.fiscalSummary.lastNC && (
+                  <span> - {cuadre.fiscalSummary.lastNC}</span>
+                )}
+                <span className="ml-3 text-muted-foreground">({cuadre.fiscalSummary.ncCount} NC)</span>
+              </div>
+            )}
+
+            {/* Montos */}
+            <div className="grid grid-cols-2 gap-x-8 gap-y-1 mt-2 pt-2 border-t">
+              <div className="flex justify-between text-sm">
+                <span>Base Imponible (USD):</span>
+                <span className="font-medium">{formatUSD(cuadre.fiscalSummary.totalUSD - cuadre.fiscalSummary.totalTaxUSD)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>IVA (USD):</span>
+                <span className="font-medium">{formatUSD(cuadre.fiscalSummary.totalTaxUSD)}</span>
+              </div>
+              <div className="flex justify-between text-sm border-t pt-1 font-bold">
+                <span>Total Ventas (USD):</span>
+                <span>{formatUSD(cuadre.fiscalSummary.totalUSD)}</span>
+              </div>
+              <div className="flex justify-between text-sm border-t pt-1 font-bold">
+                <span>Total Ventas (Bs):</span>
+                <span>{formatBs(cuadre.fiscalSummary.totalVES)}</span>
+              </div>
             </div>
           </div>
         ) : (
