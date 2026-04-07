@@ -222,7 +222,13 @@ export default function CuadreReport() {
 
         {/* 5. Ventas a Crédito - Solo resumen de abonos y CXC pendientes */}
         <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">5. Ventas a Crédito (CxC)</h2>
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <div className="bg-gray-50 p-3 rounded">
+            <p className="text-xs text-muted-foreground uppercase">Total Facturado</p>
+            <p className="text-lg font-bold">
+              {formatBs((cuadre.creditSales?.reduce((sum, c) => sum + c.invoiceTotal * rate, 0) || 0))}
+            </p>
+          </div>
           <div className="bg-gray-50 p-3 rounded">
             <p className="text-xs text-muted-foreground uppercase">Total Abonado</p>
             <p className="text-lg font-bold text-green-600">
@@ -233,6 +239,12 @@ export default function CuadreReport() {
             <p className="text-xs text-muted-foreground uppercase">CxC Pendiente</p>
             <p className="text-lg font-bold text-red-600">
               {formatBs((cuadre.creditSales?.filter(c => c.residual > 0).reduce((sum, c) => sum + c.residual * rate, 0) || 0))}
+            </p>
+          </div>
+          <div className="bg-gray-50 p-3 rounded">
+            <p className="text-xs text-muted-foreground uppercase">Saldo a Favor</p>
+            <p className="text-lg font-bold text-amber-600">
+              {formatBs((cuadre.creditSales?.filter(c => c.generaSaldoFavor).reduce((sum, c) => sum + Math.abs(c.residual) * rate, 0) || 0))}
             </p>
           </div>
         </div>
@@ -277,29 +289,87 @@ export default function CuadreReport() {
           </span>
         </div>
 
-        {/* 7. Cuadre Final */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">7. Cuadre Final (Diferencia)</h2>
-        <div className="grid grid-cols-2 gap-x-8 gap-y-1 mb-6">
-          <div className="flex justify-between text-sm">
-            <span>Total Recaudado Métodos (Bs):</span>
-            <span className="font-medium">{formatBs(cuadre.totalMetodosReal)}</span>
+        {/* 8. Resumen del Cuadre - Completo */}
+        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">8. Resumen del Cuadre</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 p-4 bg-gray-50 rounded">
+          {/* SEGÚN ODOO POS */}
+          <div className="space-y-2">
+            <h3 className="font-semibold text-sm border-b pb-1">SEGÚN ODOO POS</h3>
+            <div className="flex justify-between text-sm">
+              <span>Pagos directos:</span>
+              <span className="font-medium">{formatBs(cuadre.totalMetodosReal)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Retenciones IVA:</span>
+              <span className="font-medium">{formatBs(cuadre.totalRetencionesPOS * rate)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Ventas a crédito:</span>
+              <span className="font-medium">{formatBs(cuadre.totalCreditoPOS * rate)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Saldos a favor:</span>
+              <span className="font-medium">{formatBs(cuadre.totalSaldoFavorPOS * rate)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Deducciones:</span>
+              <span className="font-medium">{formatBs(cuadre.totalDeducciones)}</span>
+            </div>
+            <div className="flex justify-between text-sm font-bold border-t pt-1">
+              <span>TOTAL POS:</span>
+              <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesPOS * rate + cuadre.totalCreditoPOS * rate + cuadre.totalSaldoFavorPOS * rate + cuadre.totalDeducciones)}</span>
+            </div>
           </div>
-          <div className="flex justify-between text-sm">
-            <span>Total Odoo (Bs):</span>
-            <span className="font-medium">{formatBs(cuadre.totalOdooBs)}</span>
+
+          {/* VERIFICADO REAL */}
+          <div className="space-y-2">
+            <h3 className="font-semibold text-sm border-b pb-1">VERIFICADO REAL</h3>
+            <div className="flex justify-between text-sm">
+              <span>Pagos directos:</span>
+              <span className="font-medium">{formatBs(cuadre.totalMetodosReal)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Retenciones registradas:</span>
+              <span className="font-medium">{formatBs(cuadre.totalRetencionesReal * rate)}</span>
+            </div>
+            {cuadre.retencionesPorCobrar > 0 && (
+              <div className="flex justify-between text-sm">
+                <span>Retenciones por cobrar:</span>
+                <span className="font-medium text-amber-600">{formatBs(cuadre.retencionesPorCobrar * rate)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm">
+              <span>Abonos crédito recibidos:</span>
+              <span className="font-medium text-green-700">{formatBs(cuadre.totalAbonosReal * rate)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>CxC pendientes:</span>
+              <span className="font-medium text-amber-700">{formatBs(cuadre.totalCxCPendiente * rate)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Saldos a favor:</span>
+              <span className="font-medium">{formatBs(cuadre.totalSaldoFavorReal * rate)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Deducciones:</span>
+              <span className="font-medium">{formatBs(cuadre.totalDeducciones)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Ajustes manuales:</span>
+              <span className="font-medium">{formatBs(cuadre.totalAjustesManuales)}</span>
+            </div>
+            <div className="flex justify-between text-sm font-bold border-t pt-1">
+              <span>TOTAL REAL:</span>
+              <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesReal * rate + cuadre.totalAbonosReal * rate + cuadre.totalCxCPendiente * rate + cuadre.totalSaldoFavorReal * rate + cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</span>
+            </div>
           </div>
-          <div className="flex justify-between text-sm">
-            <span>Total Deducciones (Bs):</span>
-            <span className="font-medium">{formatBs(cuadre.totalDeducciones)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span>Saldos a Favor (Bs):</span>
-            <span className="font-medium text-amber-600">{formatBs(cuadre.totalSaldoFavorPOS * rate)}</span>
-          </div>
-          <div className={`flex justify-between text-sm border-t pt-1 font-bold ${cuadre.diferencia < -1 ? "text-red-600" : cuadre.diferencia > 1 ? "text-green-600" : ""}`}>
-            <span>Diferencia de Cuadre (Bs):</span>
-            <span>{formatBs(cuadre.diferencia)}</span>
-          </div>
+        </div>
+
+        {/* 7. Diferencia */}
+        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">7. Diferencia de Cuadre</h2>
+        <div className={`flex justify-between text-lg p-4 rounded mb-6 ${cuadre.diferencia < -1 ? "bg-red-50 text-red-700" : cuadre.diferencia > 1 ? "bg-green-50 text-green-700" : "bg-gray-50"}`}>
+          <span className="font-bold">Diferencia:</span>
+          <span className="font-bold">{formatBs(cuadre.diferencia)}</span>
         </div>
 
         {/* 9. Ajustes Manuales */}
