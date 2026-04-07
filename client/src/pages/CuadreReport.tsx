@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { formatBs, formatUSD, getStatusLabel, formatDateTime } from "@/lib/utils";
-import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow } from "@shared/schema";
+import { formatBs, getStatusLabel, formatDateTime } from "@/lib/utils";
+import type { CuadreDetail } from "@shared/schema";
 import { ArrowLeft, Printer } from "lucide-react";
 
 const METHOD_NAME_OVERRIDES: Record<number, string> = {
@@ -44,6 +44,21 @@ export default function CuadreReport() {
   const section3Methods = useMemo(() => {
     if (!cuadre?.metodos) return [];
     return cuadre.metodos.filter((m: any) => !SECTION3_EXCLUDED_IDS.has(m.methodId));
+  }, [cuadre?.metodos]);
+
+  // Calculate totals from metodos array directly
+  const totalPOS_Pagos = useMemo(() => {
+    if (!cuadre?.metodos) return 0;
+    return cuadre.metodos
+      .filter((m: any) => !SECTION3_EXCLUDED_IDS.has(m.methodId))
+      .reduce((sum: number, m: any) => sum + (m.montoPOS_Bs || 0), 0);
+  }, [cuadre?.metodos]);
+
+  const totalReal_Pagos = useMemo(() => {
+    if (!cuadre?.metodos) return 0;
+    return cuadre.metodos
+      .filter((m: any) => !SECTION3_EXCLUDED_IDS.has(m.methodId))
+      .reduce((sum: number, m: any) => sum + (m.montoReal_Bs || m.montoReal || 0), 0);
   }, [cuadre?.metodos]);
 
   if (isLoading) return <div className="p-8 text-center">Cargando...</div>;
@@ -152,51 +167,90 @@ export default function CuadreReport() {
           )}
         </div>
 
-        {/* 8. RESUMEN DEL CUADRE - Completo como en formulario */}
+        {/* 8. RESUMEN DEL CUADRE - EXACTO como formulario */}
         <div className="mb-4 border-b pb-2">
           <h2 className="font-bold text-sm border-b mb-2">8. RESUMEN DEL CUADRE</h2>
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="border p-2">
               <div className="font-bold border-b mb-2">SEGÚN ODOO POS</div>
-              <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(cuadre.totalMetodosReal)}</span></div>
+              <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(cuadre.totalMetodosReal > 0 ? cuadre.totalMetodosReal : cuadre.totalMetodosReal)}</span></div>
               <div className="flex justify-between"><span>Retenciones IVA:</span><span>{formatBs(cuadre.totalRetencionesPOS)}</span></div>
               <div className="flex justify-between"><span>Ventas a crédito:</span><span>{formatBs(cuadre.totalCreditoPOS)}</span></div>
               <div className="flex justify-between"><span>Saldos a favor:</span><span>{formatBs(cuadre.totalSaldoFavorPOS)}</span></div>
-              {cuadre.totalDeducciones > 0 && (
-                <div className="flex justify-between"><span>Deducciones:</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
+              {cuadre.totalDeducciones !== 0 && (
+                <div className="flex justify-between"><span>Deducciones (Delivery/Dif.):</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
               )}
               <div className="flex justify-between font-bold border-t mt-1 pt-1">
                 <span>TOTAL POS:</span>
-                <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS + cuadre.totalDeducciones)}</span>
+                <span>{formatBs(totalPOS_Pagos + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS + cuadre.totalDeducciones)}</span>
               </div>
             </div>
             <div className="border p-2">
               <div className="font-bold border-b mb-2">VERIFICADO REAL</div>
               <div className="flex justify-between"><span>Pagos directos:</span><span>{formatBs(cuadre.totalMetodosReal)}</span></div>
-              <div className="flex justify-between"><span>Retenciones reg:</span><span>{formatBs(cuadre.totalRetencionesReal)}</span></div>
+              <div className="flex justify-between"><span>Retenciones registradas:</span><span>{formatBs(cuadre.totalRetencionesReal)}</span></div>
               {cuadre.retencionesPorCobrar > 0 && (
-                <div className="flex justify-between text-amber-600"><span>Retenc. x cobrar:</span><span>{formatBs(cuadre.retencionesPorCobrar)}</span></div>
+                <div className="flex justify-between text-amber-600"><span>Retenciones por cobrar:</span><span>{formatBs(cuadre.retencionesPorCobrar)}</span></div>
               )}
-              <div className="flex justify-between text-green-700"><span>Abonos crédito:</span><span>{formatBs(cuadre.totalAbonosReal)}</span></div>
+              <div className="flex justify-between text-green-700"><span>Abonos crédito recibidos:</span><span>{formatBs(cuadre.totalAbonosReal)}</span></div>
               <div className="flex justify-between text-amber-700"><span>CxC pendientes:</span><span>{formatBs(cuadre.totalCxCPendiente)}</span></div>
               <div className="flex justify-between"><span>Saldos a favor:</span><span>{formatBs(cuadre.totalSaldoFavorReal)}</span></div>
-              {cuadre.totalDeducciones > 0 && (
-                <div className="flex justify-between"><span>Deducciones:</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
+              {cuadre.totalDeducciones !== 0 && (
+                <div className="flex justify-between"><span>Deducciones (Delivery/Dif.):</span><span>{formatBs(cuadre.totalDeducciones)}</span></div>
               )}
               <div className="flex justify-between"><span>Ajustes manuales:</span><span>{formatBs(cuadre.totalAjustesManuales)}</span></div>
               <div className="flex justify-between font-bold border-t mt-1 pt-1">
-                <span>TOTAL REAL:</span>
+                <span>TOTAL VERIFICADO:</span>
                 <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalRetencionesReal + cuadre.totalAbonosReal + cuadre.totalCxCPendiente + cuadre.totalSaldoFavorReal + cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</span>
               </div>
             </div>
           </div>
+          
+          {/* Total Métodos + Deducciones */}
+          <div className="mt-3 text-xs border-t pt-2">
+            <div className="flex justify-between font-bold">
+              <span>Total Métodos + Deducciones (Bs):</span>
+              <span>{formatBs(cuadre.totalMetodosReal + cuadre.totalDeducciones)}</span>
+            </div>
+          </div>
         </div>
 
-        {/* Diferencia */}
-        <div className="mb-4 text-center py-2 border-b">
-          <span className={`font-bold text-lg px-6 py-2 ${Math.abs(cuadre.diferencia) < 1 ? 'bg-green-100' : cuadre.diferencia > 0 ? 'bg-green-100' : 'bg-red-100'}`}>
-            DIFERENCIA: {formatBs(cuadre.diferencia)} (Vs Venta Neta Z: {formatBs(cuadre.ventaNetaZ)})
-          </span>
+        {/* Diferencia - Exacta como formulario */}
+        <div className="mb-4 border-b pb-2">
+          <div className="bg-blue-50 p-3 rounded">
+            <div className="text-sm font-bold mb-1">Venta Neta Z (Bs) — referencia fiscal:</div>
+            <div className="text-lg font-bold">{formatBs(cuadre.ventaNetaZ)}</div>
+          </div>
+          <div className="mt-2 text-center">
+            <div className="text-sm font-bold">Diferencia:</div>
+            <div className={`text-lg font-bold ${Math.abs(cuadre.diferencia) < 0.01 ? 'text-green-600' : cuadre.diferencia > 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatBs(cuadre.diferencia)}
+            </div>
+            <div className={`text-xs font-bold mt-1 ${Math.abs(cuadre.diferencia) < 0.01 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'} inline-block px-2 py-1 rounded`}>
+              {Math.abs(cuadre.diferencia) < 0.01 ? 'CUADRADO' : 'DESCUADRADO'}
+            </div>
+          </div>
+          {cuadre.diferencia !== 0 && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              {cuadre.diferencia > 0 ? (
+                <p><strong>¿Qué significa esta diferencia?</strong></p>
+              ) : (
+                <p><strong>¿Qué significa esta diferencia?</strong></p>
+              )}
+              {cuadre.diferencia > 0 ? (
+                <p>Sobra dinero (Bs {formatBs(cuadre.diferencia)}): Se justificó más de lo reportado en Z.</p>
+              ) : (
+                <p>Falta dinero (Bs {formatBs(Math.abs(cuadre.diferencia))}): Se justificó menos de lo reportado en Z.</p>
+              )}
+              <p className="mt-1">Posibles causas: pago duplicado, cobro no facturado, monto de método verificado mayor al real, o abono registrado que no corresponde al día.</p>
+              <p className="mt-1">Use la sección "Ajustes y Excepciones" para registrar diferencias que no se pueden conciliar automáticamente.</p>
+            </div>
+          )}
+          {cuadre.difCambiaria > 0 && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              <span>Dif. Cambiaria (info contabilidad): {formatBs(cuadre.difCambiaria)}</span>
+            </div>
+          )}
         </div>
 
         {/* Observaciones */}
