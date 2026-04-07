@@ -168,153 +168,68 @@ export default function CuadreReport() {
 
         {/* 4. Retenciones IVA */}
         <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">4. Retenciones IVA</h2>
-        <div className="overflow-x-auto mb-6">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b bg-gray-50">
-                <th className="text-left py-1 px-2 text-sm font-medium text-gray-500">Factura</th>
-                <th className="text-left py-1 px-2 text-sm font-medium text-gray-500">Cliente</th>
-                <th className="text-right py-1 px-2 text-sm font-medium text-gray-500">Retención (Bs)</th>
-                <th className="text-left py-1 px-2 text-sm font-medium text-gray-500">Comprobante RIVAC</th>
-                <th className="text-center py-1 px-2 text-sm font-medium text-gray-500">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(cuadre.retenciones?.length ?? 0) > 0 ? (
-                cuadre.retenciones!.map((r, i) => (
-                  <tr key={i} className="border-b">
-                    <td className="py-1 px-2 text-sm">{r.invoiceNumber}</td>
-                    {/* FIXED: RetentionRow usa .partner, no .customerName */}
-                    <td className="py-1 px-2 text-sm">{r.partner}</td>
-                    {/* FIXED: RetentionRow no tiene amountBs; retentionAmount está en USD → convertir */}
-                    <td className="py-1 px-2 text-right text-sm">{formatBs(r.retentionAmount * rate)}</td>
-                    <td className="py-1 px-2 text-sm">{r.rivacEntryName}</td>
-                    <td className="py-1 px-2 text-center">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${r.status === "registered" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
-                        {r.status === "registered" ? "Registrada" : "Pendiente"}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={5} className="py-2 text-center text-xs text-muted-foreground italic">No hay retenciones registradas</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="flex justify-between text-sm mb-6">
+          <span>Total Retenciones (Bs):</span>
+          <span className="font-medium">
+            {formatBs((cuadre.retenciones?.reduce((sum, r) => sum + r.retentionAmount, 0) || 0) * rate)}
+          </span>
         </div>
 
-        {/* 5. Ventas a Crédito */}
+        {/* 5. Ventas a Crédito - Solo resumen de abonos y CXC pendientes */}
         <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">5. Ventas a Crédito (CxC)</h2>
-        {(cuadre.creditSales?.some(c => c.generaSaldoFavor)) && (
-          <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
-            <strong>⚠ Atención:</strong> Las filas resaltadas en ámbar presentan pagos que superan el monto de la factura.
-            El excedente viaja al <strong>saldo a favor del cliente</strong> y debe ser conciliado por administración.
-            Esto ocurre generalmente cuando el cliente incluye el pago del servicio de <em>delivery</em> (prestado por un tercero).
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="bg-gray-50 p-3 rounded">
+            <p className="text-xs text-muted-foreground uppercase">Total Abonado</p>
+            <p className="text-lg font-bold text-green-600">
+              {formatBs((cuadre.creditSales?.reduce((sum, c) => sum + (c.abonoAmountBs > 0 ? c.abonoAmountBs : c.abonoAmount * rate), 0) || 0))}
+            </p>
+          </div>
+          <div className="bg-gray-50 p-3 rounded">
+            <p className="text-xs text-muted-foreground uppercase">CxC Pendiente</p>
+            <p className="text-lg font-bold text-red-600">
+              {formatBs((cuadre.creditSales?.filter(c => c.residual > 0).reduce((sum, c) => sum + c.residual * rate, 0) || 0))}
+            </p>
+          </div>
+        </div>
+        {/* Detalle solo de CXC pendientes */}
+        {(cuadre.creditSales?.filter(c => c.residual > 0).length ?? 0) > 0 && (
+          <div className="overflow-x-auto mb-6">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b bg-gray-50">
+                  <th className="text-left py-1 px-2 text-xs font-medium text-gray-500">Factura</th>
+                  <th className="text-left py-1 px-2 text-xs font-medium text-gray-500">Cliente</th>
+                  <th className="text-right py-1 px-2 text-xs font-medium text-gray-500">Total (Bs)</th>
+                  <th className="text-right py-1 px-2 text-xs font-medium text-gray-500">Abono (Bs)</th>
+                  <th className="text-right py-1 px-2 text-xs font-medium text-gray-500">Pendiente (Bs)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cuadre.creditSales!.filter(c => c.residual > 0).map((c, i) => (
+                  <tr key={i} className="border-b">
+                    <td className="py-1 px-2 text-xs">{c.invoiceNumber}</td>
+                    <td className="py-1 px-2 text-xs truncate max-w-[100px]">{c.partner}</td>
+                    <td className="py-1 px-2 text-xs text-right">{formatBs(c.invoiceTotal * rate)}</td>
+                    <td className="py-1 px-2 text-xs text-right">
+                      {formatBs(c.abonoAmountBs > 0 ? c.abonoAmountBs : c.abonoAmount * rate)}
+                    </td>
+                    <td className="py-1 px-2 text-xs text-right font-medium text-red-600">
+                      {formatBs(c.residual * rate)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-        <div className="overflow-x-auto mb-6">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b bg-gray-50">
-                <th className="text-left py-2 px-2 text-sm font-medium text-gray-500">Factura</th>
-                <th className="text-left py-2 px-2 text-sm font-medium text-gray-500">Cliente</th>
-                <th className="text-right py-2 px-2 text-sm font-medium text-gray-500">Total Fact. (Bs)</th>
-                <th className="text-right py-2 px-2 text-sm font-medium text-gray-500">Abono (Bs)</th>
-                <th className="text-right py-2 px-2 text-sm font-medium text-gray-500">Pago Real (Bs)</th>
-                <th className="text-right py-2 px-2 text-sm font-medium text-gray-500">Excedente (Bs)</th>
-                <th className="text-right py-2 px-2 text-sm font-medium text-gray-500">CxC Pend. (Bs)</th>
-                <th className="text-left py-2 px-2 text-sm font-medium text-gray-500">Vía</th>
-                <th className="text-center py-2 px-2 text-sm font-medium text-gray-500">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(cuadre.creditSales?.length ?? 0) > 0 ? (
-                cuadre.creditSales!.map((c, i) => (
-                  <tr key={i} className={`border-b ${c.generaSaldoFavor ? "bg-amber-50" : ""}`}>
-                    <td className="py-2 px-2 text-sm font-medium">{c.invoiceNumber}</td>
-                    {/* FIXED: CreditSaleRow usa .partner, no .customerName */}
-                    <td className="py-2 px-2 text-sm truncate max-w-[120px]">{c.partner}</td>
-                    {/* FIXED: no existe totalAmountBs → invoiceTotal (USD) × rate */}
-                    <td className="py-2 px-2 text-right text-sm">{formatBs(c.invoiceTotal * rate)}</td>
-                    <td className="py-2 px-2 text-right text-sm">
-                      {c.abonoAmount > 0
-                        ? formatBs(c.abonoAmountBs > 0 ? c.abonoAmountBs : Math.round(c.abonoAmount * rate * 100) / 100)
-                        : "—"}
-                    </td>
-                    {/* FIXED: no existe pagoRealBs → paymentTotalBs */}
-                    <td className="py-2 px-2 text-right text-sm font-medium text-blue-700">
-                      {formatBs(c.paymentTotalBs)}
-                    </td>
-                    <td className="py-2 px-2 text-right text-sm text-amber-600 font-semibold">
-                      {c.excedenteBs > 0 ? (
-                        <span title={c.excedenteConcepto ? `Concepto: ${c.excedenteConcepto}` : "Excedente sobre factura"}>
-                          {formatBs(c.excedenteBs)}
-                        </span>
-                      ) : "—"}
-                    </td>
-                    <td className="py-2 px-2 text-right text-sm">
-                      {c.residual > 0 ? formatBs(Math.round(c.residual * rate * 100) / 100) : "—"}
-                    </td>
-                    {/* FIXED: no existe paymentMethodName → abonoJournal */}
-                    <td className="py-2 px-2 text-sm">{c.abonoJournal || "—"}</td>
-                    <td className="py-2 px-2 text-center">
-                      {/* FIXED: no existe .state → paymentState con label legible */}
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getPaymentStateBadgeClass(c.paymentState)}`}>
-                        {getPaymentStateLabel(c.paymentState)}
-                      </span>
-                      {c.generaSaldoFavor && (
-                        <div className="text-[10px] text-amber-600 mt-0.5 font-semibold">↑ Saldo a favor</div>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={9} className="py-4 text-center text-xs text-muted-foreground italic">No se registraron ventas a crédito</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
 
-        {/* 6. Saldos a Favor */}
-        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">6. Saldos a Favor Generados</h2>
-        <div className="overflow-x-auto mb-6">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b bg-gray-50">
-                <th className="text-left py-1 px-2 text-sm font-medium text-gray-500">Origen (Factura)</th>
-                <th className="text-left py-1 px-2 text-sm font-medium text-gray-500">Cliente</th>
-                <th className="text-right py-1 px-2 text-sm font-medium text-gray-500">Monto (USD)</th>
-                <th className="text-right py-1 px-2 text-sm font-medium text-gray-500">Monto (Bs)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(cuadre.saldosFavor?.length ?? 0) > 0 ? (
-                cuadre.saldosFavor!.map((s, i) => (
-                  <tr key={i} className="border-b bg-amber-50">
-                    <td className="py-1 px-2 text-sm">{s.invoiceNumber}</td>
-                    {/* FIXED: SaldoFavorRow usa .partner, no .customerName */}
-                    <td className="py-1 px-2 text-sm">{s.partner}</td>
-                    <td className="py-1 px-2 text-right text-sm">{formatUSD(s.amount)}</td>
-                    <td className="py-1 px-2 text-right text-sm font-medium text-amber-700">{formatBs(s.amountBs)}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4} className="py-2 text-center text-xs text-muted-foreground italic">No hay saldos a favor registrados</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          {(cuadre.saldosFavor?.length ?? 0) > 0 && (
-            <div className="text-right text-xs text-amber-700 mt-1 italic">
-              Estos saldos corresponden a pagos recibidos que superan el monto facturado (ej. delivery cobrado como puente).
-              Pendiente de conciliación por administración.
-            </div>
-          )}
+        {/* 6. Saldos a Favor - Solo totales */}
+        <h2 className="font-bold text-base border-b pb-1 mb-2 uppercase">6. Saldos a Favor</h2>
+        <div className="flex justify-between text-sm mb-6">
+          <span>Total Saldos a Favor (Bs):</span>
+          <span className="font-medium text-amber-600">
+            {formatBs((cuadre.saldosFavor?.reduce((sum, s) => sum + s.amountBs, 0) || 0))}
+          </span>
         </div>
 
         {/* 7. Cuadre Final */}

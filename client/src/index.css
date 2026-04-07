@@ -41,4 +41,14 @@
   .no-print {
     display: none !important;
   }
+  
+  body {
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  * {
+    box-shadow: none !important;
+  }
 }
