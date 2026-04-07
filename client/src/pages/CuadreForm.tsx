@@ -515,8 +515,14 @@ export default function CuadreForm() {
         saldoFavorObs,
         totalAjustesManuales,
         totalDeducciones: Math.round((totalDeliveryDifPOS_Bs + totalDeducciones) * 100) / 100,
-        // New: values directly from form display
-        totalMetodosPOS: Math.round(directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0) * 100) / 100,
+        // Values directly from form display
+        totalMetodosPOS: Math.round((
+          directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0)
+          + totalRetencionesPOS_Bs
+          + totalCreditoPOS_Bs
+          + totalSaldoFavorPOS_Bs
+          + totalDeliveryDifPOS_Bs
+        ) * 100) / 100,
         totalJustificadoReal: summaryReal,
       };
 
