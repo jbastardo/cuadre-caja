@@ -123,11 +123,11 @@ export default function CuadreReport() {
               <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorPOS)}</div>
               {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
               <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(
-                cuadre.totalMetodosReal +
-                cuadre.totalRetencionesPOS +
-                cuadre.totalCreditoPOS +
-                cuadre.totalSaldoFavorPOS +
-                cuadre.totalDeducciones
+                (cuadre.totalMetodosReal || 0) +
+                (cuadre.totalRetencionesPOS || 0) +
+                (cuadre.totalCreditoPOS || 0) +
+                (cuadre.totalSaldoFavorPOS || 0) +
+                (cuadre.totalDeducciones || 0)
               )}</div>
             </div>
             <div className="border p-2">
@@ -140,18 +140,10 @@ export default function CuadreReport() {
               <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorReal)}</div>
               {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
               <div>Ajustes manuales: {formatBs(cuadre.totalAjustesManuales)}</div>
-              <div className="font-bold border-t mt-1">TOTAL VERIFICADO: {formatBs(
-                cuadre.totalMetodosReal +
-                cuadre.totalRetencionesReal +
-                cuadre.totalAbonosReal +
-                cuadre.totalCxCPendiente +
-                cuadre.totalSaldoFavorReal +
-                cuadre.totalDeducciones +
-                cuadre.totalAjustesManuales
-              )}</div>
+              <div className="font-bold border-t mt-1">TOTAL VERIFICADO: {formatBs(cuadre.totalJustificadoReal || cuadre.totalJustificado)}</div>
             </div>
           </div>
-          <div className="text-xs mt-2 font-bold">Total Métodos + Deducciones: {formatBs(cuadre.totalMetodosReal + cuadre.totalDeducciones)}</div>
+          <div className="text-xs mt-2 font-bold">Total Métodos + Deducciones: {formatBs(cuadre.totalJustificadoReal || cuadre.totalJustificado)}</div>
         </div>
 
         <div className="mb-4 p-3 border rounded">
