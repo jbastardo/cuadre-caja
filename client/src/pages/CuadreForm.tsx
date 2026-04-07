@@ -516,7 +516,7 @@ export default function CuadreForm() {
         totalAjustesManuales,
         totalDeducciones: Math.round((totalDeliveryDifPOS_Bs + totalDeducciones) * 100) / 100,
         // New: values directly from form display
-        totalMetodosPOS: summaryPOS,
+        totalMetodosPOS: Math.round(directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0) * 100) / 100,
         totalJustificadoReal: summaryReal,
       };
 
