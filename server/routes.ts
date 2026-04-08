@@ -253,9 +253,9 @@ router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
     const updated = await sheets.updateCuadre(param(req, "id"), parsed.data);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
-  } catch (err) {
-    console.error("Update error:", err);
-    res.status(500).json({ error: "Error al actualizar" });
+  } catch (err: any) {
+    console.error("Update error:", err.message || err);
+    res.status(500).json({ error: "Error al actualizar", details: err.message });
   }
 });
 

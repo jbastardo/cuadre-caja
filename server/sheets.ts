@@ -227,8 +227,6 @@ function rowToCuadre(row: string[]): Cuadre {
     totalAjustesManuales: Number(row[37]) || 0,
     retencionesPorCobrar: Number(row[40]) || 0,
     saldoFavorObs: row[41] || "",
-    totalMetodosPOS: Number(row[42]) || 0,
-    totalJustificadoReal: Number(row[43]) || 0,
   };
 }
 
@@ -276,8 +274,8 @@ function cuadreToRow(c: Cuadre): any[] {
     c.ultimaNCZ,
     c.retencionesPorCobrar || 0,
     c.saldoFavorObs || "",
-    c.totalMetodosPOS || 0,
-    c.totalJustificadoReal || 0,
+    // c.totalMetodosPOS || 0,
+    // c.totalJustificadoReal || 0,
   ];
 }
 
@@ -393,8 +391,8 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     totalAjustesManuales: Math.round(totalAjustesManuales * 100) / 100,
     retencionesPorCobrar: data.retencionesPorCobrar || 0,
     saldoFavorObs: data.saldoFavorObs || "",
-    totalMetodosPOS: data.totalMetodosPOS || 0,
-    totalJustificadoReal: data.totalJustificadoReal || 0,
+    // totalMetodosPOS: data.totalMetodosPOS || 0,
+    // totalJustificadoReal: data.totalJustificadoReal || 0,
   };
 
   await appendRow("Cuadres", cuadreToRow(cuadre));
@@ -546,8 +544,8 @@ export async function updateCuadre(
     totalAjustesManuales: Math.round(totalAjustesManuales * 100) / 100,
     retencionesPorCobrar: data.retencionesPorCobrar || 0,
     saldoFavorObs: data.saldoFavorObs || "",
-    totalMetodosPOS: data.totalMetodosPOS || 0,
-    totalJustificadoReal: data.totalJustificadoReal || 0,
+    // totalMetodosPOS: data.totalMetodosPOS || 0,
+    // totalJustificadoReal: data.totalJustificadoReal || 0,
   };
 
   await updateRow("Cuadres", rowIndex, cuadreToRow(cuadre));
