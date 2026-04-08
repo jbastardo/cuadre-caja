@@ -124,7 +124,7 @@ export default function CuadreReport() {
               {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
               <div className="font-bold border-t mt-1">
                 TOTAL POS: {formatBs(cuadre.totalMetodosPOS || 
-                  cuadre.totalMetodosReal + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS + cuadre.totalDeducciones)}
+                  cuadre.totalMetodosReal + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS)}
               </div>
             </div>
             <div className="border p-2">
