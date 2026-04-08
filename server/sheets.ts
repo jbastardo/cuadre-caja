@@ -393,6 +393,8 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     totalAjustesManuales: Math.round(totalAjustesManuales * 100) / 100,
     retencionesPorCobrar: data.retencionesPorCobrar || 0,
     saldoFavorObs: data.saldoFavorObs || "",
+    totalMetodosPOS: data.totalMetodosPOS || 0,
+    totalJustificadoReal: data.totalJustificadoReal || 0,
   };
 
   await appendRow("Cuadres", cuadreToRow(cuadre));
@@ -544,6 +546,8 @@ export async function updateCuadre(
     totalAjustesManuales: Math.round(totalAjustesManuales * 100) / 100,
     retencionesPorCobrar: data.retencionesPorCobrar || 0,
     saldoFavorObs: data.saldoFavorObs || "",
+    totalMetodosPOS: data.totalMetodosPOS || 0,
+    totalJustificadoReal: data.totalJustificadoReal || 0,
   };
 
   await updateRow("Cuadres", rowIndex, cuadreToRow(cuadre));
