@@ -117,14 +117,14 @@ export default function CuadreReport() {
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="border p-2">
               <div className="font-bold border-b mb-1">SEGÚN ODOO POS</div>
-              <div>Pagos directos: {formatBs(cuadre.totalMetodosReal)}</div>
+              <div>Pagos directos: {formatBs(cuadre.totalDirectoPOS || cuadre.totalMetodosReal)}</div>
               <div>Retenciones IVA: {formatBs(cuadre.totalRetencionesPOS)}</div>
               <div>Ventas a crédito: {formatBs(cuadre.totalCreditoPOS)}</div>
               <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorPOS)}</div>
               {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
               <div className="font-bold border-t mt-1">
                 TOTAL POS: {formatBs(cuadre.totalMetodosPOS || 
-                  cuadre.totalMetodosReal + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS)}
+                  (cuadre.totalDirectoPOS || cuadre.totalMetodosReal) + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS)}
               </div>
             </div>
             <div className="border p-2">

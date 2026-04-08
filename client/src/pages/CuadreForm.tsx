@@ -457,6 +457,8 @@ export default function CuadreForm() {
     + totalSaldoFavorPOS_Bs
     + totalDeliveryDifPOS_Bs
   ) * 100) / 100;
+  // Direct payments without delivery/dif (for accurate report)
+  const totalDirectoPOS = Math.round(directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0) * 100) / 100;
   const summaryReal = Math.round((
     totalDirectMetodosReal
     + retencionesReal
@@ -518,6 +520,7 @@ export default function CuadreForm() {
         // Calculated internally in form - needed for accurate report display
         totalMetodosPOS: summaryPOS,
         totalJustificadoReal: summaryReal,
+        totalDirectoPOS,
       };
 
       if (isNew) {

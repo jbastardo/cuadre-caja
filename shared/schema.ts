@@ -220,6 +220,7 @@ export const cuadreSchema = z.object({
   // Calculated internally in form for display (persisted to Sheets as optional)
   totalMetodosPOS: z.number().optional(),
   totalJustificadoReal: z.number().optional(),
+  totalDirectoPOS: z.number().optional(),  // Pagos directos (sin delivery/dif) en Bs
 
   estado: z.enum(["cuadrado", "descuadrado", "pendiente"]),
   observaciones: z.string(),
@@ -281,6 +282,7 @@ export const createCuadreSchema = z.object({
   // Values directly from form display (calculated internally)
   totalMetodosPOS: z.number().optional().default(0),
   totalJustificadoReal: z.number().optional().default(0),
+  totalDirectoPOS: z.number().optional().default(0),  // Pagos directos sin delivery/dif
 
   // NUEVO: observación de saldos a favor
   saldoFavorObs: z.string().optional(),

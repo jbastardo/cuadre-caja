@@ -229,6 +229,7 @@ function rowToCuadre(row: string[]): Cuadre {
     saldoFavorObs: row[41] || "",
     totalMetodosPOS: Number(row[42]) || 0,
     totalJustificadoReal: Number(row[43]) || 0,
+    totalDirectoPOS: Number(row[44]) || 0,
   };
 }
 
@@ -278,6 +279,7 @@ function cuadreToRow(c: Cuadre): any[] {
     c.saldoFavorObs || "",
     c.totalMetodosPOS || 0,
     c.totalJustificadoReal || 0,
+    c.totalDirectoPOS || 0,
   ];
 }
 
@@ -395,6 +397,7 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     saldoFavorObs: data.saldoFavorObs || "",
     totalMetodosPOS: data.totalMetodosPOS || 0,
     totalJustificadoReal: data.totalJustificadoReal || 0,
+    totalDirectoPOS: data.totalDirectoPOS || 0,
   };
 
   await appendRow("Cuadres", cuadreToRow(cuadre));
@@ -548,6 +551,7 @@ export async function updateCuadre(
     saldoFavorObs: data.saldoFavorObs || "",
     totalMetodosPOS: data.totalMetodosPOS || 0,
     totalJustificadoReal: data.totalJustificadoReal || 0,
+    totalDirectoPOS: data.totalDirectoPOS || 0,
   };
 
   await updateRow("Cuadres", rowIndex, cuadreToRow(cuadre));
