@@ -250,6 +250,8 @@ router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Datos inválidos", details: parsed.error.message });
     }
 
+    console.log("Saving cuadre - totalMetodosPOS:", parsed.data.totalMetodosPOS, "totalDirectoPOS:", parsed.data.totalDirectoPOS);
+
     const updated = await sheets.updateCuadre(param(req, "id"), parsed.data);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
