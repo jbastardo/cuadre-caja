@@ -245,12 +245,16 @@ router.post("/api/cuadres", async (req: Request, res: Response) => {
 router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
   try {
     const parsed = createCuadreSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: "Datos inválidos" });
+    if (!parsed.success) {
+      console.error("Validation error:", parsed.error);
+      return res.status(400).json({ error: "Datos inválidos", details: parsed.error.message });
+    }
 
     const updated = await sheets.updateCuadre(param(req, "id"), parsed.data);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err) {
+    console.error("Update error:", err);
     res.status(500).json({ error: "Error al actualizar" });
   }
 });
