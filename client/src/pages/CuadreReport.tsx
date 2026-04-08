@@ -122,13 +122,7 @@ export default function CuadreReport() {
               <div>Ventas a crédito: {formatBs(cuadre.totalCreditoPOS)}</div>
               <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorPOS)}</div>
               {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
-              <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(
-                (cuadre.totalMetodosReal || 0) +
-                (cuadre.totalRetencionesPOS || 0) +
-                (cuadre.totalCreditoPOS || 0) +
-                (cuadre.totalSaldoFavorPOS || 0) +
-                (cuadre.totalDeducciones || 0)
-              )}</div>
+              <div className="font-bold border-t mt-1">TOTAL POS: {formatBs(cuadre.totalMetodosPOS || cuadre.totalMetodosReal)}</div>
             </div>
             <div className="border p-2">
               <div className="font-bold border-b mb-1">VERIFICADO REAL</div>
