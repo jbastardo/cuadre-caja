@@ -76,7 +76,7 @@ async function appendRow(sheetName: string, values: any[]): Promise<void> {
 
 async function updateRow(sheetName: string, rowIndex: number, values: any[]): Promise<void> {
   const sheets = getSheets();
-  const lastCol = values.length > 43 ? "AR" : values.length > 41 ? "AQ" : "AO";
+  const lastCol = values.length > 44 ? "AS" : values.length > 43 ? "AR" : values.length > 41 ? "AQ" : "AO";
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheetName}!A${rowIndex}:${lastCol}${rowIndex}`,
@@ -181,7 +181,8 @@ export async function updateUser(id: string, data: Partial<User>): Promise<UserP
 // AE=totalRetencionesPOS, AF=totalRetencionesReal, AG=totalCreditoPOS,
 // AH=totalAbonosReal, AI=totalCxCPendiente, AJ=totalSaldoFavorPOS,
 // AK=totalSaldoFavorReal, AL=totalAjustesManuales, AM=primeraNCZ,
-// AN=ultimaNCZ, AO=retencionesPorCobrar, AP=saldoFavorObs (nueva columna lógica)
+// AN=ultimaNCZ, AO=retencionesPorCobrar, AP=saldoFavorObs,
+// AQ=totalMetodosPOS, AR=totalJustificadoReal, AS=totalDirectoPOS
 
 function rowToCuadre(row: string[]): Cuadre {
   return {

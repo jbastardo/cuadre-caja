@@ -220,7 +220,7 @@ export const cuadreSchema = z.object({
   // Calculated internally in form for display (persisted to Sheets as optional)
   totalMetodosPOS: z.number().optional(),
   totalJustificadoReal: z.number().optional(),
-  totalDirectoPOS: z.number().optional(),  // Pagos directos (sin delivery/dif) en Bs
+  totalDirectoPOS: z.number().optional(),
 
   estado: z.enum(["cuadrado", "descuadrado", "pendiente"]),
   observaciones: z.string(),
