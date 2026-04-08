@@ -127,7 +127,8 @@ export default function CuadreReport() {
             </div>
             <div className="font-bold border-t mt-1 pt-1 flex justify-between">
               <span>TOTAL VENTAS POS:</span>
-              <span>{formatBs(cuadre.totalMetodosPOS || 0)}</span>
+              <span>{formatBs(cuadre.totalMetodosPOS || 
+                (cuadre.totalDirectoPOS || cuadre.totalMetodosReal) + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS + cuadre.totalDeducciones)}</span>
             </div>
           </div>
 
