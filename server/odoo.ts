@@ -529,6 +529,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
 
   // Get related sessions (companion fiscal machine merge)
   const { sessionIds, companionSessionName } = await getRelatedSessionIds(sessionId);
+  console.log(`[getFiscalSummary] Session ${sessionId}, date ${date}, related sessions: ${sessionIds.join(", ")}`);
 
   // Determine main vs companion session IDs and their caja names (need this before filtering invoices)
   const mainSessionId = sessionId;
@@ -560,6 +561,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
     [[["session_id", "in", sessionIds]]],
     { fields: ["id", "account_move", "session_id"] }
   );
+  console.log(`[getFiscalSummary] Total orders found: ${allOrders?.length || 0}`);
 
   // Build order→move mapping, filtered to fiscal journals only
   const moveIds: number[] = [];
@@ -599,6 +601,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
         && m.state === "posted"
         && (m.move_type === "out_invoice" || m.move_type === "out_refund");
     });
+    console.log(`[getFiscalSummary] Total moves: ${moveIds.length}, invoices filtered: ${invoices.length}`);
   }
 
   // Build move→session mapping for per-caja tracking
