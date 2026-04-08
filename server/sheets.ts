@@ -282,6 +282,7 @@ function cuadreToRow(c: Cuadre): any[] {
     c.totalJustificadoReal || 0,
     c.totalDirectoPOS || 0,
   ];
+  console.log("cuadreToRow - totalMetodosPOS:", c.totalMetodosPOS, "totalDirectoPOS:", c.totalDirectoPOS);
 }
 
 export async function getCuadres(filters?: { fecha?: string; caja?: string; estado?: string; cerrado?: string }): Promise<Cuadre[]> {
@@ -554,6 +555,7 @@ export async function updateCuadre(
     totalJustificadoReal: data.totalJustificadoReal || 0,
     totalDirectoPOS: data.totalDirectoPOS || 0,
   };
+  console.log("updateCuadre - totalMetodosPOS:", cuadre.totalMetodosPOS, "totalDirectoPOS:", cuadre.totalDirectoPOS);
 
   await updateRow("Cuadres", rowIndex, cuadreToRow(cuadre));
 
