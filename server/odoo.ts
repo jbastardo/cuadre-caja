@@ -204,10 +204,34 @@ async function getRelatedSessionIds(sessionId: number): Promise<{ sessionIds: nu
   if (!session) return { sessionIds: [sessionId], companionSessionName: "" };
 
   const configId = session.config_id[0];
+  const serialMachine = session.serial_machine || "";
+  const date = session.start_at?.split(" ")[0];
+  
+  console.log(`[getRelatedSessionIds] Session ${sessionId}, configId ${configId}, serial_machine: ${serialMachine}, date: ${date}`);
+
+  // Strategy 1: Find sessions with same serial_machine (same fiscal printer)
+  if (serialMachine) {
+    const samePrinterSessions = await executeKw("pos.session", "search_read",
+      [[
+        ["serial_machine", "=", serialMachine],
+        ["start_at", ">=", `${date} 00:00:00`],
+        ["start_at", "<=", `${date} 23:59:59`],
+        ["state", "in", ["opened", "closing_control", "closed"]],
+      ]],
+      { fields: ["id", "name", "config_id", "serial_machine"] }
+    );
+    
+    if (samePrinterSessions?.length > 1) {
+      const sessionIds = samePrinterSessions.map((s: any) => s.id);
+      const names = samePrinterSessions.map((s: any) => s.name).join(", ");
+      console.log(`[getRelatedSessionIds] Found ${samePrinterSessions.length} sessions with same printer: ${names}`);
+      return { sessionIds, companionSessionName: `Múltiples sesiones misma impresora: ${names}` };
+    }
+  }
+
+  // Strategy 2: Fallback to COMPANION_CONFIGS (same fiscal journal, different POS)
   const companionConfigId = COMPANION_CONFIGS[configId];
   if (!companionConfigId) return { sessionIds: [sessionId], companionSessionName: "" };
-
-  const date = session.start_at?.split(" ")[0];
   if (!date) return { sessionIds: [sessionId], companionSessionName: "" };
 
   const companionSessions = await executeKw("pos.session", "search_read",
@@ -602,6 +626,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
         && (m.move_type === "out_invoice" || m.move_type === "out_refund");
     });
     console.log(`[getFiscalSummary] Total moves: ${moveIds.length}, invoices filtered: ${invoices.length}`);
+    console.log(`[getFiscalSummary] Invoice names: ${invoices.map((i: any) => i.name).slice(0, 20).join(", ")}`);
   }
 
   // Build move→session mapping for per-caja tracking
