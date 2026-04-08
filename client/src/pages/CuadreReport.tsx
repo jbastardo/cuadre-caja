@@ -114,41 +114,43 @@ export default function CuadreReport() {
 
         <div className="mb-4">
           <h2 className="font-bold text-sm border-b mb-2">8. Resumen del Cuadre</h2>
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            <div className="border p-2">
-              <div className="font-bold border-b mb-1">SEGÚN ODOO POS</div>
-              <div>Pagos directos: {formatBs(cuadre.totalDirectoPOS || cuadre.totalMetodosReal)}</div>
-              <div>Retenciones IVA: {formatBs(cuadre.totalRetencionesPOS)}</div>
-              <div>Ventas a crédito: {formatBs(cuadre.totalCreditoPOS)}</div>
-              <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorPOS)}</div>
-              {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
-              <div className="font-bold border-t mt-1">
-                TOTAL POS: {formatBs(cuadre.totalMetodosPOS || 0)}
-              </div>
+          
+          {/* SEGÚN ODOO POS - Lo que registró el sistema */}
+          <div className="border p-2 mb-2 text-xs">
+            <div className="font-bold border-b mb-1">SEGÚN ODOO POS (Lo que registró el sistema)</div>
+            <div className="grid grid-cols-2 gap-1">
+              <div>Pagos en efectivo/tarjetas:</div><div className="text-right">{formatBs(cuadre.totalDirectoPOS || cuadre.totalMetodosReal)}</div>
+              <div>Retenciones IVA:</div><div className="text-right">{formatBs(cuadre.totalRetencionesPOS)}</div>
+              <div>Ventas a crédito:</div><div className="text-right">{formatBs(cuadre.totalCreditoPOS)}</div>
+              <div>Saldos a favor generados:</div><div className="text-right">{formatBs(cuadre.totalSaldoFavorPOS)}</div>
+              {cuadre.totalDeducciones !== 0 && <><div>Delivery/Diferencias:</div><div className="text-right">{formatBs(cuadre.totalDeducciones)}</div></>}
             </div>
-            <div className="border p-2">
-              <div className="font-bold border-b mb-1">VERIFICADO REAL</div>
-              <div>Pagos directos: {formatBs(cuadre.totalMetodosReal)}</div>
-              <div>Retenciones reg: {formatBs(cuadre.totalRetencionesReal)}</div>
-              {cuadre.retencionesPorCobrar > 0 && <div className="text-amber-600">Por cobrar: {formatBs(cuadre.retencionesPorCobrar)}</div>}
-              <div>Abonos crédito: {formatBs(cuadre.totalAbonosReal)}</div>
-              <div>CxC pendientes: {formatBs(cuadre.totalCxCPendiente)}</div>
-              <div>Saldos a favor: {formatBs(cuadre.totalSaldoFavorReal)}</div>
-              {cuadre.totalDeducciones !== 0 && <div>Deducciones: {formatBs(cuadre.totalDeducciones)}</div>}
-              <div>Ajustes manuales: {formatBs(cuadre.totalAjustesManuales)}</div>
-              <div className="font-bold border-t mt-1">
-                TOTAL VERIFICADO: {formatBs(cuadre.totalJustificadoReal || 
-                  cuadre.totalMetodosReal + cuadre.totalRetencionesReal + cuadre.retencionesPorCobrar + 
-                  cuadre.totalAbonosReal + cuadre.totalCxCPendiente + cuadre.totalSaldoFavorReal + 
-                  cuadre.totalDeducciones + cuadre.totalAjustesManuales)}
-              </div>
+            <div className="font-bold border-t mt-1 pt-1 flex justify-between">
+              <span>TOTAL VENTAS POS:</span>
+              <span>{formatBs(cuadre.totalMetodosPOS || 0)}</span>
             </div>
           </div>
-          <div className="text-xs mt-2 font-bold">
-            Total Métodos + Deducciones: {formatBs(cuadre.totalJustificadoReal || 
-              cuadre.totalMetodosReal + cuadre.totalRetencionesReal + cuadre.retencionesPorCobrar + 
-              cuadre.totalAbonosReal + cuadre.totalCxCPendiente + cuadre.totalSaldoFavorReal + 
-              cuadre.totalDeducciones + cuadre.totalAjustesManuales)}
+
+          {/* VERIFICADO REAL - Lo que realmente hubo */}
+          <div className="border p-2 mb-2 text-xs">
+            <div className="font-bold border-b mb-1">VERIFICADO REAL (Lo que realmente hubo)</div>
+            <div className="grid grid-cols-2 gap-1">
+              <div>Pagos directos recibidos:</div><div className="text-right">{formatBs(cuadre.totalMetodosReal)}</div>
+              <div>Retenciones canceladas:</div><div className="text-right">{formatBs(cuadre.totalRetencionesReal)}</div>
+              {cuadre.retencionesPorCobrar > 0 && <><div>Retenciones por cobrar:</div><div className="text-right text-amber-600">{formatBs(cuadre.retencionesPorCobrar)}</div></>}
+              <div>Abonos a crédito recibidos:</div><div className="text-right">{formatBs(cuadre.totalAbonosReal)}</div>
+              <div>CxC pendientes:</div><div className="text-right">{formatBs(cuadre.totalCxCPendiente)}</div>
+              <div>Saldos a favor:</div><div className="text-right">{formatBs(cuadre.totalSaldoFavorReal)}</div>
+              {cuadre.totalDeducciones !== 0 && <><div>Delivery/Diferencias:</div><div className="text-right">{formatBs(cuadre.totalDeducciones)}</div></>}
+              {cuadre.totalAjustesManuales !== 0 && <><div>Ajustes manuales:</div><div className="text-right">{formatBs(cuadre.totalAjustesManuales)}</div></>}
+            </div>
+            <div className="font-bold border-t mt-1 pt-1 flex justify-between">
+              <span>TOTAL VERIFICADO:</span>
+              <span>{formatBs(cuadre.totalJustificadoReal || 
+                cuadre.totalMetodosReal + cuadre.totalRetencionesReal + cuadre.retencionesPorCobrar + 
+                cuadre.totalAbonosReal + cuadre.totalCxCPendiente + cuadre.totalSaldoFavorReal + 
+                cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</span>
+            </div>
           </div>
         </div>
 
