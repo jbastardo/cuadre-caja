@@ -1889,6 +1889,24 @@ async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<an
   return getCxPFacturas(fechaDesde, fechaHasta);
 }
 
+// Listar métodos de pago POS activos
+export async function getMetodosPOS(): Promise<any[]> {
+  const methods = await executeKw("pos.payment.method", "search_read",
+    [[["active", "=", true]]],
+    { fields: ["id", "name"] }
+  );
+  return (methods || []).map((m: any) => ({ id: m.id, name: m.name }));
+}
+
+// Listar diarios bancarios (bancos) disponibles
+export async function getBancosDisponibles(): Promise<any[]> {
+  const journals = await executeKw("account.journal", "search_read",
+    [[["type", "in", ["bank", "cash"]], ["active", "=", true]]],
+    { fields: ["id", "name", "type"] }
+  );
+  return (journals || []).map((j: any) => ({ id: j.id, name: j.name, type: j.type }));
+}
+
 // Debug: inspeccionar un pago por nombre y ver por qué puede no aparecer en el listado
 export async function debugPago(nombre: string): Promise<any> {
   // 1. Buscar el pago por nombre
@@ -1969,7 +1987,8 @@ export async function getPagosCreditoPOS(
   fechaDesde?: string,
   fechaHasta?: string,
   usuarioFiltro?: string,
-  metodoPagoFiltro?: string
+  metodoPagoFiltro?: string,
+  metodoPOSFiltro?: string
 ): Promise<any[]> {
   // 1. Buscar pagos contables de clientes en el rango de fechas
   const domain: any[] = [
@@ -2021,9 +2040,15 @@ export async function getPagosCreditoPOS(
         [[["pos_order_id", "in", posOrderIds]]],
         { fields: ["id", "amount", "payment_method_id"] }
       );
-      // Excluir pagos en efectivo/tarjeta inmediatos - solo incluir si NO son todos pagos inmediatos
-      // Un pago se considera "pendiente" si el método es pay_later o si el pago contable es posterior a la factura
       if (!posMethods || posMethods.length === 0) continue;
+
+      // Filtrar por método POS si se especifica
+      if (metodoPOSFiltro) {
+        const tieneMetodo = posMethods.some((m: any) =>
+          m.payment_method_id && m.payment_method_id[1]?.toLowerCase().includes(metodoPOSFiltro.toLowerCase())
+        );
+        if (!tieneMetodo) continue;
+      }
 
       // Calcular tasas
       const fechaFactura = inv.invoice_date || fechaDesde || new Date().toISOString().split("T")[0];
@@ -2058,7 +2083,7 @@ export async function getPagosCreditoPOS(
         cliente: pago.partner_id ? pago.partner_id[1] : "",
         usuario: userName,
         // Método POS original
-        metodoPOS: posMethods.map((m: any) => m.payment_method_id ? m.payment_method_id[1] : "").join(", "),
+        metodoPOS: [...new Set(posMethods.map((m: any) => m.payment_method_id ? m.payment_method_id[1] : "").filter(Boolean))].join(", "),
       });
     }
   }

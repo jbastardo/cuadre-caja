@@ -421,7 +421,8 @@ router.get("/api/cuentas/pagos-credito", async (req: Request, res: Response) => 
     const fechaHasta = query(req, "fechaHasta");
     const usuario = query(req, "usuario");
     const metodoPago = query(req, "metodoPago");
-    const pagos = await odoo.getPagosCreditoPOS(fechaDesde, fechaHasta, usuario, metodoPago);
+    const metodoPOS = query(req, "metodoPOS");
+    const pagos = await odoo.getPagosCreditoPOS(fechaDesde, fechaHasta, usuario, metodoPago, metodoPOS);
     const totalFacturasUSD = Math.round(pagos.reduce((s, p) => s + p.montoFacturaUSD, 0) * 100) / 100;
     const totalFacturasBs  = Math.round(pagos.reduce((s, p) => s + p.montoFacturaBs,  0) * 100) / 100;
     const totalPagosUSD    = Math.round(pagos.reduce((s, p) => s + p.montoPagoUSD,    0) * 100) / 100;
@@ -444,6 +445,19 @@ router.get("/api/cuentas/destiempo", async (req: Request, res: Response) => {
     const totalUSD = Math.round(pagos.reduce((s, p) => s + p.montoUSD, 0) * 100) / 100;
     const totalBs  = Math.round(pagos.reduce((s, p) => s + p.montoBs,  0) * 100) / 100;
     res.json({ pagos, totalUSD, totalBs, cantidad: pagos.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint para obtener listas de filtros dinámicos
+router.get("/api/cuentas/filtros", async (_req: Request, res: Response) => {
+  try {
+    const [metodosPOS, bancos] = await Promise.all([
+      odoo.getMetodosPOS(),
+      odoo.getBancosDisponibles(),
+    ]);
+    res.json({ metodosPOS, bancos });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
