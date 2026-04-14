@@ -357,52 +357,74 @@ router.get("/api/users", async (_req: Request, res: Response) => {
 const cuentasStore: Map<string, any> = new Map();
 const abonosStore: Map<string, any[]> = new Map();
 
+// Nuevo endpoint principal: lista de facturas CxC y CxP con filtros y Bs
+router.get("/api/cuentas/facturas", async (req: Request, res: Response) => {
+  try {
+    const tipo = query(req, "tipo") || "cxc"; // "cxc" | "cxp"
+    const fechaDesde = query(req, "fechaDesde");
+    const fechaHasta = query(req, "fechaHasta");
+    const diario = query(req, "diario");   // FAC01, FAC02, FAC4
+    const banco = query(req, "banco");
+    const estado = query(req, "estado");   // "pendiente" | "pagado" | undefined = todos
+
+    let facturas: any[];
+    if (tipo === "cxp") {
+      facturas = await odoo.getCxPFacturas(fechaDesde, fechaHasta, banco);
+    } else {
+      facturas = await odoo.getCxCFacturas(fechaDesde, fechaHasta, diario, banco);
+    }
+
+    // Filtro por estado
+    if (estado && estado !== "todos") {
+      facturas = facturas.filter(f => f.estado === estado);
+    }
+
+    const totalUSD = facturas.reduce((s, f) => s + (f.montoUSD || 0), 0);
+    const saldoUSD = facturas.reduce((s, f) => s + (f.saldoUSD || 0), 0);
+    const totalBs  = facturas.reduce((s, f) => s + (f.montoBs  || 0), 0);
+    const saldoBs  = facturas.reduce((s, f) => s + (f.saldoBs  || 0), 0);
+
+    res.json({ facturas, totalUSD, saldoUSD, totalBs, saldoBs, cantidad: facturas.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/api/cuentas/balance", async (req: Request, res: Response) => {
   try {
     const fechaDesde = query(req, "fechaDesde");
     const fechaHasta = query(req, "fechaHasta");
-    const cxcData = await odoo.getCuentasPorCobrar(fechaDesde, fechaHasta);
-    const cxpData = await odoo.getCuentasPorPagar(fechaDesde, fechaHasta);
-    const bancoData = await odoo.getBanco();
-    const pagosConta = await odoo.getPagosContabilidad(fechaDesde, fechaHasta);
-    const abonos = await odoo.getAbonosCxC(fechaDesde, fechaHasta);
+    const [cxc, cxp] = await Promise.all([
+      odoo.getCxCFacturas(fechaDesde, fechaHasta),
+      odoo.getCxPFacturas(fechaDesde, fechaHasta)
+    ]);
 
-    const rate = cxcData.rate || 1;
-    const cxcTotalBs = Math.round((cxcData.totalPendiente || 0) * rate * 100) / 100;
-    const cxpTotalBs = Math.round((cxpData.totalPendiente || 0) * rate * 100) / 100;
-    const pagosContaBs = Math.round(pagosConta.reduce((sum, p) => sum + (p.amount || 0), 0) * rate * 100) / 100;
-    const abonosBs = Math.round(abonos.reduce((sum, a) => sum + (a.amount_total || 0), 0) * rate * 100) / 100;
-
-    res.json({
-      rate,
-      cxc: {
-        totalPendiente: cxcData.totalPendiente,
-        totalPendienteBs: cxcTotalBs,
-        totalAbonos: cxcData.totalAbonos,
-        cantidadCuentas: cxcData.cuentas.length
-      },
-      cxp: {
-        totalPendiente: cxpData.totalPendiente,
-        totalPendienteBs: cxpTotalBs,
-        totalAbonos: cxpData.totalAbonos,
-        cantidadCuentas: cxpData.cuentas.length
-      },
-      banco: {
-        total: bancoData.total,
-        ingresos: bancoData.ingresos,
-        egresos: bancoData.egresos
-      },
-      pagosContabilidad: {
-        cantidad: pagosConta.length,
-        total: pagosConta.reduce((sum, p) => sum + (p.amount || 0), 0),
-        totalBs: pagosContaBs
-      },
-      abonos: {
-        cantidad: abonos.length,
-        total: abonos.reduce((sum, a) => sum + (a.amount_total || 0), 0),
-        totalBs: abonosBs
-      }
+    const calcTotals = (list: any[]) => ({
+      cantidad: list.length,
+      totalUSD: Math.round(list.reduce((s, f) => s + f.montoUSD, 0) * 100) / 100,
+      saldoUSD: Math.round(list.reduce((s, f) => s + f.saldoUSD, 0) * 100) / 100,
+      totalBs:  Math.round(list.reduce((s, f) => s + f.montoBs,  0) * 100) / 100,
+      saldoBs:  Math.round(list.reduce((s, f) => s + f.saldoBs,  0) * 100) / 100,
+      pendiente: list.filter(f => f.estado === "pendiente").length,
+      pagado:    list.filter(f => f.estado === "pagado").length,
     });
+
+    res.json({ cxc: calcTotals(cxc), cxp: calcTotals(cxp) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/cuentas/destiempo", async (req: Request, res: Response) => {
+  try {
+    const fechaDesde = query(req, "fechaDesde");
+    const fechaHasta = query(req, "fechaHasta");
+    const diario = query(req, "diario");
+    const usuario = query(req, "usuario");
+    const pagos = await odoo.getPagosDestiempo(fechaDesde, fechaHasta, diario, usuario);
+    const totalUSD = Math.round(pagos.reduce((s, p) => s + p.montoUSD, 0) * 100) / 100;
+    const totalBs  = Math.round(pagos.reduce((s, p) => s + p.montoBs,  0) * 100) / 100;
+    res.json({ pagos, totalUSD, totalBs, cantidad: pagos.length });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

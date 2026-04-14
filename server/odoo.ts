@@ -1798,40 +1798,169 @@ async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
   return executeKw("res.partner", "search_read", [domain], { fields });
 }
 
-const FACTURA_JOURNELS = ["FAC01", "FAC02", "FAC4"];
-const RECIBO_JOURNELS = ["RDV1", "RDV2"];
-const ALL_JOURNELS = [...FACTURA_JOURNELS, ...RECIBO_JOURNELS];
+const FACTURA_JOURNALS = ["FAC01", "FAC02", "FAC4"];
 
-async function getCxCLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "=", "out_invoice"], ["state", "=", "posted"], ["journal_id.name", "ilike", "FAC"]];
+// CxC: facturas de clientes por diarios FAC - con filtros opcionales por diario y banco
+export async function getCxCFacturas(
+  fechaDesde?: string,
+  fechaHasta?: string,
+  diario?: string,
+  banco?: string
+): Promise<any[]> {
+  const journalFilter = diario ? [diario] : FACTURA_JOURNALS;
+  const domain: any[] = [
+    ["move_type", "=", "out_invoice"],
+    ["state", "=", "posted"],
+    ["journal_id.name", "in", journalFilter]
+  ];
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
-  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "move_type", "journal_id"];
-  return executeKw("account.move", "search_read", [domain], { fields });
+  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "journal_id", "invoice_payments_widget"];
+  const invoices = await executeKw("account.move", "search_read", [domain], { fields });
+  // Enrich each invoice with Bs amount at the rate of its date
+  const enriched = await Promise.all((invoices || []).map(async (inv: any) => {
+    const date = inv.invoice_date || new Date().toISOString().split("T")[0];
+    const rate = await getDayRate(date);
+    const montoBs = Math.round((inv.amount_total || 0) * rate * 100) / 100;
+    const saldoBs = Math.round((inv.amount_residual || 0) * rate * 100) / 100;
+    const estado = (inv.amount_residual || 0) <= 0 ? "pagado" : "pendiente";
+    return {
+      id: inv.id,
+      numero: inv.name,
+      cliente: inv.partner_id ? inv.partner_id[1] : "",
+      fecha: inv.invoice_date,
+      diario: inv.journal_id ? inv.journal_id[1] : "",
+      montoUSD: inv.amount_total || 0,
+      saldoUSD: inv.amount_residual || 0,
+      montoBs,
+      saldoBs,
+      tasa: rate,
+      estado,
+      tipo: "cxc"
+    };
+  }));
+  return enriched;
 }
 
-async function getAbonosCxC(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "=", "out_receipt"], ["state", "=", "posted"], ["amount_residual", ">", 0]];
-  if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
-  if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
-  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "move_type", "journal_id"];
-  return executeKw("account.move", "search_read", [domain], { fields });
-}
-
-async function getPagosContabilidad(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["partner_type", "=", "customer"], ["state", "=", "posted"], ["amount", ">", 0]];
-  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
-  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
-  const fields = ["id", "name", "partner_id", "date", "amount", "journal_id", "payment_type"];
-  return executeKw("account.payment", "search_read", [domain], { fields });
-}
-
-async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "=", "in_invoice"], ["state", "=", "posted"], ["journal_id.name", "ilike", "Delivery"]];
+// CxP: facturas de proveedores solo diario Delivery
+export async function getCxPFacturas(
+  fechaDesde?: string,
+  fechaHasta?: string,
+  banco?: string
+): Promise<any[]> {
+  const domain: any[] = [
+    ["move_type", "=", "in_invoice"],
+    ["state", "=", "posted"],
+    ["journal_id.name", "ilike", "Delivery"]
+  ];
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
   const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "journal_id"];
-  return executeKw("account.move", "search_read", [domain], { fields });
+  const invoices = await executeKw("account.move", "search_read", [domain], { fields });
+  const enriched = await Promise.all((invoices || []).map(async (inv: any) => {
+    const date = inv.invoice_date || new Date().toISOString().split("T")[0];
+    const rate = await getDayRate(date);
+    const montoBs = Math.round((inv.amount_total || 0) * rate * 100) / 100;
+    const saldoBs = Math.round((inv.amount_residual || 0) * rate * 100) / 100;
+    const estado = (inv.amount_residual || 0) <= 0 ? "pagado" : "pendiente";
+    return {
+      id: inv.id,
+      numero: inv.name,
+      proveedor: inv.partner_id ? inv.partner_id[1] : "",
+      fecha: inv.invoice_date,
+      diario: inv.journal_id ? inv.journal_id[1] : "",
+      montoUSD: inv.amount_total || 0,
+      saldoUSD: inv.amount_residual || 0,
+      montoBs,
+      saldoBs,
+      tasa: rate,
+      estado,
+      tipo: "cxp"
+    };
+  }));
+  return enriched;
+}
+
+async function getCxCLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  return getCxCFacturas(fechaDesde, fechaHasta);
+}
+
+async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  return getCxPFacturas(fechaDesde, fechaHasta);
+}
+
+// Pagos a destiempo: pagos de clientes cuya fecha de pago es diferente a la fecha de la factura
+export async function getPagosDestiempo(
+  fechaDesde?: string,
+  fechaHasta?: string,
+  diario?: string,
+  usuario?: string
+): Promise<any[]> {
+  // Buscar pagos de clientes registrados en contabilidad
+  const journalFilter = diario && diario !== "todos" ? [diario] : FACTURA_JOURNALS;
+  const domain: any[] = [
+    ["partner_type", "=", "customer"],
+    ["state", "=", "posted"],
+  ];
+  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
+
+  const fields = ["id", "name", "partner_id", "date", "amount", "journal_id", "create_uid", "reconciled_invoice_ids"];
+  const pagos = await executeKw("account.payment", "search_read", [domain], { fields });
+
+  const result: any[] = [];
+  for (const pago of pagos || []) {
+    // Filtrar por usuario si se especifica
+    const userName = pago.create_uid ? pago.create_uid[1] : "";
+    if (usuario && !userName.toLowerCase().includes(usuario.toLowerCase())) continue;
+
+    // Buscar facturas conciliadas con este pago
+    const invoiceIds: number[] = pago.reconciled_invoice_ids || [];
+    if (!invoiceIds.length) continue;
+
+    // Obtener fecha de las facturas
+    const invoices = await executeKw("account.move", "search_read",
+      [[["id", "in", invoiceIds]]],
+      { fields: ["id", "name", "invoice_date", "journal_id"] }
+    );
+
+    for (const inv of invoices || []) {
+      // Solo facturas de los diarios FAC
+      const journalName = inv.journal_id ? inv.journal_id[1] : "";
+      const isFacturaJournal = journalFilter.some((j: string) => journalName.includes(j));
+      if (!isFacturaJournal) continue;
+
+      const fechaFactura = inv.invoice_date;
+      const fechaPago = pago.date;
+      if (!fechaFactura || !fechaPago) continue;
+
+      // Calcular días de retraso
+      const diffMs = new Date(fechaPago).getTime() - new Date(fechaFactura).getTime();
+      const diasRetraso = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+      // Solo mostrar si el pago fue DESPUÉS de la fecha de factura (destiempo)
+      if (diasRetraso <= 0) continue;
+
+      const rate = await getDayRate(fechaPago);
+      const montoBs = Math.round((pago.amount || 0) * rate * 100) / 100;
+
+      result.push({
+        id: pago.id,
+        numero: inv.name,
+        partner: pago.partner_id ? pago.partner_id[1] : "",
+        fechaFactura,
+        fechaPago,
+        diasRetraso,
+        montoUSD: pago.amount || 0,
+        montoBs,
+        tasa: rate,
+        diario: pago.journal_id ? pago.journal_id[1] : "",
+        usuario: userName,
+      });
+    }
+  }
+
+  return result;
 }
 
 async function getBankMovements(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
