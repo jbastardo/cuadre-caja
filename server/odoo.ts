@@ -1794,12 +1794,12 @@ async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
   return executeKw("res.partner", "search_read", [domain, { fields, limit: 100 }]);
 }
 
-async function getAccountMoveLines(accountType: string, fechaDesde?: string, fechaHasta?: string, journalType?: string): Promise<any[]> {
+async function getAccountMoveLines(accountType: string, fechaDesde?: string, fechaHasta?: string, journalCode?: string): Promise<any[]> {
   const domain: any[] = [["account_id.type", "=", accountType]];
-  if (journalType) domain.push(["journal_id.type", "=", journalType]);
+  if (journalCode) domain.push(["journal_id.code", "=", journalCode]);
   if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
-  const fields = ["id", "move_id", "account_id", "partner_id", "date", "debit", "credit", "balance", "reconciled", "journal_id"];
+  const fields = ["id", "move_id", "account_id", "partner_id", "date", "debit", "credit", "balance", "reconciled", "journal_id", "journal_code"];
   return executeKw("account.move.line", "search_read", [domain, { fields, limit: 200, order: "date desc" }]);
 }
 
@@ -1808,34 +1808,27 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
   const cached = cache.get<CuentasResult>("cxc");
   if (cached) return cached;
   try {
-    const factLines = await getAccountMoveLines("receivable", undefined, undefined, "sale");
-    const recLines = await getAccountMoveLines("receivable", undefined, undefined, "receipt");
-    console.log("[CxC] Facturas:", factLines.length, "| Recibos:", recLines.length);
-    
-    const partnerTotals: Record<string, {name: string, factura: number, recibo: number}> = {};
-    
-    for (const line of factLines) {
-      const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
-      if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, factura: 0, recibo: 0 };
-      if (line.credit) partnerTotals[partnerName].factura += line.credit;
-    }
-    for (const line of recLines) {
-      const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
-      if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, factura: 0, recibo: 0 };
-      if (line.credit) partnerTotals[partnerName].recibo += line.credit;
-    }
+    const allLines = await getAccountMoveLines("receivable");
+    console.log("[CxC] Total lines:", allLines.length);
     
     let totalPendiente = 0;
     const cuentas: Cuenta[] = [];
+    const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
+    
+    for (const line of allLines) {
+      const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
+      if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
+      if (line.credit) partnerTotals[partnerName].pendiente += line.credit;
+    }
+    
     for (const [name, data] of Object.entries(partnerTotals)) {
-      const pendiente = data.factura + data.recibo;
-      totalPendiente += pendiente;
+      totalPendiente += data.pendiente;
       cuentas.push({
         id: name,
         name: data.name,
         partnerId: 0,
         partnerName: data.name,
-        totalPendiente: pendiente,
+        totalPendiente: data.pendiente,
         totalAbonos: 0,
         currency: "USD"
       });
@@ -1843,7 +1836,7 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
     
     const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
     cache.set("cxc", result);
-    console.log("[CxC] Total:", totalPendiente);
+    console.log("[CxC] Total:", totalPendiente, "Cuentas:", cuentas.length);
     return result;
   } catch (err) {
     console.error("Error getting CxC:", err);
