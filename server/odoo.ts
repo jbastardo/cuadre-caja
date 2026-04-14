@@ -1794,12 +1794,36 @@ async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
   return executeKw("res.partner", "search_read", [domain, { fields, limit: 100 }]);
 }
 
-async function getAccountMoveLines(accountType: string, fechaDesde?: string, fechaHasta?: string, journalCode?: string): Promise<any[]> {
-  const domain: any[] = [["account_id.type", "=", accountType]];
-  if (journalCode) domain.push(["journal_id.code", "=", journalCode]);
+async function getInvoices(journalCodes: string[], fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["move_type", "=", "out_invoice"], ["state", "=", "posted"]];
+  if (journalCodes.length > 0) domain.push(["journal_id.code", "in", journalCodes]);
+  if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
+  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "state", "journal_id"];
+  return executeKw("account.move", "search_read", [domain, { fields, limit: 200, order: "invoice_date desc" }]);
+}
+
+async function getSupplierInvoices(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["move_type", "=", "in_invoice"], ["state", "=", "posted"]];
+  if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
+  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "state", "journal_id"];
+  return executeKw("account.move", "search_read", [domain, { fields, limit: 200, order: "invoice_date desc" }]);
+}
+
+async function getPayments(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["move_type", "=", "receipt"], ["state", "=", "posted"]];
   if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
-  const fields = ["id", "move_id", "account_id", "partner_id", "date", "debit", "credit", "balance", "reconciled", "journal_id", "journal_code"];
+  const fields = ["id", "name", "partner_id", "date", "amount", "journal_id", "ref"];
+  return executeKw("account.payment", "search_read", [domain, { fields, limit: 200, order: "date desc" }]);
+}
+
+async function getBankMovements(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["state", "=", "posted"]];
+  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
+  const fields = ["id", "name", "date", "debit", "credit", "journal_id", "partner_id", "reconciled"];
   return executeKw("account.move.line", "search_read", [domain, { fields, limit: 200, order: "date desc" }]);
 }
 
@@ -1808,35 +1832,38 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
   const cached = cache.get<CuentasResult>("cxc");
   if (cached) return cached;
   try {
-    const allLines = await getAccountMoveLines("receivable");
-    console.log("[CxC] Total lines:", allLines.length);
+    const factLines = await getInvoices(["FAC01", "FAC02", "FAC4"]);
+    const recLines = await getInvoices(["REC01", "REC02"]);
+    console.log("[CxC] Facturas:", factLines.length, "| Recibos:", recLines.length);
     
     let totalPendiente = 0;
     const cuentas: Cuenta[] = [];
-    const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
     
-    for (const line of allLines) {
-      const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
-      if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
-      if (line.credit) partnerTotals[partnerName].pendiente += line.credit;
-    }
+    const addToCuentas = (lines: any[], tipo: string) => {
+      for (const inv of lines) {
+        const partnerName = inv.partner_id ? inv.partner_id[1] : "Sin partner";
+        const pendiente = inv.amount_residual || 0;
+        if (pendiente > 0) {
+          totalPendiente += pendiente;
+          cuentas.push({
+            id: `${inv.id}-${tipo}`,
+            name: `${inv.name} (${tipo})`,
+            partnerId: inv.partner_id ? inv.partner_id[0] : 0,
+            partnerName: partnerName,
+            totalPendiente: pendiente,
+            totalAbonos: 0,
+            currency: "USD"
+          });
+        }
+      }
+    };
     
-    for (const [name, data] of Object.entries(partnerTotals)) {
-      totalPendiente += data.pendiente;
-      cuentas.push({
-        id: name,
-        name: data.name,
-        partnerId: 0,
-        partnerName: data.name,
-        totalPendiente: data.pendiente,
-        totalAbonos: 0,
-        currency: "USD"
-      });
-    }
+    addToCuentas(factLines, " Factura");
+    addToCuentas(recLines, " Recibo");
     
     const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
     cache.set("cxc", result);
-    console.log("[CxC] Total:", totalPendiente, "Cuentas:", cuentas.length);
+    console.log("[CxC] Total:", totalPendiente, "Docs:", cuentas.length);
     return result;
   } catch (err) {
     console.error("Error getting CxC:", err);
@@ -1849,36 +1876,32 @@ export async function getCuentasPorPagar(): Promise<CuentasResult> {
   const cached = cache.get<CuentasResult>("cxp");
   if (cached) return cached;
   try {
-    const lines = await getAccountMoveLines("payable");
-    console.log("[CxP] Payable lines:", lines.length);
-    
-    const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
-    for (const line of lines) {
-      const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
-      if (!partnerTotals[partnerName]) {
-        partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
-      }
-      if (line.debit) partnerTotals[partnerName].pendiente += line.debit;
-    }
+    const suppLines = await getSupplierInvoices();
+    console.log("[CxP] Facturas proveedor:", suppLines.length);
     
     let totalPendiente = 0;
     const cuentas: Cuenta[] = [];
-    for (const [name, data] of Object.entries(partnerTotals)) {
-      totalPendiente += data.pendiente;
-      cuentas.push({
-        id: name,
-        name: data.name,
-        partnerId: 0,
-        partnerName: data.name,
-        totalPendiente: data.pendiente,
-        totalAbonos: 0,
-        currency: "USD"
-      });
+    
+    for (const inv of suppLines) {
+      const partnerName = inv.partner_id ? inv.partner_id[1] : "Sin proveedor";
+      const pendiente = inv.amount_residual || 0;
+      if (pendiente > 0) {
+        totalPendiente += pendiente;
+        cuentas.push({
+          id: String(inv.id),
+          name: inv.name,
+          partnerId: inv.partner_id ? inv.partner_id[0] : 0,
+          partnerName: partnerName,
+          totalPendiente: pendiente,
+          totalAbonos: 0,
+          currency: "USD"
+        });
+      }
     }
     
     const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
     cache.set("cxp", result);
-    console.log("[CxP] Total pendiente:", totalPendiente, "cuentas:", cuentas.length);
+    console.log("[CxP] Total:", totalPendiente, "Docs:", cuentas.length);
     return result;
   } catch (err) {
     console.error("Error getting CxP:", err);
@@ -1888,23 +1911,37 @@ export async function getCuentasPorPagar(): Promise<CuentasResult> {
 
 export async function getMovimientosCuentas(tipo: string, fechaDesde?: string, fechaHasta?: string): Promise<Movimiento[]> {
   try {
-    const accountType = tipo === "cxc" ? "receivable" : "payable";
-    const domain: any[] = [["account_type", "=", accountType]];
-    if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
-    if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
-    const fields = ["id", "move_id", "account_id", "partner_id", "date", "credit", "debit", "balance", "reconciled"];
-    const opts = { fields, limit: 200, order: "date desc" };
-    const moves = await executeKw("account.move.line", "search_read", [domain, opts]);
-    return moves.map((m: any) => ({
-      id: String(m.id),
-      documento: m.move_id ? m.move_id[1] || "" : "",
-      documentoAfectado: m.account_id ? m.account_id[1] || "" : "",
-      partnerName: m.partner_id ? m.partner_id[1] || "" : "",
-      fecha: m.date || "",
-      monto: tipo === "cxc" ? m.credit : m.debit,
-      saldo: m.balance,
-      estado: m.reconciled ? "conciliado" : "pendiente"
-    }));
+    if (tipo === "cxc") {
+      const invoices = await getInvoices(["FAC01", "FAC02", "FAC4"], fechaDesde, fechaHasta);
+      const receipts = await getInvoices(["REC01", "REC02"], fechaDesde, fechaHasta);
+      return [...invoices, ...receipts].map((m: any) => ({
+        id: String(m.id),
+        documento: m.name || "",
+        documentoAfectado: m.journal_id ? m.journal_id[1] : "",
+        partnerName: m.partner_id ? m.partner_id[1] : "",
+        fecha: m.invoice_date || "",
+        monto: m.amount_total || 0,
+        saldo: m.amount_residual || 0,
+        estado: m.amount_residual > 0 ? "pendiente" : "pagado"
+      }));
+    } else {
+      const invoices = await getSupplierInvoices(fechaDesde, fechaHasta);
+      return invoices.map((m: any) => ({
+        id: String(m.id),
+        documento: m.name || "",
+        documentoAfectado: m.journal_id ? m.journal_id[1] : "",
+        partnerName: m.partner_id ? m.partner_id[1] : "",
+        fecha: m.invoice_date || "",
+        monto: m.amount_total || 0,
+        saldo: m.amount_residual || 0,
+        estado: m.amount_residual > 0 ? "pendiente" : "pagado"
+      }));
+    }
+  } catch (err) {
+    console.error("Error getting movimientos:", err);
+    return [];
+  }
+}
   } catch (err) {
     console.error("Error getting movimientos:", err);
     return [];
@@ -1916,40 +1953,39 @@ export async function getBanco(): Promise<BancoData> {
   const cached = cache.get<BancoData>("banco");
   if (cached) return cached;
   try {
-    const journalIds = [1, 2, 3, 4, 5, 6];
+    const lines = await getBankMovements();
+    console.log("[Banco] Movs:", lines.length);
+    
     let total = 0;
     let ingresos = 0;
     let egresos = 0;
     const movimientos: Movimiento[] = [];
-    const fechaMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const fields = ["id", "move_id", "date", "debit", "credit", "partner_id", "reconciled"];
-    for (const jid of journalIds) {
-      const domain = [["journal_id", "=", jid], ["date", ">=", fechaMin]];
-      const lines = await executeKw("account.move.line", "search_read", [domain, { fields, limit: 50 }]);
-      for (const line of lines) {
-        const debit = line.debit || 0;
-        const credit = line.credit || 0;
-        if (debit > 0) {
-          ingresos += debit;
-          total += debit;
-        } else if (credit > 0) {
-          egresos += credit;
-          total -= credit;
-        }
-        movimientos.push({
-          id: String(line.id),
-          documento: line.move_id ? line.move_id[1] || "" : "",
-          documentoAfectado: "Journal " + jid,
-          partnerName: line.partner_id ? line.partner_id[1] || "" : "",
-          fecha: line.date || "",
-          monto: debit > 0 ? debit : -credit,
-          saldo: total,
-          estado: line.reconciled ? "conciliado" : "pendiente"
-        });
+    
+    for (const line of lines) {
+      const debit = line.debit || 0;
+      const credit = line.credit || 0;
+      if (debit > 0) {
+        ingresos += debit;
+        total += debit;
+      } else if (credit > 0) {
+        egresos += credit;
+        total -= credit;
       }
+      movimientos.push({
+        id: String(line.id),
+        documento: line.name || "",
+        documentoAfectado: line.journal_id ? line.journal_id[1] : "",
+        partnerName: line.partner_id ? line.partner_id[1] : "",
+        fecha: line.date || "",
+        monto: debit > 0 ? debit : -credit,
+        saldo: total,
+        estado: line.reconciled ? "conciliado" : "pendiente"
+      });
     }
+    
     const result: BancoData = { total, ingresos, egresos, movimientos: movimientos.slice(0, 100) };
     cache.set("banco", result);
+    console.log("[Banco] Total:", total, "Ingresos:", ingresos, "Egresos:", egresos);
     return result;
   } catch (err) {
     console.error("Error getting banco:", err);
