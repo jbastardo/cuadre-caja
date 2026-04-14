@@ -434,3 +434,22 @@ router.get("/api/cuentas/conciliacion", async (_req: Request, res: Response) => 
     res.status(500).json({ error: err.message });
   }
 });
+
+router.get("/api/cuentas/debug", async (_req: Request, res: Response) => {
+  try {
+    const cxc = await odoo.getCuentasPorCobrar();
+    const cxp = await odoo.getCuentasPorPagar();
+    const allInvoices = await odoo.getAllInvoices();
+    const supplierInvoices = await odoo.getSupplierInvoices();
+    res.json({
+      cxc_balance: cxc,
+      cxp_balance: cxp,
+      all_invoices_count: allInvoices.length,
+      supplier_invoices_count: supplierInvoices.length,
+      sample_invoice: allInvoices[0] || null,
+      sample_supplier: supplierInvoices[0] || null
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
