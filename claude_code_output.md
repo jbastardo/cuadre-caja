@@ -1,35 +1,29 @@
-# Estado de la tarea: Resolver error 500 al guardar cuadres
+# Estado: Implementación CxC/CxP - Corrección de sintaxis Odoo
 
-## Problema original
-- Al agregar campos `totalMetodosPOS` y `totalJustificadoReal` al schema y formulario, el guardado de cuadres comenzó a dar error 500
+## Progreso
 
-## Solución aplicada
-Se reversaron los cambios que causaban el error:
+Se limpió el código duplicado en `server/odoo.ts` y se corrigió la sintaxis de search_read:
 
-### Archivos modificados:
+### Cambios realizados:
 
-1. **client/src/pages/CuadreForm.tsx**
-   - Eliminado el envío de `totalMetodosPOS` y `totalJustificadoReal` en el body del save
+1. **Eliminadas funciones duplicadas** (líneas 1801-1871 original):
+   - Eliminadas 3 definiciones duplicadas de `getCxCLines`
+   - Eliminadas 3 definiciones duplicadas de `getCxPLines`
+   - Eliminadas 3 definiciones duplicadas de `getBankMovements`
 
-2. **shared/schema.ts**
-   - Eliminados los campos opcionales `totalMetodosPOS` y `totalJustificadoReal` del `cuadreSchema`
+2. **Corregida sintaxis search_read**:
+   - Cambiado de: `executeKw("model", "search_read", [domain, { fields, limit }])`
+   - A: `executeKw("model", "search_read", [domain, fields])`
+   - Afecta: `getAllInvoices`, `getSupplierInvoices`, `getBankMovements`, `searchPartnersByType`
 
-3. **server/sheets.ts**
-   - Eliminada la lectura de columnas 42 y 43 (totalMetodosPOS, totalJustificadoReal) en `rowToCuadre`
-   - Eliminada la escritura de esos campos en `cuadreToRow`
-   - Comentar las asignaciones en `createCuadre` y `updateCuadre`
+3. **Actualizado getCxCLines**:
+   - Ahora filtra por cuentas 1122001 y 1122007 (CxC comercial y Cashea)
+   - Incluye campos: move_id, account_id, journal_id
 
-4. **server/routes.ts**
-   - Agregado logging más detallado en el error del PUT cuadre
-
-## Verificación
-- Build exitoso: `npm run build` completado sin errores
-- TypeScript compila correctamente
+4. **Corregido getMovimientosCuentas**:
+   - Usa `getAllInvoices(fechaDesde, fechaHasta)` para CxC
+   - Usa `getSupplierInvoices(fechaDesde, fechaHasta)` para CxP
 
 ## Estado actual
-- El guardado de cuadres debería funcionar nuevamente
-- El reporte seguirá mostrando los valores del formulario (usando fallback al campo original)
-- El problema original de discrepancia entre reporte y formulario NO está resuelto - se necesita una solución diferente
-
-## Siguiente paso
-Hacer commit de estos cambios y deploy a Railway para verificar que el error 500 está resuelto.
+- Cambios en `server/odoo.ts` listos para commit
+-listo para hacer commit y push (no hay otros cambios en git status)

@@ -441,13 +441,19 @@ router.get("/api/cuentas/debug", async (_req: Request, res: Response) => {
     const cxp = await odoo.getCuentasPorPagar();
     const allInvoices = await odoo.getAllInvoices();
     const supplierInvoices = await odoo.getSupplierInvoices();
+    const abonos = await odoo.getAbonosCxC();
+    const pagosConta = await odoo.getPagosContabilidad();
     res.json({
       cxc_balance: cxc,
       cxp_balance: cxp,
       all_invoices_count: allInvoices.length,
       supplier_invoices_count: supplierInvoices.length,
+      abonos_count: abonos.length,
+      pagos_conta_count: pagosConta.length,
       sample_invoice: allInvoices[0] || null,
-      sample_supplier: supplierInvoices[0] || null
+      sample_supplier: supplierInvoices[0] || null,
+      sample_abono: abonos[0] || null,
+      sample_pago_conta: pagosConta[0] || null
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

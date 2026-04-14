@@ -1799,11 +1799,25 @@ const RECIBO_JOURNELS = ["RDV1", "RDV2"];
 const ALL_JOURNELS = [...FACTURA_JOURNELS, ...RECIBO_JOURNELS];
 
 async function getCxCLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "in", ["out_invoice", "out_receipt"]], ["state", "=", "posted"], ["amount_residual", ">", 0]];
+  const domain: any[] = [["move_type", "=", "out_invoice"], ["state", "=", "posted"], ["amount_residual", ">", 0], ["journal_id.name", "ilike", "FAC"]];
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
   const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "move_type", "journal_id"];
   return executeKw("account.move", "search_read", [domain], { fields });
+}
+
+async function getAbonosCxC(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["move_type", "=", "out_receipt"], ["state", "=", "posted"], ["amount_residual", ">", 0]];
+  if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
+  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "move_type", "journal_id"];
+  return executeKw("account.move", "search_read", [domain], { fields });
+}
+
+async function getPagosContabilidad(): Promise<any[]> {
+  const domain: any[] = [["partner_type", "=", "customer"], ["state", "=", "posted"], ["amount", ">", 0]];
+  const fields = ["id", "name", "partner_id", "date", "amount", "journal_id"];
+  return executeKw("account.payment", "search_read", [domain], { fields });
 }
 
 async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
