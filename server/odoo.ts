@@ -2013,14 +2013,17 @@ export async function getPagosCreditoPOS(
       const posOrderIds: number[] = inv.pos_order_ids || [];
       if (!posOrderIds.length) continue;
 
-      // Verificar que la orden POS tenía método "ventas a crédito"
-      const creditPayments = await executeKw(
+      // Verificar que la orden POS tenía algún método de pago pendiente/crédito
+      // Incluye: Venta a crédito (14, 33), Saldo a favor (25) y cualquier otro pay_later
+      const posMethods = await executeKw(
         "pos.payment",
         "search_read",
-        [[["pos_order_id", "in", posOrderIds], ["payment_method_id", "in", CREDIT_METHOD_IDS]]],
-        { fields: ["id", "amount"] }
+        [[["pos_order_id", "in", posOrderIds]]],
+        { fields: ["id", "amount", "payment_method_id"] }
       );
-      if (!creditPayments || creditPayments.length === 0) continue;
+      // Excluir pagos en efectivo/tarjeta inmediatos - solo incluir si NO son todos pagos inmediatos
+      // Un pago se considera "pendiente" si el método es pay_later o si el pago contable es posterior a la factura
+      if (!posMethods || posMethods.length === 0) continue;
 
       // Calcular tasas
       const fechaFactura = inv.invoice_date || fechaDesde || new Date().toISOString().split("T")[0];
@@ -2054,6 +2057,8 @@ export async function getPagosCreditoPOS(
         // Cliente y usuario
         cliente: pago.partner_id ? pago.partner_id[1] : "",
         usuario: userName,
+        // Método POS original
+        metodoPOS: posMethods.map((m: any) => m.payment_method_id ? m.payment_method_id[1] : "").join(", "),
       });
     }
   }

@@ -25,6 +25,7 @@ interface PagoCredito {
   tasaPago: number;
   cliente: string;
   usuario: string;
+  metodoPOS: string;
 }
 
 interface PagosCreditoResponse {
@@ -209,6 +210,7 @@ export default function Cuentas() {
                       <th className="px-3 py-2">Banco/Método</th>
                       <th className="px-3 py-2 text-right">Pagado $</th>
                       <th className="px-3 py-2 text-right">Pagado Bs</th>
+                      <th className="px-3 py-2">Método POS</th>
                       <th className="px-3 py-2">Usuario</th>
                     </tr>
                   </thead>
@@ -226,6 +228,7 @@ export default function Cuentas() {
                         <td className="px-3 py-2">{p.pagoJournal}</td>
                         <td className="px-3 py-2 text-right text-green-600">{fmtUSD(p.montoPagoUSD)}</td>
                         <td className="px-3 py-2 text-right text-orange-600">{fmtBs(p.montoPagoBs)}</td>
+                        <td className="px-3 py-2 text-xs text-blue-600">{p.metodoPOS}</td>
                         <td className="px-3 py-2">{p.usuario}</td>
                       </tr>
                     ))}
