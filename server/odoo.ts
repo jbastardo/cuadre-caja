@@ -1898,6 +1898,30 @@ export async function getCuentasPorPagar(fechaDesde?: string, fechaHasta?: strin
       if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
       partnerTotals[partnerName].pendiente += line.amount_residual || 0;
     }
+    
+    const cuentas: Cuenta[] = [];
+    for (const [name, data] of Object.entries(partnerTotals)) {
+      totalPendiente += data.pendiente;
+      cuentas.push({
+        id: name,
+        name: data.name,
+        partnerId: 0,
+        partnerName: data.name,
+        totalPendiente: data.pendiente,
+        totalAbonos: 0,
+        currency: "USD"
+      });
+    }
+    
+    const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
+    cache.set(cacheKey, result);
+    console.log("[CxP] Total:", totalPendiente, "Cuentas:", cuentas.length);
+    return result;
+  } catch (err) {
+    console.error("Error getting CxP:", err);
+    return { totalPendiente: 0, totalAbonos: 0, cuentas: [] };
+  }
+}
 
 export async function getMovimientosCuentas(tipo: string, fechaDesde?: string, fechaHasta?: string): Promise<Movimiento[]> {
   try {
