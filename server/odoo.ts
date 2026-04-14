@@ -1794,15 +1794,15 @@ async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
   return executeKw("res.partner", "search_read", [domain, { fields, limit: 100 }]);
 }
 
-async function getPendingReceivables(): Promise<any[]> {
-  const domain = [["account_id.code", "=", "1.1.01.01.01"]];
-  const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id"];
+async function getCxCLines(): Promise<any[]> {
+  const domain = [["account_id.code", "in", ["1122001", "1122007"]], ["debit", ">", 0]];
+  const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id", "journal_id"];
   return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
 }
 
-async function getPendingPayables(): Promise<any[]> {
-  const domain = [["account_id.code", "=", "2.1.01.01.01"]];
-  const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id"];
+async function getCxPLines(): Promise<any[]> {
+  const domain = [["account_id.code", "=", "2110001"], ["credit", ">", 0]];
+  const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id", "journal_id"];
   return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
 }
 
@@ -1835,17 +1835,17 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
   const cached = cache.get<CuentasResult>("cxc");
   if (cached) return cached;
   try {
-    const lines = await getPendingReceivables();
+    const lines = await getCxCLines();
     console.log("[CxC] Lines:", lines.length);
     
     let totalPendiente = 0;
     const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
     
     for (const line of lines) {
-      if (line.credit > 0 && !line.reconciled) {
-        const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
+      if (line.debit > 0 && !line.reconciled) {
+        const partnerName = line.partner_id ? line.partner_id[1] : "Sin cliente";
         if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
-        partnerTotals[partnerName].pendiente += line.credit;
+        partnerTotals[partnerName].pendiente += line.debit;
       }
     }
     
@@ -1878,32 +1878,37 @@ export async function getCuentasPorPagar(): Promise<CuentasResult> {
   const cached = cache.get<CuentasResult>("cxp");
   if (cached) return cached;
   try {
-    const suppLines = await getSupplierInvoices();
-    console.log("[CxP] Facturas proveedor:", suppLines.length);
+    const lines = await getCxPLines();
+    console.log("[CxP] Lines:", lines.length);
     
     let totalPendiente = 0;
-    const cuentas: Cuenta[] = [];
+    const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
     
-    for (const inv of suppLines) {
-      const partnerName = inv.partner_id ? inv.partner_id[1] : "Sin proveedor";
-      const pendiente = inv.amount_residual || 0;
-      if (pendiente > 0) {
-        totalPendiente += pendiente;
-        cuentas.push({
-          id: String(inv.id),
-          name: inv.name,
-          partnerId: inv.partner_id ? inv.partner_id[0] : 0,
-          partnerName: partnerName,
-          totalPendiente: pendiente,
-          totalAbonos: 0,
-          currency: "USD"
-        });
+    for (const line of lines) {
+      if (line.credit > 0 && !line.reconciled) {
+        const partnerName = line.partner_id ? line.partner_id[1] : "Sin proveedor";
+        if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
+        partnerTotals[partnerName].pendiente += line.credit;
       }
+    }
+    
+    const cuentas: Cuenta[] = [];
+    for (const [name, data] of Object.entries(partnerTotals)) {
+      totalPendiente += data.pendiente;
+      cuentas.push({
+        id: name,
+        name: data.name,
+        partnerId: 0,
+        partnerName: data.name,
+        totalPendiente: data.pendiente,
+        totalAbonos: 0,
+        currency: "USD"
+      });
     }
     
     const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
     cache.set("cxp", result);
-    console.log("[CxP] Total:", totalPendiente, "Docs:", cuentas.length);
+    console.log("[CxP] Total:", totalPendiente, "Cuentas:", cuentas.length);
     return result;
   } catch (err) {
     console.error("Error getting CxP:", err);
@@ -1914,12 +1919,16 @@ export async function getCuentasPorPagar(): Promise<CuentasResult> {
 export async function getMovimientosCuentas(tipo: string, fechaDesde?: string, fechaHasta?: string): Promise<Movimiento[]> {
   try {
     if (tipo === "cxc") {
-      const invoices = await getInvoices(["FAC01", "FAC02", "FAC4"], fechaDesde, fechaHasta);
-      const receipts = await getInvoices(["REC01", "REC02"], fechaDesde, fechaHasta);
-      return [...invoices, ...receipts].map((m: any) => ({
+      const invoices = await getCustomerInvoices();
+      const filtered = invoices.filter((m: any) => {
+        if (fechaDesde && m.invoice_date < fechaDesde) return false;
+        if (fechaHasta && m.invoice_date > fechaHasta) return false;
+        return true;
+      });
+      return filtered.map((m: any) => ({
         id: String(m.id),
         documento: m.name || "",
-        documentoAfectado: m.journal_id ? m.journal_id[1] : "",
+        documentoAfectado: "",
         partnerName: m.partner_id ? m.partner_id[1] : "",
         fecha: m.invoice_date || "",
         monto: m.amount_total || 0,
@@ -1927,11 +1936,16 @@ export async function getMovimientosCuentas(tipo: string, fechaDesde?: string, f
         estado: m.amount_residual > 0 ? "pendiente" : "pagado"
       }));
     } else {
-      const invoices = await getSupplierInvoices(fechaDesde, fechaHasta);
-      return invoices.map((m: any) => ({
+      const bills = await getVendorBills();
+      const filtered = bills.filter((m: any) => {
+        if (fechaDesde && m.invoice_date < fechaDesde) return false;
+        if (fechaHasta && m.invoice_date > fechaHasta) return false;
+        return true;
+      });
+      return filtered.map((m: any) => ({
         id: String(m.id),
         documento: m.name || "",
-        documentoAfectado: m.journal_id ? m.journal_id[1] : "",
+        documentoAfectado: "",
         partnerName: m.partner_id ? m.partner_id[1] : "",
         fecha: m.invoice_date || "",
         monto: m.amount_total || 0,
