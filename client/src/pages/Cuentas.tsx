@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, RefreshCw, Search, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, RefreshCw, Search, X, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 interface PagoCredito {
   facturaId: number;
@@ -27,17 +28,21 @@ interface PagoCredito {
   cliente: string;
   usuario: string;
   metodoPOS: string;
+  mismodia: boolean;
+  diasDiferencia: number;
 }
 
 interface PagosCreditoResponse {
   pagos: PagoCredito[];
+  cantidad: number;
+  cantidadDestiempo: number;
+  cantidadMismodia: number;
   totalFacturasUSD: number;
   totalFacturasBs: number;
   totalPagosUSD: number;
   totalPagosBs: number;
   totalSaldoUSD: number;
   totalSaldoBs: number;
-  cantidad: number;
 }
 
 interface FiltrosData {
@@ -59,11 +64,11 @@ export default function Cuentas() {
   const [usuario, setUsuario] = useState("");
   const [metodoPOS, setMetodoPOS] = useState("todos");
   const [banco, setBanco] = useState("todos");
+  const [soloDestiempo, setSoloDestiempo] = useState(false);
   const [buscar, setBuscar] = useState(false);
 
-  const tieneFechas = fechaDesde || fechaHasta;
+  const tieneFechas = !!(fechaDesde || fechaHasta);
 
-  // Cargar listas de filtros
   const { data: filtros } = useQuery<FiltrosData>({
     queryKey: ["cuentas", "filtros"],
     queryFn: () => fetch("/api/cuentas/filtros").then(r => r.json()),
@@ -77,18 +82,20 @@ export default function Cuentas() {
     if (usuario) p.append("usuario", usuario);
     if (metodoPOS && metodoPOS !== "todos") p.append("metodoPOS", metodoPOS);
     if (banco && banco !== "todos") p.append("metodoPago", banco);
+    if (soloDestiempo) p.append("soloDestiempo", "1");
     return p.toString();
   };
 
   const { data, isLoading, refetch, error } = useQuery<PagosCreditoResponse>({
-    queryKey: ["cuentas", "pagos-credito", fechaDesde, fechaHasta, usuario, metodoPOS, banco],
+    queryKey: ["cuentas", "pagos-credito", fechaDesde, fechaHasta, usuario, metodoPOS, banco, soloDestiempo],
     queryFn: () => fetch(`/api/cuentas/pagos-credito?${buildParams()}`).then(r => r.json()),
     enabled: buscar,
   });
 
   const handleBuscar = () => { setBuscar(true); setTimeout(() => refetch(), 50); };
   const handleLimpiar = () => {
-    setFechaDesde(""); setFechaHasta(""); setUsuario(""); setMetodoPOS("todos"); setBanco("todos"); setBuscar(false);
+    setFechaDesde(""); setFechaHasta(""); setUsuario(""); setMetodoPOS("todos");
+    setBanco("todos"); setSoloDestiempo(false); setBuscar(false);
   };
 
   return (
@@ -103,7 +110,7 @@ export default function Cuentas() {
             </Button>
             <div>
               <h1 className="text-xl font-bold">Pagos Contables a Crédito POS</h1>
-              <p className="text-xs text-muted-foreground">Pagos registrados en contabilidad aplicados a facturas POS</p>
+              <p className="text-xs text-muted-foreground">Pagos registrados en contabilidad aplicados a facturas POS — identifica pagos a destiempo que pueden descuadrar el balance</p>
             </div>
           </div>
           {buscar && (
@@ -117,8 +124,6 @@ export default function Cuentas() {
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-
-              {/* Fechas - siempre visibles */}
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Fecha pago desde</div>
                 <Input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
@@ -127,8 +132,6 @@ export default function Cuentas() {
                 <div className="text-xs text-muted-foreground mb-1">Fecha pago hasta</div>
                 <Input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
               </div>
-
-              {/* Banco - dropdown dinámico */}
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Banco / Método de pago</div>
                 <Select value={banco} onValueChange={setBanco}>
@@ -143,8 +146,6 @@ export default function Cuentas() {
                   </SelectContent>
                 </Select>
               </div>
-
-              {/* Método POS - dropdown dinámico */}
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Método POS</div>
                 <Select value={metodoPOS} onValueChange={setMetodoPOS}>
@@ -160,20 +161,31 @@ export default function Cuentas() {
                 </Select>
               </div>
 
-              {/* Usuario - solo visible cuando hay fechas */}
+              {/* Usuario: solo visible con fechas */}
               {tieneFechas && (
-                <div className="col-span-2 md:col-span-2">
+                <div className="col-span-2">
                   <div className="text-xs text-muted-foreground mb-1">Usuario creador (opcional)</div>
-                  <Input
-                    placeholder="ej. Yasibit, Juan..."
-                    value={usuario}
-                    onChange={e => setUsuario(e.target.value)}
-                  />
+                  <Input placeholder="ej. Yasibit, Juan..." value={usuario} onChange={e => setUsuario(e.target.value)} />
                 </div>
               )}
 
-              {/* Botones */}
-              <div className={`flex gap-2 items-end ${tieneFechas ? "col-span-2 md:col-span-2" : "col-span-2 md:col-span-4"}`}>
+              {/* Filtro destiempo: solo visible con fechas */}
+              {tieneFechas && (
+                <div className="col-span-2 flex items-end">
+                  <button
+                    onClick={() => setSoloDestiempo(!soloDestiempo)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md border text-sm font-medium transition-colors w-full justify-center
+                      ${soloDestiempo
+                        ? "bg-amber-100 border-amber-400 text-amber-800"
+                        : "bg-background border-input text-muted-foreground hover:bg-muted"}`}
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                    {soloDestiempo ? "Mostrando solo destiempo" : "Ver solo pagos a destiempo"}
+                  </button>
+                </div>
+              )}
+
+              <div className={`flex gap-2 items-end ${tieneFechas ? "col-span-4" : "col-span-2 md:col-span-4"}`}>
                 <Button onClick={handleBuscar} className="flex-1">
                   <Search className="h-4 w-4 mr-1" /> Buscar
                 </Button>
@@ -185,9 +197,9 @@ export default function Cuentas() {
           </CardContent>
         </Card>
 
-        {/* Resumen totales */}
+        {/* Resumen */}
         {data && !isLoading && buscar && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card>
               <CardContent className="pt-4">
                 <div className="text-xs text-muted-foreground">Total Facturas</div>
@@ -209,16 +221,43 @@ export default function Cuentas() {
                 <div className="text-sm text-orange-600">{fmtBs(data.totalSaldoBs)}</div>
               </CardContent>
             </Card>
+            <Card className="border-green-200 bg-green-50">
+              <CardContent className="pt-4">
+                <div className="text-xs text-green-700 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" /> Mismo día (ok)
+                </div>
+                <div className="text-2xl font-bold text-green-700">{data.cantidadMismodia}</div>
+                <div className="text-xs text-muted-foreground">registrados en el cuadre</div>
+              </CardContent>
+            </Card>
+            <Card className="border-amber-200 bg-amber-50">
+              <CardContent className="pt-4">
+                <div className="text-xs text-amber-700 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" /> Destiempo ⚠️
+                </div>
+                <div className="text-2xl font-bold text-amber-700">{data.cantidadDestiempo}</div>
+                <div className="text-xs text-muted-foreground">pueden descuadrar balance</div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
         {/* Tabla */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">
+            <CardTitle className="text-sm flex items-center gap-2">
               {isLoading ? "Buscando en Odoo..." :
-               buscar && data ? `${data.cantidad} registros encontrados` :
-               "Selecciona fechas y presiona Buscar"}
+               buscar && data ? (
+                 <>
+                   {data.cantidad} registros
+                   {data.cantidadDestiempo > 0 && (
+                     <Badge variant="destructive" className="text-xs ml-2">
+                       <AlertTriangle className="h-3 w-3 mr-1" />
+                       {data.cantidadDestiempo} a destiempo
+                     </Badge>
+                   )}
+                 </>
+               ) : "Selecciona fechas y presiona Buscar"}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -226,6 +265,7 @@ export default function Cuentas() {
               <div className="p-10 text-center text-muted-foreground">
                 <Search className="h-8 w-8 mx-auto mb-2 opacity-30" />
                 <p>Selecciona un rango de fechas y presiona Buscar</p>
+                <p className="text-xs mt-1">Los pagos a destiempo (registrados después del cierre del cuadre) se marcarán en amarillo</p>
               </div>
             ) : isLoading ? (
               <div className="p-6 space-y-2">
@@ -245,7 +285,7 @@ export default function Cuentas() {
                   <thead className="border-b bg-muted/40 text-left">
                     <tr>
                       <th className="px-3 py-2 border-r font-semibold bg-green-50" colSpan={6}>FACTURA (POS)</th>
-                      <th className="px-3 py-2 font-semibold bg-blue-50" colSpan={6}>PAGO CONTABLE</th>
+                      <th className="px-3 py-2 font-semibold bg-blue-50" colSpan={7}>PAGO CONTABLE</th>
                     </tr>
                     <tr className="border-b">
                       <th className="px-3 py-2">Número</th>
@@ -254,6 +294,7 @@ export default function Cuentas() {
                       <th className="px-3 py-2 text-right">Monto $</th>
                       <th className="px-3 py-2 text-right">Monto Bs</th>
                       <th className="px-3 py-2 text-right border-r">Saldo $</th>
+                      <th className="px-3 py-2 text-center">Estado</th>
                       <th className="px-3 py-2">Número</th>
                       <th className="px-3 py-2">Fecha</th>
                       <th className="px-3 py-2">Banco</th>
@@ -265,13 +306,29 @@ export default function Cuentas() {
                   </thead>
                   <tbody>
                     {data.pagos.map((p, i) => (
-                      <tr key={`${p.facturaId}-${p.pagoId}-${i}`} className="border-b hover:bg-muted/20">
+                      <tr key={`${p.facturaId}-${p.pagoId}-${i}`}
+                        className={`border-b ${!p.mismodia ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-muted/20"}`}>
                         <td className="px-3 py-2 font-mono">{p.facturaNro}</td>
                         <td className="px-3 py-2">{p.cliente}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{p.facturaFecha}</td>
                         <td className="px-3 py-2 text-right">{fmtUSD(p.montoFacturaUSD)}</td>
                         <td className="px-3 py-2 text-right text-orange-600">{fmtBs(p.montoFacturaBs)}</td>
                         <td className="px-3 py-2 text-right border-r text-red-600">{fmtUSD(p.saldoFacturaUSD)}</td>
+                        {/* Indicador destiempo */}
+                        <td className="px-3 py-2 text-center">
+                          {p.mismodia ? (
+                            <span title="Registrado el mismo día del cuadre">
+                              <CheckCircle2 className="h-4 w-4 text-green-600 inline" />
+                            </span>
+                          ) : (
+                            <span title={`Registrado ${p.diasDiferencia} días después del cuadre`}>
+                              <Badge variant="outline" className="text-amber-700 border-amber-400 bg-amber-50 text-xs">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                +{p.diasDiferencia}d
+                              </Badge>
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 font-mono">{p.pagoNro}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{p.pagoFecha}</td>
                         <td className="px-3 py-2">{p.pagoJournal}</td>
@@ -288,6 +345,9 @@ export default function Cuentas() {
                       <td className="px-3 py-2 text-right">{fmtUSD(data.totalFacturasUSD)}</td>
                       <td className="px-3 py-2 text-right text-orange-600">{fmtBs(data.totalFacturasBs)}</td>
                       <td className="px-3 py-2 text-right border-r text-red-600">{fmtUSD(data.totalSaldoUSD)}</td>
+                      <td className="px-3 py-2 text-center text-xs text-muted-foreground">
+                        <span className="text-green-600">{data.cantidadMismodia}✅</span> / <span className="text-amber-600">{data.cantidadDestiempo}⚠️</span>
+                      </td>
                       <td colSpan={3} />
                       <td className="px-3 py-2 text-right text-green-600">{fmtUSD(data.totalPagosUSD)}</td>
                       <td className="px-3 py-2 text-right text-orange-600">{fmtBs(data.totalPagosBs)}</td>

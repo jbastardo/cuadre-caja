@@ -422,14 +422,31 @@ router.get("/api/cuentas/pagos-credito", async (req: Request, res: Response) => 
     const usuario = query(req, "usuario");
     const metodoPago = query(req, "metodoPago");
     const metodoPOS = query(req, "metodoPOS");
-    const pagos = await odoo.getPagosCreditoPOS(fechaDesde, fechaHasta, usuario, metodoPago, metodoPOS);
-    const totalFacturasUSD = Math.round(pagos.reduce((s, p) => s + p.montoFacturaUSD, 0) * 100) / 100;
-    const totalFacturasBs  = Math.round(pagos.reduce((s, p) => s + p.montoFacturaBs,  0) * 100) / 100;
-    const totalPagosUSD    = Math.round(pagos.reduce((s, p) => s + p.montoPagoUSD,    0) * 100) / 100;
-    const totalPagosBs     = Math.round(pagos.reduce((s, p) => s + p.montoPagoBs,     0) * 100) / 100;
-    const totalSaldoUSD    = Math.round(pagos.reduce((s, p) => s + p.saldoFacturaUSD, 0) * 100) / 100;
-    const totalSaldoBs     = Math.round(pagos.reduce((s, p) => s + p.saldoFacturaBs,  0) * 100) / 100;
-    res.json({ pagos, totalFacturasUSD, totalFacturasBs, totalPagosUSD, totalPagosBs, totalSaldoUSD, totalSaldoBs, cantidad: pagos.length });
+    const soloDestiempo = query(req, "soloDestiempo") === "1";
+
+    let pagos = await odoo.getPagosCreditoPOS(fechaDesde, fechaHasta, usuario, metodoPago, metodoPOS);
+
+    // Filtro: solo pagos a destiempo (pago != fecha factura)
+    if (soloDestiempo) {
+      pagos = pagos.filter((p: any) => !p.mismodia);
+    }
+
+    const totalFacturasUSD = Math.round(pagos.reduce((s: number, p: any) => s + p.montoFacturaUSD, 0) * 100) / 100;
+    const totalFacturasBs  = Math.round(pagos.reduce((s: number, p: any) => s + p.montoFacturaBs,  0) * 100) / 100;
+    const totalPagosUSD    = Math.round(pagos.reduce((s: number, p: any) => s + p.montoPagoUSD,    0) * 100) / 100;
+    const totalPagosBs     = Math.round(pagos.reduce((s: number, p: any) => s + p.montoPagoBs,     0) * 100) / 100;
+    const totalSaldoUSD    = Math.round(pagos.reduce((s: number, p: any) => s + p.saldoFacturaUSD, 0) * 100) / 100;
+    const totalSaldoBs     = Math.round(pagos.reduce((s: number, p: any) => s + p.saldoFacturaBs,  0) * 100) / 100;
+    const cantidadDestiempo = pagos.filter((p: any) => !p.mismodia).length;
+    const cantidadMismodia  = pagos.filter((p: any) => p.mismodia).length;
+
+    res.json({
+      pagos, cantidad: pagos.length,
+      cantidadDestiempo, cantidadMismodia,
+      totalFacturasUSD, totalFacturasBs,
+      totalPagosUSD, totalPagosBs,
+      totalSaldoUSD, totalSaldoBs,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

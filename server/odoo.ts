@@ -2084,6 +2084,9 @@ export async function getPagosCreditoPOS(
         usuario: userName,
         // Método POS original
         metodoPOS: [...new Set(posMethods.map((m: any) => m.payment_method_id ? m.payment_method_id[1] : "").filter(Boolean))].join(", "),
+        // Comparación fechas: mismo día = ok, diferente = destiempo
+        mismodia: inv.invoice_date === fechaPago,
+        diasDiferencia: Math.round((new Date(fechaPago).getTime() - new Date(inv.invoice_date).getTime()) / (1000 * 60 * 60 * 24)),
       });
     }
   }
