@@ -1807,7 +1807,7 @@ async function getCxCLines(fechaDesde?: string, fechaHasta?: string): Promise<an
 }
 
 async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "=", "in_invoice"], ["state", "=", "posted"], ["amount_residual", ">", 0]];
+  const domain: any[] = [["move_type", "=", "in_invoice"], ["state", "=", "posted"], ["amount_residual", ">", 0], ["journal_id.name", "ilike", "Delivery"]];
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
   const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "journal_id"];
