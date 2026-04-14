@@ -1799,7 +1799,7 @@ const RECIBO_JOURNELS = ["RDV1", "RDV2"];
 const ALL_JOURNELS = [...FACTURA_JOURNELS, ...RECIBO_JOURNELS];
 
 async function getCxCLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "=", "out_invoice"], ["state", "=", "posted"], ["amount_residual", ">", 0], ["journal_id.name", "ilike", "FAC"]];
+  const domain: any[] = [["move_type", "=", "out_invoice"], ["state", "=", "posted"], ["journal_id.name", "ilike", "FAC"]];
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
   const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "move_type", "journal_id"];
@@ -1814,14 +1814,16 @@ async function getAbonosCxC(fechaDesde?: string, fechaHasta?: string): Promise<a
   return executeKw("account.move", "search_read", [domain], { fields });
 }
 
-async function getPagosContabilidad(): Promise<any[]> {
+async function getPagosContabilidad(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
   const domain: any[] = [["partner_type", "=", "customer"], ["state", "=", "posted"], ["amount", ">", 0]];
-  const fields = ["id", "name", "partner_id", "date", "amount", "journal_id"];
+  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
+  const fields = ["id", "name", "partner_id", "date", "amount", "journal_id", "payment_type"];
   return executeKw("account.payment", "search_read", [domain], { fields });
 }
 
 async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "=", "in_invoice"], ["state", "=", "posted"], ["amount_residual", ">", 0], ["journal_id.name", "ilike", "Delivery"]];
+  const domain: any[] = [["move_type", "=", "in_invoice"], ["state", "=", "posted"], ["journal_id.name", "ilike", "Delivery"]];
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
   const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "journal_id"];
