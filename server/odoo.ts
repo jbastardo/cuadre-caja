@@ -1889,6 +1889,80 @@ async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<an
   return getCxPFacturas(fechaDesde, fechaHasta);
 }
 
+// Debug: inspeccionar un pago por nombre y ver por qué puede no aparecer en el listado
+export async function debugPago(nombre: string): Promise<any> {
+  // 1. Buscar el pago por nombre
+  const pagos = await executeKw("account.payment", "search_read",
+    [[["name", "=", nombre]]],
+    { fields: ["id", "name", "partner_id", "date", "amount", "currency_id", "journal_id", "create_uid", "reconciled_invoice_ids", "payment_type", "partner_type", "state", "move_id"] }
+  );
+  if (!pagos || pagos.length === 0) return { error: `Pago ${nombre} no encontrado` };
+  const pago = pagos[0];
+
+  // 2. Buscar facturas conciliadas
+  const invoiceIds: number[] = pago.reconciled_invoice_ids || [];
+  let facturas: any[] = [];
+  let facturasConPOS: any[] = [];
+
+  if (invoiceIds.length > 0) {
+    facturas = await executeKw("account.move", "search_read",
+      [[["id", "in", invoiceIds]]],
+      { fields: ["id", "name", "move_type", "invoice_date", "amount_total", "amount_residual", "journal_id", "pos_order_ids", "state"] }
+    );
+
+    // Para cada factura, ver si tiene órdenes POS con crédito
+    for (const inv of facturas) {
+      const posOrderIds: number[] = inv.pos_order_ids || [];
+      let creditPayments: any[] = [];
+      let allPosPayments: any[] = [];
+
+      if (posOrderIds.length > 0) {
+        allPosPayments = await executeKw("pos.payment", "search_read",
+          [[["pos_order_id", "in", posOrderIds]]],
+          { fields: ["id", "amount", "payment_method_id", "pos_order_id"] }
+        );
+        creditPayments = allPosPayments.filter((p: any) => {
+          const mid = Array.isArray(p.payment_method_id) ? p.payment_method_id[0] : p.payment_method_id;
+          return [14, 33].includes(mid);
+        });
+      }
+
+      facturasConPOS.push({
+        ...inv,
+        posOrderIds,
+        allPosPayments,
+        creditPayments,
+        tieneMetodoCredito: creditPayments.length > 0,
+      });
+    }
+  }
+
+  return {
+    pago: {
+      ...pago,
+      partner_type: pago.partner_type,
+      payment_type: pago.payment_type,
+      state: pago.state,
+    },
+    diagnostico: {
+      esInbound: pago.payment_type === "inbound",
+      esCliente: pago.partner_type === "customer",
+      estaPosteado: pago.state === "posted",
+      tieneFacturasConciliadas: invoiceIds.length > 0,
+      cantidadFacturas: invoiceIds.length,
+    },
+    facturas: facturasConPOS,
+    razonPosibleExclusion: [
+      pago.payment_type !== "inbound" ? "❌ payment_type no es 'inbound'" : "✅ payment_type = inbound",
+      pago.partner_type !== "customer" ? "❌ partner_type no es 'customer'" : "✅ partner_type = customer",
+      pago.state !== "posted" ? "❌ state no es 'posted'" : "✅ state = posted",
+      invoiceIds.length === 0 ? "❌ No tiene facturas conciliadas (reconciled_invoice_ids vacío)" : "✅ Tiene facturas conciliadas",
+      facturasConPOS.every((f: any) => !f.tieneMetodoCredito) ? "❌ Ninguna factura tiene método 'ventas a crédito' (IDs 14 o 33)" : "✅ Al menos una factura tiene método crédito",
+      facturasConPOS.every((f: any) => f.posOrderIds.length === 0) ? "❌ Ninguna factura está vinculada a una orden POS" : "✅ Facturas vinculadas a POS",
+    ],
+  };
+}
+
 // Pagos contables a facturas POS con método "ventas a crédito"
 // Retorna: datos de factura + datos del pago + saldo restante + Bs
 export async function getPagosCreditoPOS(

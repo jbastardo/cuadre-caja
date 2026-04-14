@@ -449,6 +449,17 @@ router.get("/api/cuentas/destiempo", async (req: Request, res: Response) => {
   }
 });
 
+// Debug endpoint: inspeccionar un pago específico por nombre
+router.get("/api/debug/pago", async (req: Request, res: Response) => {
+  try {
+    const nombre = query(req, "nombre") || "BANBS/2026/0832";
+    const pago = await odoo.debugPago(nombre);
+    res.json(pago);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/api/cuentas/movimientos", async (req: Request, res: Response) => {
   try {
     const tipo = query(req, "tipo") || "cxc";
