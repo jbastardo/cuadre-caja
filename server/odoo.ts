@@ -1810,9 +1810,8 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
   try {
     const factLines = await getAccountMoveLines("receivable", undefined, undefined, "sale");
     const recLines = await getAccountMoveLines("receivable", undefined, undefined, "receipt");
-    console.log("[CxC] Facturas lines:", factLines.length, "| Recibos lines:", recLines.length);
+    console.log("[CxC] Facturas:", factLines.length, "| Recibos:", recLines.length);
     
-    type CuentaConTipo = Cuenta & { tipo: string };
     const partnerTotals: Record<string, {name: string, factura: number, recibo: number}> = {};
     
     for (const line of factLines) {
@@ -1827,7 +1826,7 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
     }
     
     let totalPendiente = 0;
-    const cuentas: CuentaConTipo[] = [];
+    const cuentas: Cuenta[] = [];
     for (const [name, data] of Object.entries(partnerTotals)) {
       const pendiente = data.factura + data.recibo;
       totalPendiente += pendiente;
@@ -1838,14 +1837,13 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
         partnerName: data.name,
         totalPendiente: pendiente,
         totalAbonos: 0,
-        currency: "USD",
-        tipo: ""
+        currency: "USD"
       });
     }
     
     const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
     cache.set("cxc", result);
-    console.log("[CxC] Total:", totalPendiente, "Facturas:", factLines.length, "Recibos:", recLines.length);
+    console.log("[CxC] Total:", totalPendiente);
     return result;
   } catch (err) {
     console.error("Error getting CxC:", err);
