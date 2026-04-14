@@ -24,9 +24,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 type TabType = "balance" | "movimientos" | "conciliacion";
 
 interface BalanceData {
-  cxc: { totalPendiente: number; totalAbonos: number; cantidadCuentas: number };
-  cxp: { totalPendiente: number; totalAbonos: number; cantidadCuentas: number };
+  rate: number;
+  cxc: { totalPendiente: number; totalPendienteBs: number; totalAbonos: number; cantidadCuentas: number };
+  cxp: { totalPendiente: number; totalPendienteBs: number; totalAbonos: number; cantidadCuentas: number };
   banco: { total: number; ingresos: number; egresos: number };
+  pagosContabilidad: { cantidad: number; total: number; totalBs: number };
+  abonos: { cantidad: number; total: number; totalBs: number };
 }
 
 interface Movimiento {
@@ -177,8 +180,11 @@ export default function Cuentas() {
                     <div className="text-2xl font-bold text-green-600">
                       {formatUSD(balance.cxc.totalPendiente)}
                     </div>
-                    <div className="text-sm text-muted-foreground mt-1">
-                      {balance.cxc.cantidadCuentas} cuentas · {formatUSD(balance.cxc.totalAbonos)} en abonos
+                    <div className="text-lg text-muted-foreground text-orange-600">
+                      Bs {balance.cxc.totalPendienteBs?.toLocaleString() || "0"}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Tasa: {balance.rate} · {balance.cxc.cantidadCuentas} cuentas
                     </div>
                   </>
                 ) : (
@@ -202,8 +208,11 @@ export default function Cuentas() {
                     <div className="text-2xl font-bold text-red-600">
                       {formatUSD(balance.cxp.totalPendiente)}
                     </div>
-                    <div className="text-sm text-muted-foreground mt-1">
-                      {balance.cxp.cantidadCuentas} cuentas · {formatUSD(balance.cxp.totalAbonos)} en abonos
+                    <div className="text-lg text-muted-foreground text-orange-600">
+                      Bs {balance.cxp.totalPendienteBs?.toLocaleString() || "0"}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Tasa: {balance.rate} · {balance.cxp.cantidadCuentas} cuentas
                     </div>
                   </>
                 ) : (
@@ -231,6 +240,62 @@ export default function Cuentas() {
                       <span className="text-green-600">+{formatUSD(balance.banco.ingresos)}</span>
                       {" · "}
                       <span className="text-red-600">-{formatUSD(balance.banco.egresos)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-2xl font-bold">{formatUSD(0)}</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-purple-600" />
+                  Pagos Contabilidad
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loadingBalance ? (
+                  <div className="h-8 bg-muted animate-pulse rounded" />
+                ) : balance?.pagosContabilidad ? (
+                  <>
+                    <div className="text-2xl font-bold text-purple-600">
+                      {formatUSD(balance.pagosContabilidad.total)}
+                    </div>
+                    <div className="text-lg text-muted-foreground text-orange-600">
+                      Bs {balance.pagosContabilidad.totalBs?.toLocaleString() || "0"}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {balance.pagosContabilidad.cantidad} pagos
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-2xl font-bold">{formatUSD(0)}</div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-amber-600" />
+                  Abonos/Recibos
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loadingBalance ? (
+                  <div className="h-8 bg-muted animate-pulse rounded" />
+                ) : balance?.abonos ? (
+                  <>
+                    <div className="text-2xl font-bold text-amber-600">
+                      {formatUSD(balance.abonos.total)}
+                    </div>
+                    <div className="text-lg text-muted-foreground text-orange-600">
+                      Bs {balance.abonos.totalBs?.toLocaleString() || "0"}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {balance.abonos.cantidad} recibos
                     </div>
                   </>
                 ) : (
