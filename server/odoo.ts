@@ -1791,7 +1791,7 @@ async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
   const limitField = isCustomer ? "credit_limit" : "debit_limit";
   const domain = [[field, ">", 0], ["parent_id", "=", false]];
   const fields = ["id", "name", creditField, limitField];
-  return executeKw("res.partner", "search_read", [domain, fields]);
+  return executeKw("res.partner", "search_read", [domain], { fields });
 }
 
 const FACTURA_JOURNELS = ["FAC01", "FAC02", "FAC4"];
@@ -1803,7 +1803,7 @@ async function getCxCLines(fechaDesde?: string, fechaHasta?: string): Promise<an
   if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
   const fields = ["id", "move_id", "partner_id", "date", "debit", "reconciled", "account_id", "journal_id"];
-  return executeKw("account.move.line", "search_read", [domain, fields]);
+  return executeKw("account.move.line", "search_read", [domain], { fields });
 }
 
 async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
@@ -1811,7 +1811,7 @@ async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<an
   if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
   const fields = ["id", "move_id", "partner_id", "date", "credit", "reconciled", "account_id", "journal_id"];
-  return executeKw("account.move.line", "search_read", [domain, fields]);
+  return executeKw("account.move.line", "search_read", [domain], { fields });
 }
 
 async function getBankMovements(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
@@ -1819,7 +1819,7 @@ async function getBankMovements(fechaDesde?: string, fechaHasta?: string): Promi
   if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
   const fields = ["id", "name", "date", "debit", "credit", "journal_id", "partner_id", "reconciled"];
-  return executeKw("account.move.line", "search_read", [domain, fields]);
+  return executeKw("account.move.line", "search_read", [domain], { fields });
 }
 
 async function getAllInvoices(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
@@ -1827,7 +1827,7 @@ async function getAllInvoices(fechaDesde?: string, fechaHasta?: string): Promise
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
   const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "move_type", "journal_id"];
-  return executeKw("account.move", "search_read", [domain, fields]);
+  return executeKw("account.move", "search_read", [domain], { fields });
 }
 
 async function getSupplierInvoices(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
@@ -1835,15 +1835,7 @@ async function getSupplierInvoices(fechaDesde?: string, fechaHasta?: string): Pr
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
   const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "journal_id"];
-  return executeKw("account.move", "search_read", [domain, fields]);
-}
-
-async function getBankMovements(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["journal_id.type", "=", "bank"]];
-  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
-  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
-  const fields = ["id", "name", "date", "debit", "credit", "journal_id", "partner_id", "reconciled"];
-  return executeKw("account.move.line", "search_read", [domain, fields]);
+  return executeKw("account.move", "search_read", [domain], { fields });
 }
 
 export async function getCuentasPorCobrar(fechaDesde?: string, fechaHasta?: string): Promise<CuentasResult> {
