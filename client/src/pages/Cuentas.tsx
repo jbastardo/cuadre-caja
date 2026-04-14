@@ -45,7 +45,17 @@ export default function Cuentas() {
   const [showAbonoDialog, setShowAbonoDialog] = useState(false);
   const [selectedCuenta, setSelectedCuenta] = useState<string | null>(null);
   const [abonoForm, setAbonoForm] = useState({ monto: "", fecha: "", notas: "" });
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
   const [, setLocation] = useLocation();
+
+  const buildMovimientosUrl = () => {
+    const tipo = activeTab === "balance" ? "cxc" : activeTab;
+    let url = `/api/cuentas/movimientos?tipo=${tipo}`;
+    if (fechaDesde) url += `&fechaDesde=${fechaDesde}`;
+    if (fechaHasta) url += `&fechaHasta=${fechaHasta}`;
+    return url;
+  };
 
   const { data: balance, isLoading: loadingBalance, refetch: refetchBalance } = useQuery<BalanceData>({
     queryKey: ["cuentas", "balance"],
@@ -53,8 +63,8 @@ export default function Cuentas() {
   });
 
   const { data: movimientos, isLoading: loadingMovimientos, refetch: refetchMovimientos } = useQuery<Movimiento[]>({
-    queryKey: ["cuentas", "movimientos", activeTab],
-    queryFn: () => fetch(`/api/cuentas/movimientos?tipo=${activeTab === "balance" ? "cxc" : activeTab}`).then(r => r.json())
+    queryKey: ["cuentas", "movimientos", activeTab, fechaDesde, fechaHasta],
+    queryFn: () => fetch(buildMovimientosUrl()).then(r => r.json())
   });
 
   const { data: conciliacion, isLoading: loadingConciliacion } = useQuery({
@@ -120,6 +130,35 @@ export default function Cuentas() {
             </Button>
           ))}
         </div>
+
+        {(activeTab === "movimientos" || activeTab === "conciliacion") && (
+          <div className="flex gap-2 mb-4 items-center">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Desde:</span>
+              <Input
+                type="date"
+                value={fechaDesde}
+                onChange={e => setFechaDesde(e.target.value)}
+                className="w-36"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Hasta:</span>
+              <Input
+                type="date"
+                value={fechaHasta}
+                onChange={e => setFechaHasta(e.target.value)}
+                className="w-36"
+              />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => {
+              refetchMovimientos();
+              refetchBalance();
+            }}>
+              <RefreshCw className="h-4 w-4 mr-1" /> Aplicar
+            </Button>
+          </div>
+        )}
 
         {activeTab === "balance" && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

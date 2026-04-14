@@ -1794,15 +1794,55 @@ async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
   return executeKw("res.partner", "search_read", [domain, { fields, limit: 100 }]);
 }
 
+async function getAccountMoveLines(accountType: string, fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["account_id.type", "=", accountType]];
+  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
+  const fields = ["id", "move_id", "account_id", "partner_id", "date", "debit", "credit", "balance", "reconciled", "journal_id"];
+  return executeKw("account.move.line", "search_read", [domain, { fields, limit: 200, order: "date desc" }]);
+}
+
 export async function getCuentasPorCobrar(): Promise<CuentasResult> {
   const cache = getSessionCache();
   const cached = cache.get<CuentasResult>("cxc");
   if (cached) return cached;
   try {
-    const accounts = await searchPartnersByType(true);
+    const lines = await getAccountMoveLines("receivable");
+    console.log("[CxC] Receivable lines:", lines.length);
+    
+    const partnerTotals: Record<string, {name: string, pendiente: number, limite: number}> = {};
+    for (const line of lines) {
+      const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
+      if (!partnerTotals[partnerName]) {
+        partnerTotals[partnerName] = { name: partnerName, pendiente: 0, limite: 0 };
+      }
+      if (line.credit) partnerTotals[partnerName].pendiente += line.credit;
+    }
+    
     let totalPendiente = 0;
-    let totalAbonos = 0;
     const cuentas: Cuenta[] = [];
+    for (const [name, data] of Object.entries(partnerTotals)) {
+      totalPendiente += data.pendiente;
+      cuentas.push({
+        id: name,
+        name: data.name,
+        partnerId: 0,
+        partnerName: data.name,
+        totalPendiente: data.pendiente,
+        totalAbonos: 0,
+        currency: "USD"
+      });
+    }
+    
+    const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
+    cache.set("cxc", result);
+    console.log("[CxC] Total pendiente:", totalPendiente, "cuentas:", cuentas.length);
+    return result;
+  } catch (err) {
+    console.error("Error getting CxC:", err);
+    return { totalPendiente: 0, totalAbonos: 0, cuentas: [] };
+  }
+}
     for (const acc of accounts) {
       const credit = acc.credit || 0;
       if (credit > 0) {
@@ -1834,29 +1874,36 @@ export async function getCuentasPorPagar(): Promise<CuentasResult> {
   const cached = cache.get<CuentasResult>("cxp");
   if (cached) return cached;
   try {
-    const accounts = await searchPartnersByType(false);
-    let totalPendiente = 0;
-    let totalAbonos = 0;
-    const cuentas: Cuenta[] = [];
-    for (const acc of accounts) {
-      const debit = acc.debit || 0;
-      if (debit > 0) {
-        totalPendiente += debit;
-        const limite = acc.debit_limit || 0;
-        totalAbonos += limite - debit;
-        cuentas.push({
-          id: String(acc.id),
-          name: acc.name,
-          partnerId: acc.id,
-          partnerName: acc.name,
-          totalPendiente: debit,
-          totalAbonos: limite - debit,
-          currency: "USD"
-        });
+    const lines = await getAccountMoveLines("payable");
+    console.log("[CxP] Payable lines:", lines.length);
+    
+    const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
+    for (const line of lines) {
+      const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
+      if (!partnerTotals[partnerName]) {
+        partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
       }
+      if (line.debit) partnerTotals[partnerName].pendiente += line.debit;
     }
-    const result: CuentasResult = { totalPendiente, totalAbonos, cuentas };
+    
+    let totalPendiente = 0;
+    const cuentas: Cuenta[] = [];
+    for (const [name, data] of Object.entries(partnerTotals)) {
+      totalPendiente += data.pendiente;
+      cuentas.push({
+        id: name,
+        name: data.name,
+        partnerId: 0,
+        partnerName: data.name,
+        totalPendiente: data.pendiente,
+        totalAbonos: 0,
+        currency: "USD"
+      });
+    }
+    
+    const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
     cache.set("cxp", result);
+    console.log("[CxP] Total pendiente:", totalPendiente, "cuentas:", cuentas.length);
     return result;
   } catch (err) {
     console.error("Error getting CxP:", err);
