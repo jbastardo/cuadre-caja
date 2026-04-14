@@ -1794,37 +1794,40 @@ async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
   return executeKw("res.partner", "search_read", [domain, { fields, limit: 100 }]);
 }
 
-async function getInvoices(journalCodes: string[], fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "=", "out_invoice"], ["state", "=", "posted"]];
-  if (journalCodes.length > 0) domain.push(["journal_id.code", "in", journalCodes]);
+async function getPendingReceivables(): Promise<any[]> {
+  const domain = [["account_id.code", "=", "1.1.01.01.01"]];
+  const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id"];
+  return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
+}
+
+async function getPendingPayables(): Promise<any[]> {
+  const domain = [["account_id.code", "=", "2.1.01.01.01"]];
+  const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id"];
+  return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
+}
+
+async function getAllInvoices(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["move_type", "in", ["out_invoice", "out_receipt"]], ["state", "=", "posted"], ["amount_residual", ">", 0]];
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
-  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "state", "journal_id"];
-  return executeKw("account.move", "search_read", [domain, { fields, limit: 200, order: "invoice_date desc" }]);
+  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "move_type", "journal_id"];
+  return executeKw("account.move", "search_read", [domain, { fields, limit: 300, order: "invoice_date desc" }]);
 }
 
 async function getSupplierInvoices(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "=", "in_invoice"], ["state", "=", "posted"]];
+  const domain: any[] = [["move_type", "=", "in_invoice"], ["state", "=", "posted"], ["amount_residual", ">", 0]];
   if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
-  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "state", "journal_id"];
-  return executeKw("account.move", "search_read", [domain, { fields, limit: 200, order: "invoice_date desc" }]);
-}
-
-async function getPayments(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["move_type", "=", "receipt"], ["state", "=", "posted"]];
-  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
-  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
-  const fields = ["id", "name", "partner_id", "date", "amount", "journal_id", "ref"];
-  return executeKw("account.payment", "search_read", [domain, { fields, limit: 200, order: "date desc" }]);
+  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "journal_id"];
+  return executeKw("account.move", "search_read", [domain, { fields, limit: 300, order: "invoice_date desc" }]);
 }
 
 async function getBankMovements(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["state", "=", "posted"]];
+  const domain: any[] = [["journal_id.type", "=", "bank"]];
   if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
   const fields = ["id", "name", "date", "debit", "credit", "journal_id", "partner_id", "reconciled"];
-  return executeKw("account.move.line", "search_read", [domain, { fields, limit: 200, order: "date desc" }]);
+  return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
 }
 
 export async function getCuentasPorCobrar(): Promise<CuentasResult> {
@@ -1832,38 +1835,37 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
   const cached = cache.get<CuentasResult>("cxc");
   if (cached) return cached;
   try {
-    const factLines = await getInvoices(["FAC01", "FAC02", "FAC4"]);
-    const recLines = await getInvoices(["REC01", "REC02"]);
-    console.log("[CxC] Facturas:", factLines.length, "| Recibos:", recLines.length);
+    const lines = await getPendingReceivables();
+    console.log("[CxC] Lines:", lines.length);
     
     let totalPendiente = 0;
-    const cuentas: Cuenta[] = [];
+    const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
     
-    const addToCuentas = (lines: any[], tipo: string) => {
-      for (const inv of lines) {
-        const partnerName = inv.partner_id ? inv.partner_id[1] : "Sin partner";
-        const pendiente = inv.amount_residual || 0;
-        if (pendiente > 0) {
-          totalPendiente += pendiente;
-          cuentas.push({
-            id: `${inv.id}-${tipo}`,
-            name: `${inv.name} (${tipo})`,
-            partnerId: inv.partner_id ? inv.partner_id[0] : 0,
-            partnerName: partnerName,
-            totalPendiente: pendiente,
-            totalAbonos: 0,
-            currency: "USD"
-          });
-        }
+    for (const line of lines) {
+      if (line.credit > 0 && !line.reconciled) {
+        const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
+        if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
+        partnerTotals[partnerName].pendiente += line.credit;
       }
-    };
+    }
     
-    addToCuentas(factLines, " Factura");
-    addToCuentas(recLines, " Recibo");
+    const cuentas: Cuenta[] = [];
+    for (const [name, data] of Object.entries(partnerTotals)) {
+      totalPendiente += data.pendiente;
+      cuentas.push({
+        id: name,
+        name: data.name,
+        partnerId: 0,
+        partnerName: data.name,
+        totalPendiente: data.pendiente,
+        totalAbonos: 0,
+        currency: "USD"
+      });
+    }
     
     const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
     cache.set("cxc", result);
-    console.log("[CxC] Total:", totalPendiente, "Docs:", cuentas.length);
+    console.log("[CxC] Total:", totalPendiente, "Cuentas:", cuentas.length);
     return result;
   } catch (err) {
     console.error("Error getting CxC:", err);
@@ -1937,11 +1939,6 @@ export async function getMovimientosCuentas(tipo: string, fechaDesde?: string, f
         estado: m.amount_residual > 0 ? "pendiente" : "pagado"
       }));
     }
-  } catch (err) {
-    console.error("Error getting movimientos:", err);
-    return [];
-  }
-}
   } catch (err) {
     console.error("Error getting movimientos:", err);
     return [];
