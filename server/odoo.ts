@@ -1981,6 +1981,69 @@ export async function debugPago(nombre: string): Promise<any> {
   };
 }
 
+/**
+ * Debug: Get raw account.payment data for a specific reference and optional date.
+ * This helps diagnose why payment method summary might show incorrect amounts.
+ */
+export async function debugPaymentsByRef(ref: string, date?: string): Promise<any> {
+  const filters: any[] = [
+    ["ref", "=", ref],
+    ["state", "=", "posted"],
+  ];
+  if (date) {
+    filters.push(["date", "=", date]);
+  }
+  
+  const payments = await executeKw(
+    "account.payment",
+    "search_read",
+    [filters],
+    { fields: ["id", "name", "ref", "partner_id", "date", "amount", "currency_id", "journal_id", "payment_type", "state", "amount_company_currency_signed", "move_id"] }
+  );
+
+  // For each payment, also get the move lines to see the actual journal entry amounts
+  const results = [];
+  for (const payment of payments || []) {
+    let moveLines: any[] = [];
+    if (payment.move_id) {
+      const moveId = Array.isArray(payment.move_id) ? payment.move_id[0] : payment.move_id;
+      moveLines = await executeKw(
+        "account.move.line",
+        "search_read",
+        [[["move_id", "=", moveId]]],
+        { fields: ["id", "name", "account_id", "debit", "credit", "amount_currency", "currency_id", "journal_id"] }
+      ) || [];
+    }
+    results.push({
+      payment: {
+        id: payment.id,
+        name: payment.name,
+        ref: payment.ref,
+        partner: payment.partner_id,
+        date: payment.date,
+        amount: payment.amount,
+        currency_id: payment.currency_id,
+        journal_id: payment.journal_id,
+        payment_type: payment.payment_type,
+        state: payment.state,
+        amount_company_currency_signed: payment.amount_company_currency_signed,
+      },
+      moveLines: moveLines.map((l: any) => ({
+        id: l.id,
+        name: l.name,
+        account: l.account_id,
+        debit: l.debit,
+        credit: l.credit,
+        amount_currency: l.amount_currency,
+        currency_id: l.currency_id,
+        journal_id: l.journal_id,
+      })),
+    });
+  }
+
+  return { ref, date, count: results.length, payments: results };
+}
+
 // Pagos contables a facturas POS con método "ventas a crédito"
 // Retorna: datos de factura + datos del pago + saldo restante + Bs
 export async function getPagosCreditoPOS(

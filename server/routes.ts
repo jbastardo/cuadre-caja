@@ -480,6 +480,30 @@ router.get("/api/cuentas/filtros", async (_req: Request, res: Response) => {
   }
 });
 
+// Debug endpoint: credit sales with raw Odoo payment data
+router.get("/api/debug/credit-sales/:id", async (req: Request, res: Response) => {
+  try {
+    const data = await odoo.getCreditSalesDebug(Number(param(req, "id")));
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Debug endpoint: raw account.payment data for a specific reference
+router.get("/api/debug/pagos-ref", async (req: Request, res: Response) => {
+  try {
+    const ref = query(req, "ref") || "";
+    const date = query(req, "date") || "";
+    if (!ref) return res.status(400).json({ error: "ref is required" });
+    // Search account.payment by ref
+    const payments = await odoo.debugPaymentsByRef(ref, date);
+    res.json(payments);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Debug endpoint: inspeccionar un pago específico por nombre
 router.get("/api/debug/pago", async (req: Request, res: Response) => {
   try {
