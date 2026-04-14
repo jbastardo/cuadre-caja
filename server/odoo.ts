@@ -1889,6 +1889,104 @@ async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<an
   return getCxPFacturas(fechaDesde, fechaHasta);
 }
 
+// Pagos contables a facturas POS con método "ventas a crédito"
+// Retorna: datos de factura + datos del pago + saldo restante + Bs
+export async function getPagosCreditoPOS(
+  fechaDesde?: string,
+  fechaHasta?: string,
+  usuarioFiltro?: string,
+  metodoPagoFiltro?: string
+): Promise<any[]> {
+  // 1. Buscar pagos contables de clientes en el rango de fechas
+  const domain: any[] = [
+    ["partner_type", "=", "customer"],
+    ["state", "=", "posted"],
+  ];
+  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
+  if (metodoPagoFiltro) domain.push(["journal_id.name", "ilike", metodoPagoFiltro]);
+
+  const fields = [
+    "id", "name", "partner_id", "date", "amount", "currency_id",
+    "journal_id", "create_uid", "reconciled_invoice_ids", "payment_type"
+  ];
+  const pagos = await executeKw("account.payment", "search_read", [domain], { fields });
+
+  const resultado: any[] = [];
+
+  for (const pago of pagos || []) {
+    // Filtrar por usuario
+    const userName: string = pago.create_uid ? pago.create_uid[1] : "";
+    if (usuarioFiltro && !userName.toLowerCase().includes(usuarioFiltro.toLowerCase())) continue;
+
+    // Solo pagos inbound (cobro a clientes)
+    if (pago.payment_type !== "inbound") continue;
+
+    // Buscar facturas conciliadas con este pago
+    const invoiceIds: number[] = pago.reconciled_invoice_ids || [];
+    if (!invoiceIds.length) continue;
+
+    // Obtener facturas conciliadas
+    const invoices = await executeKw(
+      "account.move",
+      "search_read",
+      [[["id", "in", invoiceIds], ["move_type", "in", ["out_invoice", "out_receipt"]]]],
+      { fields: ["id", "name", "invoice_date", "amount_total", "amount_residual", "journal_id", "pos_order_ids"] }
+    );
+
+    for (const inv of invoices || []) {
+      // Solo facturas que vienen de POS (tienen pos_order_ids)
+      const posOrderIds: number[] = inv.pos_order_ids || [];
+      if (!posOrderIds.length) continue;
+
+      // Verificar que la orden POS tenía método "ventas a crédito"
+      const creditPayments = await executeKw(
+        "pos.payment",
+        "search_read",
+        [[["pos_order_id", "in", posOrderIds], ["payment_method_id", "in", CREDIT_METHOD_IDS]]],
+        { fields: ["id", "amount"] }
+      );
+      if (!creditPayments || creditPayments.length === 0) continue;
+
+      // Calcular tasas
+      const fechaFactura = inv.invoice_date || fechaDesde || new Date().toISOString().split("T")[0];
+      const fechaPago = pago.date;
+      const rateFactura = await getDayRate(fechaFactura);
+      const ratePago = await getDayRate(fechaPago);
+
+      const montoFacturaUSD = inv.amount_total || 0;
+      const saldoFacturaUSD = inv.amount_residual || 0;
+      const montoPagoUSD = pago.amount || 0;
+
+      resultado.push({
+        // Factura
+        facturaId: inv.id,
+        facturaNro: inv.name,
+        facturaFecha: inv.invoice_date,
+        facturaJournal: inv.journal_id ? inv.journal_id[1] : "",
+        montoFacturaUSD,
+        montoFacturaBs: Math.round(montoFacturaUSD * rateFactura * 100) / 100,
+        tasaFactura: rateFactura,
+        saldoFacturaUSD,
+        saldoFacturaBs: Math.round(saldoFacturaUSD * rateFactura * 100) / 100,
+        // Pago
+        pagoId: pago.id,
+        pagoNro: pago.name,
+        pagoFecha: fechaPago,
+        pagoJournal: pago.journal_id ? pago.journal_id[1] : "",
+        montoPagoUSD,
+        montoPagoBs: Math.round(montoPagoUSD * ratePago * 100) / 100,
+        tasaPago: ratePago,
+        // Cliente y usuario
+        cliente: pago.partner_id ? pago.partner_id[1] : "",
+        usuario: userName,
+      });
+    }
+  }
+
+  return resultado;
+}
+
 // Pagos a destiempo: pagos de clientes cuya fecha de pago es diferente a la fecha de la factura
 export async function getPagosDestiempo(
   fechaDesde?: string,

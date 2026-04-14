@@ -415,6 +415,25 @@ router.get("/api/cuentas/balance", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/api/cuentas/pagos-credito", async (req: Request, res: Response) => {
+  try {
+    const fechaDesde = query(req, "fechaDesde");
+    const fechaHasta = query(req, "fechaHasta");
+    const usuario = query(req, "usuario");
+    const metodoPago = query(req, "metodoPago");
+    const pagos = await odoo.getPagosCreditoPOS(fechaDesde, fechaHasta, usuario, metodoPago);
+    const totalFacturasUSD = Math.round(pagos.reduce((s, p) => s + p.montoFacturaUSD, 0) * 100) / 100;
+    const totalFacturasBs  = Math.round(pagos.reduce((s, p) => s + p.montoFacturaBs,  0) * 100) / 100;
+    const totalPagosUSD    = Math.round(pagos.reduce((s, p) => s + p.montoPagoUSD,    0) * 100) / 100;
+    const totalPagosBs     = Math.round(pagos.reduce((s, p) => s + p.montoPagoBs,     0) * 100) / 100;
+    const totalSaldoUSD    = Math.round(pagos.reduce((s, p) => s + p.saldoFacturaUSD, 0) * 100) / 100;
+    const totalSaldoBs     = Math.round(pagos.reduce((s, p) => s + p.saldoFacturaBs,  0) * 100) / 100;
+    res.json({ pagos, totalFacturasUSD, totalFacturasBs, totalPagosUSD, totalPagosBs, totalSaldoUSD, totalSaldoBs, cantidad: pagos.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/api/cuentas/destiempo", async (req: Request, res: Response) => {
   try {
     const fechaDesde = query(req, "fechaDesde");
