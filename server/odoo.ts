@@ -1794,8 +1794,9 @@ async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
   return executeKw("res.partner", "search_read", [domain, { fields, limit: 100 }]);
 }
 
-async function getAccountMoveLines(accountType: string, fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+async function getAccountMoveLines(accountType: string, fechaDesde?: string, fechaHasta?: string, journalType?: string): Promise<any[]> {
   const domain: any[] = [["account_id.type", "=", accountType]];
+  if (journalType) domain.push(["journal_id.type", "=", journalType]);
   if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
   const fields = ["id", "move_id", "account_id", "partner_id", "date", "debit", "credit", "balance", "reconciled", "journal_id"];
@@ -1807,61 +1808,44 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
   const cached = cache.get<CuentasResult>("cxc");
   if (cached) return cached;
   try {
-    const lines = await getAccountMoveLines("receivable");
-    console.log("[CxC] Receivable lines:", lines.length);
+    const factLines = await getAccountMoveLines("receivable", undefined, undefined, "sale");
+    const recLines = await getAccountMoveLines("receivable", undefined, undefined, "receipt");
+    console.log("[CxC] Facturas lines:", factLines.length, "| Recibos lines:", recLines.length);
     
-    const partnerTotals: Record<string, {name: string, pendiente: number, limite: number}> = {};
-    for (const line of lines) {
+    type CuentaConTipo = Cuenta & { tipo: string };
+    const partnerTotals: Record<string, {name: string, factura: number, recibo: number}> = {};
+    
+    for (const line of factLines) {
       const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
-      if (!partnerTotals[partnerName]) {
-        partnerTotals[partnerName] = { name: partnerName, pendiente: 0, limite: 0 };
-      }
-      if (line.credit) partnerTotals[partnerName].pendiente += line.credit;
+      if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, factura: 0, recibo: 0 };
+      if (line.credit) partnerTotals[partnerName].factura += line.credit;
+    }
+    for (const line of recLines) {
+      const partnerName = line.partner_id ? line.partner_id[1] : "Sin partner";
+      if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, factura: 0, recibo: 0 };
+      if (line.credit) partnerTotals[partnerName].recibo += line.credit;
     }
     
     let totalPendiente = 0;
-    const cuentas: Cuenta[] = [];
+    const cuentas: CuentaConTipo[] = [];
     for (const [name, data] of Object.entries(partnerTotals)) {
-      totalPendiente += data.pendiente;
+      const pendiente = data.factura + data.recibo;
+      totalPendiente += pendiente;
       cuentas.push({
         id: name,
         name: data.name,
         partnerId: 0,
         partnerName: data.name,
-        totalPendiente: data.pendiente,
+        totalPendiente: pendiente,
         totalAbonos: 0,
-        currency: "USD"
+        currency: "USD",
+        tipo: ""
       });
     }
     
     const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
     cache.set("cxc", result);
-    console.log("[CxC] Total pendiente:", totalPendiente, "cuentas:", cuentas.length);
-    return result;
-  } catch (err) {
-    console.error("Error getting CxC:", err);
-    return { totalPendiente: 0, totalAbonos: 0, cuentas: [] };
-  }
-}
-    for (const acc of accounts) {
-      const credit = acc.credit || 0;
-      if (credit > 0) {
-        totalPendiente += credit;
-        const limite = acc.credit_limit || 0;
-        totalAbonos += limite - credit;
-        cuentas.push({
-          id: String(acc.id),
-          name: acc.name,
-          partnerId: acc.id,
-          partnerName: acc.name,
-          totalPendiente: credit,
-          totalAbonos: limite - credit,
-          currency: "USD"
-        });
-      }
-    }
-    const result: CuentasResult = { totalPendiente, totalAbonos, cuentas };
-    cache.set("cxc", result);
+    console.log("[CxC] Total:", totalPendiente, "Facturas:", factLines.length, "Recibos:", recLines.length);
     return result;
   } catch (err) {
     console.error("Error getting CxC:", err);
