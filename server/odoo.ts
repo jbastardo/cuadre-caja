@@ -1799,19 +1799,19 @@ const RECIBO_JOURNELS = ["RDV1", "RDV2"];
 const ALL_JOURNELS = [...FACTURA_JOURNELS, ...RECIBO_JOURNELS];
 
 async function getCxCLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["account_id.code", "=", "1122001"]];
-  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
-  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
-  const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id", "journal_id"];
-  return executeKw("account.move.line", "search_read", [domain], { fields });
+  const domain: any[] = [["move_type", "in", ["out_invoice", "out_receipt"]], ["state", "=", "posted"], ["amount_residual", ">", 0]];
+  if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
+  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "move_type", "journal_id"];
+  return executeKw("account.move", "search_read", [domain], { fields });
 }
 
 async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["account_id.code", "=", "2121003"], ["credit", ">", 0]];
-  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
-  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
-  const fields = ["id", "move_id", "partner_id", "date", "credit", "reconciled", "account_id", "journal_id"];
-  return executeKw("account.move.line", "search_read", [domain], { fields });
+  const domain: any[] = [["move_type", "=", "in_invoice"], ["state", "=", "posted"], ["amount_residual", ">", 0]];
+  if (fechaDesde) domain.push(["invoice_date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["invoice_date", "<=", fechaHasta]);
+  const fields = ["id", "name", "partner_id", "invoice_date", "amount_total", "amount_residual", "journal_id"];
+  return executeKw("account.move", "search_read", [domain], { fields });
 }
 
 async function getBankMovements(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
@@ -1852,11 +1852,9 @@ export async function getCuentasPorCobrar(fechaDesde?: string, fechaHasta?: stri
     const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
     
     for (const line of lines) {
-      if (line.debit > 0 && !line.reconciled) {
-        const partnerName = line.partner_id ? line.partner_id[1] : "Sin cliente";
-        if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
-        partnerTotals[partnerName].pendiente += line.debit;
-      }
+      const partnerName = line.partner_id ? line.partner_id[1] : "Sin cliente";
+      if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
+      partnerTotals[partnerName].pendiente += line.amount_residual || 0;
     }
     
     const cuentas: Cuenta[] = [];
@@ -1896,36 +1894,10 @@ export async function getCuentasPorPagar(fechaDesde?: string, fechaHasta?: strin
     const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
     
     for (const line of lines) {
-      if (line.credit > 0 && !line.reconciled) {
-        const partnerName = line.partner_id ? line.partner_id[1] : "Sin proveedor";
-        if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
-        partnerTotals[partnerName].pendiente += line.credit;
-      }
+      const partnerName = line.partner_id ? line.partner_id[1] : "Sin proveedor";
+      if (!partnerTotals[partnerName]) partnerTotals[partnerName] = { name: partnerName, pendiente: 0 };
+      partnerTotals[partnerName].pendiente += line.amount_residual || 0;
     }
-    
-    const cuentas: Cuenta[] = [];
-    for (const [name, data] of Object.entries(partnerTotals)) {
-      totalPendiente += data.pendiente;
-      cuentas.push({
-        id: name,
-        name: data.name,
-        partnerId: 0,
-        partnerName: data.name,
-        totalPendiente: data.pendiente,
-        totalAbonos: 0,
-        currency: "USD"
-      });
-    }
-    
-    const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
-    cache.set(cacheKey, result);
-    console.log("[CxP] Total:", totalPendiente, "Cuentas:", cuentas.length);
-    return result;
-  } catch (err) {
-    console.error("Error getting CxP:", err);
-    return { totalPendiente: 0, totalAbonos: 0, cuentas: [] };
-  }
-}
 
 export async function getMovimientosCuentas(tipo: string, fechaDesde?: string, fechaHasta?: string): Promise<Movimiento[]> {
   try {
