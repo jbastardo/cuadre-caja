@@ -1799,10 +1799,10 @@ const RECIBO_JOURNELS = ["RDV1", "RDV2"];
 const ALL_JOURNELS = [...FACTURA_JOURNELS, ...RECIBO_JOURNELS];
 
 async function getCxCLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
-  const domain: any[] = [["account_id.code", "in", ["1122001", "1122007"]], ["debit", ">", 0]];
+  const domain: any[] = [["account_id.code", "=", "1122001"]];
   if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
   if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
-  const fields = ["id", "move_id", "partner_id", "date", "debit", "reconciled", "account_id", "journal_id"];
+  const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id", "journal_id"];
   return executeKw("account.move.line", "search_read", [domain], { fields });
 }
 
@@ -1846,6 +1846,7 @@ export async function getCuentasPorCobrar(fechaDesde?: string, fechaHasta?: stri
   try {
     const lines = await getCxCLines(fechaDesde, fechaHasta);
     console.log("[CxC] Lines:", lines.length);
+    if (lines.length > 0) console.log("[CxC] Sample:", JSON.stringify(lines[0]));
     
     let totalPendiente = 0;
     const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
