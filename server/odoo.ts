@@ -1801,7 +1801,7 @@ async function getCxCLines(): Promise<any[]> {
 }
 
 async function getCxPLines(): Promise<any[]> {
-  const domain = [["account_id.code", "=", "2110001"], ["credit", ">", 0]];
+  const domain = [["account_id.code", "=", "2121003"], ["credit", ">", 0]];
   const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id", "journal_id"];
   return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
 }
