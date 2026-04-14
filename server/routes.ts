@@ -357,10 +357,12 @@ router.get("/api/users", async (_req: Request, res: Response) => {
 const cuentasStore: Map<string, any> = new Map();
 const abonosStore: Map<string, any[]> = new Map();
 
-router.get("/api/cuentas/balance", async (_req: Request, res: Response) => {
+router.get("/api/cuentas/balance", async (req: Request, res: Response) => {
   try {
-    const cxcData = await odoo.getCuentasPorCobrar();
-    const cxpData = await odoo.getCuentasPorPagar();
+    const fechaDesde = query(req, "fechaDesde");
+    const fechaHasta = query(req, "fechaHasta");
+    const cxcData = await odoo.getCuentasPorCobrar(fechaDesde, fechaHasta);
+    const cxpData = await odoo.getCuentasPorPagar(fechaDesde, fechaHasta);
     const bancoData = await odoo.getBanco();
 
     res.json({

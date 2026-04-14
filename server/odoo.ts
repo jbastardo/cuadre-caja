@@ -1794,15 +1794,31 @@ async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
   return executeKw("res.partner", "search_read", [domain, { fields, limit: 100 }]);
 }
 
-async function getCxCLines(): Promise<any[]> {
-  const domain = [["account_id.code", "in", ["1122001", "1122007"]], ["debit", ">", 0]];
+const FACTURA_JOURNELS = ["FAC01", "FAC02", "FAC4"];
+const RECIBO_JOURNELS = ["RDV1", "RDV2"];
+const ALL_JOURNELS = [...FACTURA_JOURNELS, ...RECIBO_JOURNELS];
+
+async function getCxCLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["account_id.code", "in", ["1122001", "1122007"]], ["debit", ">", 0], ["journal_id.code", "in", ALL_JOURNELS]];
+  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
   const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id", "journal_id"];
   return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
 }
 
-async function getCxPLines(): Promise<any[]> {
-  const domain = [["account_id.code", "=", "2121003"], ["credit", ">", 0]];
+async function getCxPLines(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["account_id.code", "=", "2121003"], ["credit", ">", 0]];
+  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
   const fields = ["id", "move_id", "partner_id", "date", "debit", "credit", "reconciled", "account_id", "journal_id"];
+  return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
+}
+
+async function getBankMovements(fechaDesde?: string, fechaHasta?: string): Promise<any[]> {
+  const domain: any[] = [["journal_id.type", "=", "bank"]];
+  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
+  const fields = ["id", "name", "date", "debit", "credit", "journal_id", "partner_id", "reconciled"];
   return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
 }
 
@@ -1830,12 +1846,13 @@ async function getBankMovements(fechaDesde?: string, fechaHasta?: string): Promi
   return executeKw("account.move.line", "search_read", [domain, { fields, limit: 300, order: "date desc" }]);
 }
 
-export async function getCuentasPorCobrar(): Promise<CuentasResult> {
+export async function getCuentasPorCobrar(fechaDesde?: string, fechaHasta?: string): Promise<CuentasResult> {
+  const cacheKey = fechaDesde ? `cxc-${fechaDesde}-${fechaHasta}` : "cxc";
   const cache = getSessionCache();
-  const cached = cache.get<CuentasResult>("cxc");
+  const cached = cache.get<CuentasResult>(cacheKey);
   if (cached) return cached;
   try {
-    const lines = await getCxCLines();
+    const lines = await getCxCLines(fechaDesde, fechaHasta);
     console.log("[CxC] Lines:", lines.length);
     
     let totalPendiente = 0;
@@ -1864,7 +1881,7 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
     }
     
     const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
-    cache.set("cxc", result);
+    cache.set(cacheKey, result);
     console.log("[CxC] Total:", totalPendiente, "Cuentas:", cuentas.length);
     return result;
   } catch (err) {
@@ -1873,12 +1890,13 @@ export async function getCuentasPorCobrar(): Promise<CuentasResult> {
   }
 }
 
-export async function getCuentasPorPagar(): Promise<CuentasResult> {
+export async function getCuentasPorPagar(fechaDesde?: string, fechaHasta?: string): Promise<CuentasResult> {
+  const cacheKey = fechaDesde ? `cxp-${fechaDesde}-${fechaHasta}` : "cxp";
   const cache = getSessionCache();
-  const cached = cache.get<CuentasResult>("cxp");
+  const cached = cache.get<CuentasResult>(cacheKey);
   if (cached) return cached;
   try {
-    const lines = await getCxPLines();
+    const lines = await getCxPLines(fechaDesde, fechaHasta);
     console.log("[CxP] Lines:", lines.length);
     
     let totalPendiente = 0;
@@ -1907,7 +1925,7 @@ export async function getCuentasPorPagar(): Promise<CuentasResult> {
     }
     
     const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
-    cache.set("cxp", result);
+    cache.set(cacheKey, result);
     console.log("[CxP] Total:", totalPendiente, "Cuentas:", cuentas.length);
     return result;
   } catch (err) {
