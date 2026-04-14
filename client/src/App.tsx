@@ -8,6 +8,7 @@ import CuadreNFForm from "@/pages/CuadreNFForm";
 import CuadreNFReport from "@/pages/CuadreNFReport";
 import CuadreReport from "@/pages/CuadreReport";
 import UserManagement from "@/pages/UserManagement";
+import Cuentas from "@/pages/Cuentas";
 import { Toaster } from "@/components/ui/toaster";
 
 function AppRoutes() {
@@ -33,6 +34,7 @@ function AppRoutes() {
       <Route path="/cuadre/:id" component={CuadreForm} />
       <Route path="/cuadres" component={CuadreList} />
       <Route path="/users" component={UserManagement} />
+      <Route path="/cuentas" component={Cuentas} />
       <Route>
         <div className="min-h-screen flex items-center justify-center">
           <p>Página no encontrada</p>

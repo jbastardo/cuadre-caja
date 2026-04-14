@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import * as odoo from "./odoo.js";
 import * as sheets from "./sheets.js";
 import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
+import crypto from "crypto";
 
 // Helpers para tipado y extracción de parámetros
 function param(req: Request, name: string): string {
@@ -349,5 +350,85 @@ router.get("/api/users", async (_req: Request, res: Response) => {
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: "Error al obtener usuarios" });
+  }
+});
+
+// ---- CxC/CxP ----
+const cuentasStore: Map<string, any> = new Map();
+const abonosStore: Map<string, any[]> = new Map();
+
+router.get("/api/cuentas/balance", async (_req: Request, res: Response) => {
+  try {
+    const cxcData = await odoo.getCuentasPorCobrar();
+    const cxpData = await odoo.getCuentasPorPagar();
+    const bancoData = await odoo.getBanco();
+
+    res.json({
+      cxc: {
+        totalPendiente: cxcData.totalPendiente,
+        totalAbonos: cxcData.totalAbonos,
+        cantidadCuentas: cxcData.cuentas.length
+      },
+      cxp: {
+        totalPendiente: cxpData.totalPendiente,
+        totalAbonos: cxpData.totalAbonos,
+        cantidadCuentas: cxpData.cuentas.length
+      },
+      banco: {
+        total: bancoData.total,
+        ingresos: bancoData.ingresos,
+        egresos: bancoData.egresos
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/cuentas/movimientos", async (req: Request, res: Response) => {
+  try {
+    const tipo = query(req, "tipo") || "cxc";
+    const fechaDesde = query(req, "fechaDesde");
+    const fechaHasta = query(req, "fechaHasta");
+
+    const movimientos = await odoo.getMovimientosCuentas(tipo, fechaDesde, fechaHasta);
+    res.json(movimientos);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/cuentas/abonos", async (req: Request, res: Response) => {
+  try {
+    const { cuentaId, monto, fecha, notas } = req.body;
+    if (!cuentaId || !monto || !fecha) {
+      return res.status(400).json({ error: "Faltan datos requeridos" });
+    }
+
+    const abono = {
+      id: crypto.randomUUID(),
+      cuentaId,
+      monto,
+      fecha,
+      notas: notas || "",
+      createdAt: new Date().toISOString()
+    };
+
+    const existentes = abonosStore.get(cuentaId) || [];
+    existentes.push(abono);
+    abonosStore.set(cuentaId, existentes);
+
+    res.json({ success: true, abono });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/cuentas/conciliacion", async (_req: Request, res: Response) => {
+  try {
+    const conciliacion = await odoo.getConciliacionBancaria();
+    res.json(conciliacion);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });

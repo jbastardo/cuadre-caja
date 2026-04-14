@@ -1748,3 +1748,199 @@ export async function getNonFiscalSummary(sessionId: number): Promise<NonFiscalS
   };
   
 }
+
+// ========== CxC/CxP ==========
+
+interface Cuenta {
+  id: string;
+  name: string;
+  partnerId: number;
+  partnerName: string;
+  totalPendiente: number;
+  totalAbonos: number;
+  currency: string;
+}
+
+interface CuentasResult {
+  totalPendiente: number;
+  totalAbonos: number;
+  cuentas: Cuenta[];
+}
+
+interface Movimiento {
+  id: string;
+  documento: string;
+  documentoAfectado: string;
+  partnerName: string;
+  fecha: string;
+  monto: number;
+  saldo: number;
+  estado: string;
+}
+
+interface BancoData {
+  total: number;
+  ingresos: number;
+  egresos: number;
+  movimientos: Movimiento[];
+}
+
+async function searchPartnersByType(isCustomer: boolean): Promise<any[]> {
+  const field = isCustomer ? "customer_rank" : "supplier_rank";
+  const creditField = isCustomer ? "credit" : "debit";
+  const limitField = isCustomer ? "credit_limit" : "debit_limit";
+  const domain = [[field, ">", 0], ["parent_id", "=", false]];
+  const fields = ["id", "name", creditField, limitField];
+  return executeKw("res.partner", "search_read", [domain, { fields, limit: 100 }]);
+}
+
+export async function getCuentasPorCobrar(): Promise<CuentasResult> {
+  const cache = getSessionCache();
+  const cached = cache.get<CuentasResult>("cxc");
+  if (cached) return cached;
+  try {
+    const accounts = await searchPartnersByType(true);
+    let totalPendiente = 0;
+    let totalAbonos = 0;
+    const cuentas: Cuenta[] = [];
+    for (const acc of accounts) {
+      const credit = acc.credit || 0;
+      if (credit > 0) {
+        totalPendiente += credit;
+        const limite = acc.credit_limit || 0;
+        totalAbonos += limite - credit;
+        cuentas.push({
+          id: String(acc.id),
+          name: acc.name,
+          partnerId: acc.id,
+          partnerName: acc.name,
+          totalPendiente: credit,
+          totalAbonos: limite - credit,
+          currency: "USD"
+        });
+      }
+    }
+    const result: CuentasResult = { totalPendiente, totalAbonos, cuentas };
+    cache.set("cxc", result);
+    return result;
+  } catch (err) {
+    console.error("Error getting CxC:", err);
+    return { totalPendiente: 0, totalAbonos: 0, cuentas: [] };
+  }
+}
+
+export async function getCuentasPorPagar(): Promise<CuentasResult> {
+  const cache = getSessionCache();
+  const cached = cache.get<CuentasResult>("cxp");
+  if (cached) return cached;
+  try {
+    const accounts = await searchPartnersByType(false);
+    let totalPendiente = 0;
+    let totalAbonos = 0;
+    const cuentas: Cuenta[] = [];
+    for (const acc of accounts) {
+      const debit = acc.debit || 0;
+      if (debit > 0) {
+        totalPendiente += debit;
+        const limite = acc.debit_limit || 0;
+        totalAbonos += limite - debit;
+        cuentas.push({
+          id: String(acc.id),
+          name: acc.name,
+          partnerId: acc.id,
+          partnerName: acc.name,
+          totalPendiente: debit,
+          totalAbonos: limite - debit,
+          currency: "USD"
+        });
+      }
+    }
+    const result: CuentasResult = { totalPendiente, totalAbonos, cuentas };
+    cache.set("cxp", result);
+    return result;
+  } catch (err) {
+    console.error("Error getting CxP:", err);
+    return { totalPendiente: 0, totalAbonos: 0, cuentas: [] };
+  }
+}
+
+export async function getMovimientosCuentas(tipo: string, fechaDesde?: string, fechaHasta?: string): Promise<Movimiento[]> {
+  try {
+    const accountType = tipo === "cxc" ? "receivable" : "payable";
+    const domain: any[] = [["account_type", "=", accountType]];
+    if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+    if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
+    const fields = ["id", "move_id", "account_id", "partner_id", "date", "credit", "debit", "balance", "reconciled"];
+    const opts = { fields, limit: 200, order: "date desc" };
+    const moves = await executeKw("account.move.line", "search_read", [domain, opts]);
+    return moves.map((m: any) => ({
+      id: String(m.id),
+      documento: m.move_id ? m.move_id[1] || "" : "",
+      documentoAfectado: m.account_id ? m.account_id[1] || "" : "",
+      partnerName: m.partner_id ? m.partner_id[1] || "" : "",
+      fecha: m.date || "",
+      monto: tipo === "cxc" ? m.credit : m.debit,
+      saldo: m.balance,
+      estado: m.reconciled ? "conciliado" : "pendiente"
+    }));
+  } catch (err) {
+    console.error("Error getting movimientos:", err);
+    return [];
+  }
+}
+
+export async function getBanco(): Promise<BancoData> {
+  const cache = getSessionCache();
+  const cached = cache.get<BancoData>("banco");
+  if (cached) return cached;
+  try {
+    const journalIds = [1, 2, 3, 4, 5, 6];
+    let total = 0;
+    let ingresos = 0;
+    let egresos = 0;
+    const movimientos: Movimiento[] = [];
+    const fechaMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const fields = ["id", "move_id", "date", "debit", "credit", "partner_id", "reconciled"];
+    for (const jid of journalIds) {
+      const domain = [["journal_id", "=", jid], ["date", ">=", fechaMin]];
+      const lines = await executeKw("account.move.line", "search_read", [domain, { fields, limit: 50 }]);
+      for (const line of lines) {
+        const debit = line.debit || 0;
+        const credit = line.credit || 0;
+        if (debit > 0) {
+          ingresos += debit;
+          total += debit;
+        } else if (credit > 0) {
+          egresos += credit;
+          total -= credit;
+        }
+        movimientos.push({
+          id: String(line.id),
+          documento: line.move_id ? line.move_id[1] || "" : "",
+          documentoAfectado: "Journal " + jid,
+          partnerName: line.partner_id ? line.partner_id[1] || "" : "",
+          fecha: line.date || "",
+          monto: debit > 0 ? debit : -credit,
+          saldo: total,
+          estado: line.reconciled ? "conciliado" : "pendiente"
+        });
+      }
+    }
+    const result: BancoData = { total, ingresos, egresos, movimientos: movimientos.slice(0, 100) };
+    cache.set("banco", result);
+    return result;
+  } catch (err) {
+    console.error("Error getting banco:", err);
+    return { total: 0, ingresos: 0, egresos: 0, movimientos: [] };
+  }
+}
+
+export async function getConciliacionBancaria(): Promise<any> {
+  const banco = await getBanco();
+  return {
+    movimientos: banco.movimientos,
+    totalRegistrado: banco.total,
+    totalConciliado: banco.movimientos.filter(m => m.estado === "conciliado").length,
+    totalPendiente: banco.movimientos.filter(m => m.estado === "pendiente").length
+  };
+}

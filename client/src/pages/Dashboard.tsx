@@ -140,6 +140,9 @@ export default function Dashboard() {
                 <Users className="h-4 w-4 mr-1" /> Usuarios
               </Button>
             )}
+            <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate("/cuentas")}>
+              <List className="h-4 w-4 mr-1" /> CxC/CxP
+            </Button>
             <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate("/cuadres")}>
               <List className="h-4 w-4 mr-1" /> Historial
             </Button>
