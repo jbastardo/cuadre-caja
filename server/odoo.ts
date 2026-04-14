@@ -1757,14 +1757,18 @@ interface Cuenta {
   partnerId: number;
   partnerName: string;
   totalPendiente: number;
+  totalPendienteBs?: number;
   totalAbonos: number;
   currency: string;
+  rate?: number;
 }
 
 interface CuentasResult {
   totalPendiente: number;
+  totalPendienteBs?: number;
   totalAbonos: number;
   cuentas: Cuenta[];
+  rate?: number;
 }
 
 interface Movimiento {
@@ -1860,11 +1864,14 @@ export async function getCuentasPorCobrar(fechaDesde?: string, fechaHasta?: stri
   const cached = cache.get<CuentasResult>(cacheKey);
   if (cached) return cached;
   try {
+    const date = fechaDesde || new Date().toISOString().split("T")[0];
+    const rate = await getDayRate(date);
     const lines = await getCxCLines(fechaDesde, fechaHasta);
     console.log("[CxC] Lines:", lines.length);
     if (lines.length > 0) console.log("[CxC] Sample:", JSON.stringify(lines[0]));
     
     let totalPendiente = 0;
+    let totalPendienteBs = 0;
     const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
     
     for (const line of lines) {
@@ -1876,20 +1883,23 @@ export async function getCuentasPorCobrar(fechaDesde?: string, fechaHasta?: stri
     const cuentas: Cuenta[] = [];
     for (const [name, data] of Object.entries(partnerTotals)) {
       totalPendiente += data.pendiente;
+      totalPendienteBs += data.pendiente * rate;
       cuentas.push({
         id: name,
         name: data.name,
         partnerId: 0,
         partnerName: data.name,
         totalPendiente: data.pendiente,
+        totalPendienteBs: Math.round(data.pendiente * rate * 100) / 100,
         totalAbonos: 0,
-        currency: "USD"
+        currency: "USD",
+        rate
       });
     }
     
-    const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
+    const result: CuentasResult = { totalPendiente, totalPendienteBs, totalAbonos: 0, cuentas, rate };
     cache.set(cacheKey, result);
-    console.log("[CxC] Total:", totalPendiente, "Cuentas:", cuentas.length);
+    console.log("[CxC] Total:", totalPendiente, "Total Bs:", totalPendienteBs, "Cuentas:", cuentas.length);
     return result;
   } catch (err) {
     console.error("Error getting CxC:", err);
@@ -1903,10 +1913,13 @@ export async function getCuentasPorPagar(fechaDesde?: string, fechaHasta?: strin
   const cached = cache.get<CuentasResult>(cacheKey);
   if (cached) return cached;
   try {
+    const date = fechaDesde || new Date().toISOString().split("T")[0];
+    const rate = await getDayRate(date);
     const lines = await getCxPLines(fechaDesde, fechaHasta);
     console.log("[CxP] Lines:", lines.length);
     
     let totalPendiente = 0;
+    let totalPendienteBs = 0;
     const partnerTotals: Record<string, {name: string, pendiente: number}> = {};
     
     for (const line of lines) {
@@ -1918,24 +1931,27 @@ export async function getCuentasPorPagar(fechaDesde?: string, fechaHasta?: strin
     const cuentas: Cuenta[] = [];
     for (const [name, data] of Object.entries(partnerTotals)) {
       totalPendiente += data.pendiente;
+      totalPendienteBs += data.pendiente * rate;
       cuentas.push({
         id: name,
         name: data.name,
         partnerId: 0,
         partnerName: data.name,
         totalPendiente: data.pendiente,
+        totalPendienteBs: Math.round(data.pendiente * rate * 100) / 100,
         totalAbonos: 0,
-        currency: "USD"
+        currency: "USD",
+        rate
       });
     }
     
-    const result: CuentasResult = { totalPendiente, totalAbonos: 0, cuentas };
+    const result: CuentasResult = { totalPendiente, totalPendienteBs, totalAbonos: 0, cuentas, rate };
     cache.set(cacheKey, result);
-    console.log("[CxP] Total:", totalPendiente, "Cuentas:", cuentas.length);
+    console.log("[CxP] Total:", totalPendiente, "Total Bs:", totalPendienteBs, "Cuentas:", cuentas.length);
     return result;
   } catch (err) {
     console.error("Error getting CxP:", err);
-    return { totalPendiente: 0, totalAbonos: 0, cuentas: [] };
+    return { totalPendiente: 0, totalPendienteBs: 0, totalAbonos: 0, cuentas: [] };
   }
 }
 

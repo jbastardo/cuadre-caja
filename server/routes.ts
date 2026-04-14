@@ -367,17 +367,23 @@ router.get("/api/cuentas/balance", async (req: Request, res: Response) => {
     const pagosConta = await odoo.getPagosContabilidad(fechaDesde, fechaHasta);
     const abonos = await odoo.getAbonosCxC(fechaDesde, fechaHasta);
 
-    const totalPagadoConta = pagosConta.reduce((sum, p) => sum + (p.amount || 0), 0);
-    const totalRecibos = abonos.reduce((sum, a) => sum + (a.amount_total || 0), 0);
+    const rate = cxcData.rate || 1;
+    const cxcTotalBs = Math.round((cxcData.totalPendiente || 0) * rate * 100) / 100;
+    const cxpTotalBs = Math.round((cxpData.totalPendiente || 0) * rate * 100) / 100;
+    const pagosContaBs = Math.round(pagosConta.reduce((sum, p) => sum + (p.amount || 0), 0) * rate * 100) / 100;
+    const abonosBs = Math.round(abonos.reduce((sum, a) => sum + (a.amount_total || 0), 0) * rate * 100) / 100;
 
     res.json({
+      rate,
       cxc: {
         totalPendiente: cxcData.totalPendiente,
+        totalPendienteBs: cxcTotalBs,
         totalAbonos: cxcData.totalAbonos,
         cantidadCuentas: cxcData.cuentas.length
       },
       cxp: {
         totalPendiente: cxpData.totalPendiente,
+        totalPendienteBs: cxpTotalBs,
         totalAbonos: cxpData.totalAbonos,
         cantidadCuentas: cxpData.cuentas.length
       },
@@ -388,11 +394,13 @@ router.get("/api/cuentas/balance", async (req: Request, res: Response) => {
       },
       pagosContabilidad: {
         cantidad: pagosConta.length,
-        total: totalPagadoConta
+        total: pagosConta.reduce((sum, p) => sum + (p.amount || 0), 0),
+        totalBs: pagosContaBs
       },
       abonos: {
         cantidad: abonos.length,
-        total: totalRecibos
+        total: abonos.reduce((sum, a) => sum + (a.amount_total || 0), 0),
+        totalBs: abonosBs
       }
     });
   } catch (err: any) {
