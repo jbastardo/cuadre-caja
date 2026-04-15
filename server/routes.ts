@@ -83,6 +83,27 @@ router.post("/api/auth/login", async (req: Request, res: Response) => {
   }
 });
 
+// Cambio de contraseña
+router.post("/api/auth/change-password", async (req: Request, res: Response) => {
+  try {
+    const { email, passwordActual, passwordNueva } = req.body;
+    if (!email || !passwordActual || !passwordNueva) {
+      return res.status(400).json({ error: "Todos los campos son requeridos" });
+    }
+    if (passwordNueva.length < 4) {
+      return res.status(400).json({ error: "La contraseña nueva debe tener al menos 4 caracteres" });
+    }
+    const user = await sheets.getUserByEmail(email);
+    if (!user || user.password !== passwordActual) {
+      return res.status(401).json({ error: "Contraseña actual incorrecta" });
+    }
+    await sheets.updateUser(user.id, { password: passwordNueva });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 // ---- Odoo Endpoints ----
 router.get("/api/odoo/rate", async (req: Request, res: Response) => {
   try {

@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatUSD, formatBs, formatDateTime, getStatusColor, getStatusLabel, todayStr } from "@/lib/utils";
-import { CalendarDays, LogOut, Store, Users, List, RefreshCw, Printer, Loader2 } from "lucide-react";
+import { CalendarDays, LogOut, Store, Users, List, RefreshCw, Printer, Loader2, KeyRound } from "lucide-react";
 
 const FISCAL_MACHINE_MAP: Record<number, { machine: string; isMain: boolean }> = {
   1: { machine: "Z1F0019552", isMain: true },
@@ -81,6 +82,36 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
   const [date, setDate] = useState(todayStr());
   const [loadingMachine, setLoadingMachine] = useState<string | null>(null);
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [passForm, setPassForm] = useState({ actual: "", nueva: "", confirmar: "" });
+  const [passStatus, setPassStatus] = useState<{ ok?: boolean; msg?: string } | null>(null);
+  const [passLoading, setPassLoading] = useState(false);
+
+  const handleChangePassword = async () => {
+    setPassStatus(null);
+    if (!passForm.actual || !passForm.nueva || !passForm.confirmar) {
+      return setPassStatus({ ok: false, msg: "Completa todos los campos" });
+    }
+    if (passForm.nueva !== passForm.confirmar) {
+      return setPassStatus({ ok: false, msg: "Las contraseñas nuevas no coinciden" });
+    }
+    setPassLoading(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user?.email, passwordActual: passForm.actual, passwordNueva: passForm.nueva }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPassStatus({ ok: true, msg: "Contraseña cambiada exitosamente" });
+      setPassForm({ actual: "", nueva: "", confirmar: "" });
+    } catch (err: any) {
+      setPassStatus({ ok: false, msg: err.message });
+    } finally {
+      setPassLoading(false);
+    }
+  };
 
   const { data: sessions, isLoading, refetch } = useQuery({
     queryKey: ["sessions", date],
@@ -145,6 +176,9 @@ export default function Dashboard() {
             </Button>
             <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate("/cuadres")}>
               <List className="h-4 w-4 mr-1" /> Historial
+            </Button>
+            <Button variant="ghost" size="icon" title="Cambiar contraseña" className="text-white hover:bg-white/20" onClick={() => { setPassStatus(null); setPassForm({ actual: "", nueva: "", confirmar: "" }); setShowPassModal(true); }}>
+              <KeyRound className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={logout}>
               <LogOut className="h-4 w-4" />
@@ -248,6 +282,59 @@ export default function Dashboard() {
           )}
         </div>
       </main>
+
+      {/* Modal cambio de contraseña */}
+      <Dialog open={showPassModal} onOpenChange={open => { setShowPassModal(open); if (!open) setPassStatus(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4" /> Cambiar contraseña
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Contraseña actual</div>
+              <Input
+                type="password"
+                value={passForm.actual}
+                onChange={e => setPassForm(f => ({ ...f, actual: e.target.value }))}
+                placeholder="••••••••"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Nueva contraseña</div>
+              <Input
+                type="password"
+                value={passForm.nueva}
+                onChange={e => setPassForm(f => ({ ...f, nueva: e.target.value }))}
+                placeholder="••••••••"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Confirmar nueva contraseña</div>
+              <Input
+                type="password"
+                value={passForm.confirmar}
+                onChange={e => setPassForm(f => ({ ...f, confirmar: e.target.value }))}
+                placeholder="••••••••"
+                onKeyDown={e => e.key === "Enter" && handleChangePassword()}
+              />
+            </div>
+            {passStatus && (
+              <div className={`text-sm px-3 py-2 rounded ${passStatus.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                {passStatus.msg}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPassModal(false)}>Cancelar</Button>
+            <Button onClick={handleChangePassword} disabled={passLoading}>
+              {passLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <KeyRound className="h-4 w-4 mr-1" />}
+              Cambiar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
