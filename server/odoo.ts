@@ -2157,6 +2157,149 @@ export async function getPagosCreditoPOS(
   return resultado;
 }
 
+// =============================================================================
+// CONCILIACIÓN DE PAGOS DIFERIDOS
+// Pagos contables registrados a facturas POS donde el pago NO coincide con el
+// día del cuadre. Especialmente relevante para "Saldo a Favor" (ID 25).
+// =============================================================================
+export async function getConciliacionPagosDiferidos(
+  fechaDesde?: string,
+  fechaHasta?: string,
+  usuarioFiltro?: string,
+  bancoFiltro?: string,
+  metodoPOSFiltro?: string,
+  soloDestiempo?: boolean
+): Promise<any[]> {
+  // 1. Pagos contables de clientes en el rango
+  const domain: any[] = [
+    ["partner_type", "=", "customer"],
+    ["state", "=", "posted"],
+    ["payment_type", "=", "inbound"],
+  ];
+  if (fechaDesde) domain.push(["date", ">=", fechaDesde]);
+  if (fechaHasta) domain.push(["date", "<=", fechaHasta]);
+  if (bancoFiltro) domain.push(["journal_id.name", "ilike", bancoFiltro]);
+
+  const pagoFields = [
+    "id", "name", "partner_id", "date", "amount", "currency_id",
+    "journal_id", "create_uid", "reconciled_invoice_ids",
+  ];
+  const pagos = await executeKw("account.payment", "search_read", [domain], { fields: pagoFields });
+
+  const resultado: any[] = [];
+
+  for (const pago of pagos || []) {
+    const userName: string = pago.create_uid ? pago.create_uid[1] : "";
+    if (usuarioFiltro && !userName.toLowerCase().includes(usuarioFiltro.toLowerCase())) continue;
+
+    const invoiceIds: number[] = pago.reconciled_invoice_ids || [];
+    if (!invoiceIds.length) continue;
+
+    // 2. Facturas conciliadas que vengan de POS
+    const facturas = await executeKw(
+      "account.move", "search_read",
+      [[["id", "in", invoiceIds], ["move_type", "in", ["out_invoice", "out_receipt"]]]],
+      { fields: ["id", "name", "invoice_date", "amount_total", "amount_residual", "journal_id", "pos_order_ids"] }
+    );
+
+    for (const inv of facturas || []) {
+      const posOrderIds: number[] = inv.pos_order_ids || [];
+      if (!posOrderIds.length) continue;
+
+      // 3. Pagos POS de esas órdenes
+      const posPagos = await executeKw(
+        "pos.payment", "search_read",
+        [[["pos_order_id", "in", posOrderIds]]],
+        { fields: ["id", "amount", "payment_method_id", "pos_order_id"] }
+      );
+      if (!posPagos || posPagos.length === 0) continue;
+
+      // Nombre y sesión de la orden POS
+      const orders = await executeKw(
+        "pos.order", "read", [posOrderIds],
+        { fields: ["name", "session_id"] }
+      );
+      const orderInfo = orders?.[0];
+      const sesionNombre = orderInfo?.session_id ? orderInfo.session_id[1] : "";
+      const sesionId    = orderInfo?.session_id ? orderInfo.session_id[0] : null;
+
+      // Métodos POS únicos
+      const metodosPOS = [...new Set(
+        posPagos.map((p: any) => p.payment_method_id ? p.payment_method_id[1] : "").filter(Boolean)
+      )].join(", ");
+
+      // Detectar si tiene "Saldo a Favor"
+      const tieneSaldoFavor = posPagos.some((p: any) => {
+        const mid = Array.isArray(p.payment_method_id) ? p.payment_method_id[0] : p.payment_method_id;
+        return mid === METHOD_SALDO_FAVOR;
+      });
+
+      // Filtro por método POS
+      if (metodoPOSFiltro && !metodosPOS.toLowerCase().includes(metodoPOSFiltro.toLowerCase())) continue;
+
+      const fechaFactura = inv.invoice_date || "";
+      const fechaPago    = pago.date || "";
+      const diasDif      = fechaFactura && fechaPago
+        ? Math.round((new Date(fechaPago).getTime() - new Date(fechaFactura).getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+      const mismodia = diasDif === 0;
+
+      if (soloDestiempo && mismodia) continue;
+
+      // Tasas por fecha
+      const rateFactura = await getDayRate(fechaFactura || fechaDesde || new Date().toISOString().split("T")[0]);
+      const ratePago    = await getDayRate(fechaPago || fechaDesde || new Date().toISOString().split("T")[0]);
+
+      // Clasificación del tipo de diferimiento
+      let tipoDiferimiento: string;
+      if (mismodia && tieneSaldoFavor)       tipoDiferimiento = "saldo_favor_ok";
+      else if (!mismodia && tieneSaldoFavor) tipoDiferimiento = "saldo_favor_diferido";
+      else if (mismodia)                     tipoDiferimiento = "mismo_dia";
+      else                                   tipoDiferimiento = "diferido";
+
+      resultado.push({
+        // Factura POS
+        facturaId:      inv.id,
+        facturaNro:     inv.name,
+        facturaFecha:   fechaFactura,
+        facturaJournal: inv.journal_id ? inv.journal_id[1] : "",
+        montoFacturaUSD: inv.amount_total    || 0,
+        montoFacturaBs:  Math.round((inv.amount_total    || 0) * rateFactura * 100) / 100,
+        saldoFacturaUSD: inv.amount_residual || 0,
+        saldoFacturaBs:  Math.round((inv.amount_residual || 0) * rateFactura * 100) / 100,
+        tasaFactura:     rateFactura,
+        // Sesión POS / Cuadre
+        sesionId,
+        sesionNombre,
+        // Pago contable
+        pagoId:      pago.id,
+        pagoNro:     pago.name,
+        pagoFecha:   fechaPago,
+        pagoJournal: pago.journal_id ? pago.journal_id[1] : "",
+        montoPagoUSD: pago.amount || 0,
+        montoPagoBs:  Math.round((pago.amount || 0) * ratePago * 100) / 100,
+        tasaPago:     ratePago,
+        // Clasificación
+        cliente:          pago.partner_id ? pago.partner_id[1] : "",
+        usuario:          userName,
+        metodosPOS,
+        tieneSaldoFavor,
+        mismodia,
+        diasDiferencia:   diasDif,
+        tipoDiferimiento,
+      });
+    }
+  }
+
+  // Ordenar: primero saldo_favor_diferido, luego diferido, luego mismo_dia
+  resultado.sort((a, b) => {
+    const order: Record<string, number> = { saldo_favor_diferido: 0, diferido: 1, saldo_favor_ok: 2, mismo_dia: 3 };
+    return (order[a.tipoDiferimiento] ?? 9) - (order[b.tipoDiferimiento] ?? 9);
+  });
+
+  return resultado;
+}
+
 // Pagos a destiempo: pagos de clientes cuya fecha de pago es diferente a la fecha de la factura
 export async function getPagosDestiempo(
   fechaDesde?: string,

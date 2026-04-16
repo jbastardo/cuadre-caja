@@ -378,6 +378,53 @@ router.get("/api/users", async (_req: Request, res: Response) => {
 const cuentasStore: Map<string, any> = new Map();
 const abonosStore: Map<string, any[]> = new Map();
 
+// =============================================================================
+// CONCILIACIÓN DE PAGOS DIFERIDOS
+// =============================================================================
+router.get("/api/conciliacion/pagos-diferidos", async (req: Request, res: Response) => {
+  try {
+    const fechaDesde    = query(req, "fechaDesde");
+    const fechaHasta    = query(req, "fechaHasta");
+    const usuario       = query(req, "usuario");
+    const banco         = query(req, "banco");
+    const metodoPOS     = query(req, "metodoPOS");
+    const soloDestiempo = query(req, "soloDestiempo") === "1";
+
+    const pagos = await odoo.getConciliacionPagosDiferidos(
+      fechaDesde, fechaHasta, usuario, banco, metodoPOS, soloDestiempo
+    );
+
+    // Totales globales
+    const totalPagosUSD   = Math.round(pagos.reduce((s: number, p: any) => s + p.montoPagoUSD, 0) * 100) / 100;
+    const totalPagosBs    = Math.round(pagos.reduce((s: number, p: any) => s + p.montoPagoBs,  0) * 100) / 100;
+    const totalSaldoUSD   = Math.round(pagos.reduce((s: number, p: any) => s + p.saldoFacturaUSD, 0) * 100) / 100;
+    const totalSaldoBs    = Math.round(pagos.reduce((s: number, p: any) => s + p.saldoFacturaBs,  0) * 100) / 100;
+
+    // Totales por tipo
+    const porTipo: Record<string, { cantidad: number; totalUSD: number; totalBs: number }> = {};
+    for (const p of pagos) {
+      if (!porTipo[p.tipoDiferimiento]) porTipo[p.tipoDiferimiento] = { cantidad: 0, totalUSD: 0, totalBs: 0 };
+      porTipo[p.tipoDiferimiento].cantidad++;
+      porTipo[p.tipoDiferimiento].totalUSD += p.montoPagoUSD;
+      porTipo[p.tipoDiferimiento].totalBs  += p.montoPagoBs;
+    }
+    for (const k of Object.keys(porTipo)) {
+      porTipo[k].totalUSD = Math.round(porTipo[k].totalUSD * 100) / 100;
+      porTipo[k].totalBs  = Math.round(porTipo[k].totalBs  * 100) / 100;
+    }
+
+    res.json({
+      pagos,
+      cantidad: pagos.length,
+      totalPagosUSD, totalPagosBs,
+      totalSaldoUSD, totalSaldoBs,
+      porTipo,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Nuevo endpoint principal: lista de facturas CxC y CxP con filtros y Bs
 router.get("/api/cuentas/facturas", async (req: Request, res: Response) => {
   try {
@@ -584,27 +631,4 @@ router.get("/api/cuentas/conciliacion", async (_req: Request, res: Response) => 
   }
 });
 
-router.get("/api/cuentas/debug", async (_req: Request, res: Response) => {
-  try {
-    const cxc = await odoo.getCuentasPorCobrar();
-    const cxp = await odoo.getCuentasPorPagar();
-    const allInvoices = await odoo.getAllInvoices();
-    const supplierInvoices = await odoo.getSupplierInvoices();
-    const abonos = await odoo.getAbonosCxC();
-    const pagosConta = await odoo.getPagosContabilidad();
-    res.json({
-      cxc_balance: cxc,
-      cxp_balance: cxp,
-      all_invoices_count: allInvoices.length,
-      supplier_invoices_count: supplierInvoices.length,
-      abonos_count: abonos.length,
-      pagos_conta_count: pagosConta.length,
-      sample_invoice: allInvoices[0] || null,
-      sample_supplier: supplierInvoices[0] || null,
-      sample_abono: abonos[0] || null,
-      sample_pago_conta: pagosConta[0] || null
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+
