@@ -299,15 +299,18 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
     const sessionId = Number(param(req, "sessionId"));
     const { metodos, observaciones } = req.body;
 
+    console.log("[NF POST] sessionId:", sessionId, "metodos:", metodos?.length, "observaciones:", observaciones);
+
     // Check if cuadre exists for this session
     const existing = await sheets.getCuadreBySessionId(sessionId);
     if (existing) {
       // Update existing cuadre with NF data
+      console.log("[NF POST] Updating existing cuadre:", existing.id);
       const updated = await sheets.updateCuadre(existing.id, {
         sessionId,
         metodos: metodos || [],
         observaciones: observaciones || "",
-      });
+      } as any);
       return res.json(updated);
     }
 
@@ -315,14 +318,50 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
     const session = await odoo.getSessionById(sessionId);
     const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
 
+    console.log("[NF POST] Creating new cuadre, session:", session);
+
     const newCuadre = await sheets.createCuadre({
       sessionId,
+      sessionName: session?.name || "",
       fecha,
+      caja: session?.config_id?.[1] || "",
+      cajero: session?.user_id?.[1] || "",
+      maquinaFiscal: session?.serial_machine || "",
+      tasaDia: 0,
+      zNumero: "",
+      ventaBrutaZ: 0,
+      notasCreditoZ: 0,
+      ventaNetaZ: 0,
+      baseImponibleZ: 0,
+      exentoZ: 0,
+      ivaZ: 0,
+      igtfZ: 0,
+      primeraFacturaZ: "",
+      ultimaFacturaZ: "",
+      primeraNCZ: "",
+      ultimaNCZ: "",
+      totalOdooUSD: 0,
+      totalOdooBs: 0,
+      difCambiaria: 0,
       metodos: metodos || [],
       observaciones: observaciones || "",
-    });
+      // Optional fields with defaults
+      totalRetencionesPOS: 0,
+      totalRetencionesReal: 0,
+      retencionesPorCobrar: 0,
+      totalCreditoPOS: 0,
+      totalAbonosReal: 0,
+      totalCxCPendiente: 0,
+      totalSaldoFavorPOS: 0,
+      totalSaldoFavorReal: 0,
+      totalAjustesManuales: 0,
+      totalMetodosPOS: 0,
+      totalJustificadoReal: 0,
+      totalDirectoPOS: 0,
+    } as any);
     res.status(201).json(newCuadre);
   } catch (err: any) {
+    console.error("[NF POST] Error:", err.message);
     res.status(500).json({ error: "Error al guardar cuadre NF", details: err?.message });
   }
 });
@@ -331,13 +370,16 @@ router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
   try {
     const { metodos, observaciones } = req.body;
 
+    console.log("[NF PUT] id:", param(req, "id"), "metodos:", metodos?.length);
+
     const updated = await sheets.updateCuadre(param(req, "id"), {
       metodos: metodos || [],
       observaciones: observaciones || "",
-    });
+    } as any);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err: any) {
+    console.error("[NF PUT] Error:", err.message);
     res.status(500).json({ error: "Error al actualizar cuadre NF", details: err?.message });
   }
 });
