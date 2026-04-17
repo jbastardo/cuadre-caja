@@ -479,17 +479,17 @@ export async function updateCuadre(
 
   const existing = rowToCuadre(rows[rowIndex - 1]);
 
-  const totalMetodosReal = data.metodos.reduce((sum, m) => sum + m.montoReal, 0);
-  const totalDeducciones = data.deducciones.reduce((sum, d) => sum + d.monto, 0);
-  const totalAjustesManuales = (data.ajustesManuales || []).reduce((sum, a) => sum + a.monto, 0);
+  const totalMetodosReal = (data.metodos || []).reduce((sum, m) => sum + (m.montoReal || 0), 0);
+  const totalDeducciones = (data.deducciones || []).reduce((sum, d) => sum + (d.monto || 0), 0);
+  const totalAjustesManuales = (data.ajustesManuales || []).reduce((sum, a) => sum + (a.monto || 0), 0);
 
-  const deliveryDifTotal = data.metodos
+  const deliveryDifTotal = (data.metodos || [])
     .filter(
       (m) =>
-        m.metodoNombre.toLowerCase().includes("delivery") ||
-        m.metodoNombre.toLowerCase().includes("diferencia")
+        (m.metodoNombre || "").toLowerCase().includes("delivery") ||
+        (m.metodoNombre || "").toLowerCase().includes("diferencia")
     )
-    .reduce((s, m) => s + m.montoPOS_Bs, 0);
+    .reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
 
   const totalJustificado =
     totalMetodosReal +
