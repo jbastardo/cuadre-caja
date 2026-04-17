@@ -433,7 +433,7 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
   }
 
   const deducciones: Deduccion[] = [];
-  for (const d of data.deducciones) {
+  for (const d of (data.deducciones || [])) {
     const did = `DD-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     await appendRow("Deducciones", [did, id, d.tipo, d.descripcion, d.monto, d.comprobante || ""]);
     deducciones.push({
@@ -592,7 +592,7 @@ export async function updateCuadre(
   }
 
   const deducciones: Deduccion[] = [];
-  for (const d of data.deducciones) {
+  for (const d of (data.deducciones || [])) {
     const did = `DD-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     await appendRow("Deducciones", [did, id, d.tipo, d.descripcion, d.monto, d.comprobante || ""]);
     deducciones.push({
