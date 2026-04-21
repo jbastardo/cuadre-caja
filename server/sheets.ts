@@ -354,7 +354,14 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     totalAjustesManuales;
 
   const diferencia = Math.round((totalJustificado - data.ventaNetaZ) * 100) / 100;
-  const estado = Math.abs(diferencia) < 0.01 ? "cuadrado" : "pendiente";
+  let estado: "cuadrado" | "pendiente";
+  if (data.ventaNetaZ === 0) {
+    estado = "cuadrado";
+    console.log(`[createCuadre] NF cuadre detected, forcing estado=cuadrado`);
+  } else {
+    estado = Math.abs(diferencia) < 0.01 ? "cuadrado" : "pendiente";
+  }
+  console.log(`[createCuadre] id=${id} diferencia=${diferencia} estado=${estado}`);
 
   const cuadre: Cuadre = {
     id,
@@ -503,12 +510,16 @@ export async function updateCuadre(
     totalAjustesManuales;
 
   const diferencia = Math.round((totalJustificado - data.ventaNetaZ) * 100) / 100;
-  const estado =
-    existing.estado === "cuadrado" || existing.cerradoPor
-      ? existing.estado
-      : Math.abs(diferencia) < 0.01
-      ? "cuadrado"
-      : "pendiente";
+  let estado: Cuadre["estado"];
+  if (existing.estado === "cuadrado" || existing.cerradoPor) {
+    estado = existing.estado;
+  } else if (data.ventaNetaZ === 0) {
+    estado = "cuadrado";
+    console.log(`[updateCuadre] NF cuadre detected, forcing estado=cuadrado`);
+  } else {
+    estado = Math.abs(diferencia) < 0.01 ? "cuadrado" : "pendiente";
+  }
+  console.log(`[updateCuadre] id=${id} diferencia=${diferencia} estado=${estado}`);
 
   const cuadre: Cuadre = {
     id,
