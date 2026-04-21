@@ -24,6 +24,35 @@ function getMethodDisplayName(methodId: number, methodName: string): string {
 // Credit method IDs (pay_later)
 const CREDIT_METHOD_IDS = new Set([14, 33]);
 
+// Payment method currency mapping (true = Bs, false = USD)
+const METHOD_CURRENCY_BS: Record<number, boolean> = {
+  3: true,   // P. MOVIL / VUELTO
+  4: true,   // P. Movil BNC BS
+  5: true,   // PXC Cashea
+  6: true,   // Efectivo BS
+  8: true,   // TRF Banesco Cte Bs
+  9: true,   // TRF Bancamiga Bs
+  11: true,  // PDV Banesco Bs
+  12: true,  // PDV MEGASOFT
+  14: true,  // Delivery (usually Bs for NF)
+  15: false, // Venta crédito (credit, not direct)
+  16: true,  // CXC Retenciones
+  17: true,  // Delivery Bs
+  19: false, // Venta a crédito IGTF (credit)
+  20: false, // Efectivo $
+  22: false, // TRF Banesco Verde $
+  23: false, // TRF Banesco Panama $
+  33: false, // Venta a crédito IGTF
+  35: false, // Zelle Chase $
+  38: false, // P.Movil BNC
+  42: true,  // PXC Cashea
+  21: false, // Binance CM
+};
+
+function isMethodBs(methodId: number): boolean {
+  return METHOD_CURRENCY_BS[methodId] ?? false;
+}
+
 export default function CuadreNFForm() {
   const [, navigate] = useLocation();
 
@@ -31,6 +60,23 @@ export default function CuadreNFForm() {
   const [realAmounts, setRealAmounts] = useState<Record<number, number>>({});
   const [observaciones, setObservaciones] = useState("");
   const [ajustesManuales, setAjustesManuales] = useState<{ tipo: string; descripcion: string; monto: number }[]>([]);
+
+  // New adjustment form state
+  const [newAjusteTipo, setNewAjusteTipo] = useState("");
+  const [newAjusteDescripcion, setNewAjusteDescripcion] = useState("");
+  const [newAjusteMonto, setNewAjusteMonto] = useState(0);
+
+  const addAjuste = () => {
+    if (!newAjusteTipo || !newAjusteDescripcion || newAjusteMonto === 0) return;
+    setAjustesManuales(prev => [...prev, {
+      tipo: newAjusteTipo,
+      descripcion: newAjusteDescripcion,
+      monto: newAjusteMonto
+    }]);
+    setNewAjusteTipo("");
+    setNewAjusteDescripcion("");
+    setNewAjusteMonto(0);
+  };
 
   const updateRealAmount = useCallback((methodId: number, value: number) => {
     setRealAmounts(prev => ({ ...prev, [methodId]: value }));
@@ -136,14 +182,20 @@ export default function CuadreNFForm() {
   });
 
   const handleSave = () => {
-    const metodosData = directPayments.map((p) => ({
-      metodoId: p.methodId,
-      metodoNombre: p.methodName,
-      montoPOS_USD: p.totalUSD,
-      montoReal_Bs: realAmounts[p.methodId] || 0,
-      montoReal: tasa ? Math.round((realAmounts[p.methodId] || 0) / tasa * 100) / 100 : 0,
-      observacion: "",
-    }));
+    const metodosData = directPayments.map((p) => {
+      const amountBs = realAmounts[p.methodId] || 0;
+      const isBs = isMethodBs(p.methodId);
+      // Convert to USD for storage
+      const amountUSD = isBs && tasa ? amountBs / tasa : amountBs;
+      return {
+        metodoId: p.methodId,
+        metodoNombre: p.methodName,
+        montoPOS_USD: p.totalUSD,
+        montoReal_Bs: isBs ? amountBs : 0,
+        montoReal: amountUSD,
+        observacion: "",
+      };
+    });
     saveMutation.mutate({
       sessionId,
       fecha,
@@ -170,12 +222,18 @@ export default function CuadreNFForm() {
   // Tasa del dia (exchange rate)
   const tasa = session?.tasa_del_dia || session?.rate || 0;
 
-  // Totals for real amounts (convert from Bs to USD using tasa)
+  // Totals for real amounts (convert Bs methods to USD using tasa)
   const totalRealUSD = useMemo(() => {
-    if (!tasa) return 0;
-    return Math.round(
-      directPayments.reduce((s, p) => s + (realAmounts[p.methodId] || 0), 0) / tasa * 100
-    ) / 100;
+    return directPayments.reduce((s, p) => {
+      const amount = realAmounts[p.methodId] || 0;
+      if (!amount) return s;
+      // If method uses Bs, convert to USD using tasa
+      if (isMethodBs(p.methodId) && tasa) {
+        return s + amount / tasa;
+      }
+      // Otherwise, amount is already in USD
+      return s + amount;
+    }, 0);
   }, [directPayments, realAmounts, tasa]);
 
   // Loading state
@@ -330,7 +388,7 @@ export default function CuadreNFForm() {
                       <th className="pb-2 font-medium">Método</th>
                       <th className="pb-2 font-medium text-right">Ops</th>
                       <th className="pb-2 font-medium text-right">POS (USD)</th>
-                      <th className="pb-2 font-medium text-right">Real (Bs)</th>
+                      <th className="pb-2 font-medium text-right">Real</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -350,7 +408,7 @@ export default function CuadreNFForm() {
                               className="w-32 text-right ml-auto"
                               value={realAmounts[p.methodId] || ""}
                               onChange={(e) => updateRealAmount(p.methodId, Number(e.target.value) || 0)}
-                              placeholder="Bs"
+                              placeholder="—"
                             />
                           </td>
                         </tr>
@@ -530,8 +588,8 @@ export default function CuadreNFForm() {
               <div className="flex gap-2 items-center pt-2 border-t">
                 <select
                   className="border rounded px-2 py-1 text-sm"
-                  value={""}
-                  onChange={(e) => {}}
+                  value={newAjusteTipo}
+                  onChange={(e) => setNewAjusteTipo(e.target.value)}
                 >
                   <option value="">Tipo...</option>
                   <option value="otro">Otro</option>
@@ -539,18 +597,18 @@ export default function CuadreNFForm() {
                 <Input
                   placeholder="Descripción"
                   className="flex-1"
-                  value={""}
-                  onChange={(e) => {}}
+                  value={newAjusteDescripcion}
+                  onChange={(e) => setNewAjusteDescripcion(e.target.value)}
                 />
                 <Input
                   type="number"
                   step="0.01"
                   placeholder="Monto"
                   className="w-32"
-                  value={""}
-                  onChange={(e) => {}}
+                  value={newAjusteMonto || ""}
+                  onChange={(e) => setNewAjusteMonto(Number(e.target.value) || 0)}
                 />
-                <Button size="sm" variant="outline">+ Agregar</Button>
+                <Button size="sm" variant="outline" onClick={addAjuste}>+ Agregar</Button>
               </div>
             </div>
           </CardContent>
