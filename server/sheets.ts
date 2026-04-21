@@ -359,7 +359,7 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     estado = "cuadrado";
     console.log(`[createCuadre] NF cuadre detected, forcing estado=cuadrado`);
   } else {
-    estado = Math.abs(diferencia) < 0.01 ? "cuadrado" : "pendiente";
+    estado = Math.abs(diferencia) < 5.00 ? "cuadrado" : "pendiente";
   }
   console.log(`[createCuadre] id=${id} diferencia=${diferencia} estado=${estado}`);
 
@@ -517,7 +517,7 @@ export async function updateCuadre(
     estado = "cuadrado";
     console.log(`[updateCuadre] NF cuadre detected, forcing estado=cuadrado`);
   } else {
-    estado = Math.abs(diferencia) < 0.01 ? "cuadrado" : "pendiente";
+    estado = Math.abs(diferencia) < 5.00 ? "cuadrado" : "pendiente";
   }
   console.log(`[updateCuadre] id=${id} diferencia=${diferencia} estado=${estado}`);
 
