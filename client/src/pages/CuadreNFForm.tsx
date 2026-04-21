@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatUSD, formatDateTime } from "@/lib/utils";
+import { formatUSD, formatDateTime, formatBs } from "@/lib/utils";
 import type { NonFiscalSummary } from "@shared/schema";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 
@@ -27,9 +27,10 @@ const CREDIT_METHOD_IDS = new Set([14, 33]);
 export default function CuadreNFForm() {
   const [, navigate] = useLocation();
 
-  // Real amounts entered by the cashier per payment method (keyed by methodId)
+  // Real amounts entered by the cashier per payment method (keyed by methodId) - in Bs
   const [realAmounts, setRealAmounts] = useState<Record<number, number>>({});
   const [observaciones, setObservaciones] = useState("");
+  const [ajustesManuales, setAjustesManuales] = useState<{ tipo: string; descripcion: string; monto: number }[]>([]);
 
   const updateRealAmount = useCallback((methodId: number, value: number) => {
     setRealAmounts(prev => ({ ...prev, [methodId]: value }));
@@ -139,7 +140,8 @@ export default function CuadreNFForm() {
       metodoId: p.methodId,
       metodoNombre: p.methodName,
       montoPOS_USD: p.totalUSD,
-      montoReal: realAmounts[p.methodId] || 0,
+      montoReal_Bs: realAmounts[p.methodId] || 0,
+      montoReal: tasa ? Math.round((realAmounts[p.methodId] || 0) / tasa * 100) / 100 : 0,
       observacion: "",
     }));
     saveMutation.mutate({
@@ -147,6 +149,7 @@ export default function CuadreNFForm() {
       fecha,
       metodos: metodosData,
       observaciones,
+      ajustesManuales,
     });
   };
 
@@ -164,15 +167,16 @@ export default function CuadreNFForm() {
   const totalCreditUSD = nfSummary?.totalCreditUSD || 0;
   const totalNFUSD = nfSummary?.totalUSD || 0;
 
-  // Totals for real amounts
-  const totalRealUSD = useMemo(
-    () => Math.round(directPayments.reduce((s, p) => s + (realAmounts[p.methodId] || 0), 0) * 100) / 100,
-    [directPayments, realAmounts]
-  );
-  const totalDiferencia = useMemo(
-    () => Math.round((totalRealUSD - totalDirectUSD) * 100) / 100,
-    [totalRealUSD, totalDirectUSD]
-  );
+  // Tasa del dia (exchange rate)
+  const tasa = session?.tasa_del_dia || session?.rate || 0;
+
+  // Totals for real amounts (convert from Bs to USD using tasa)
+  const totalRealUSD = useMemo(() => {
+    if (!tasa) return 0;
+    return Math.round(
+      directPayments.reduce((s, p) => s + (realAmounts[p.methodId] || 0), 0) / tasa * 100
+    ) / 100;
+  }, [directPayments, realAmounts, tasa]);
 
   // Loading state
   if (!sessionId) {
@@ -326,8 +330,7 @@ export default function CuadreNFForm() {
                       <th className="pb-2 font-medium">Método</th>
                       <th className="pb-2 font-medium text-right">Ops</th>
                       <th className="pb-2 font-medium text-right">POS (USD)</th>
-                      <th className="pb-2 font-medium text-right">Real (USD)</th>
-                      <th className="pb-2 font-medium text-right">Diferencia</th>
+                      <th className="pb-2 font-medium text-right">Real (Bs)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -347,11 +350,8 @@ export default function CuadreNFForm() {
                               className="w-32 text-right ml-auto"
                               value={realAmounts[p.methodId] || ""}
                               onChange={(e) => updateRealAmount(p.methodId, Number(e.target.value) || 0)}
-                              placeholder="USD"
+                              placeholder="Bs"
                             />
-                          </td>
-                          <td className={`py-2 text-right font-medium ${diffColor}`}>
-                            {real ? formatUSD(diff) : "—"}
                           </td>
                         </tr>
                       );
@@ -360,9 +360,10 @@ export default function CuadreNFForm() {
                       <td className="py-2">TOTAL</td>
                       <td className="py-2 text-right">{directPayments.reduce((s, p) => s + p.count, 0)}</td>
                       <td className="py-2 text-right">{formatUSD(totalDirectUSD)}</td>
-                      <td className="py-2 text-right">{totalRealUSD > 0 ? formatUSD(totalRealUSD) : "—"}</td>
-                      <td className={`py-2 text-right font-bold ${totalRealUSD > 0 ? (Math.abs(totalDiferencia) < 0.01 ? "text-green-600" : totalDiferencia < 0 ? "text-red-600" : "text-amber-600") : ""}`}>
-                        {totalRealUSD > 0 ? formatUSD(totalDiferencia) : "—"}
+                      <td className="py-2 text-right">
+                        {Object.values(realAmounts).some(v => v > 0)
+                          ? formatBs(Object.values(realAmounts).reduce((s, v) => s + v, 0))
+                          : "—"}
                       </td>
                     </tr>
                   </tbody>
@@ -444,18 +445,16 @@ export default function CuadreNFForm() {
                 <div className="border-t pt-4 space-y-3">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                     <div>
-                      <span className="text-muted-foreground">Pagos + Crédito:</span>
-                      <p className="font-semibold">{formatUSD(totalDirectUSD + totalCreditUSD)}</p>
+                      <span className="text-muted-foreground">Pagos directos (POS):</span>
+                      <p className="font-semibold">{formatUSD(totalDirectUSD)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Crédito (pendiente):</span>
+                      <p className="font-semibold text-amber-700">{formatUSD(totalCreditUSD)}</p>
                     </div>
                     <div className="bg-purple-50 rounded p-2">
                       <span className="text-purple-700 text-xs">Total Ventas NF (referencia):</span>
                       <p className="font-bold text-purple-900">{formatUSD(totalNFUSD)}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Diferencia:</span>
-                      <p className={`font-bold text-lg ${Math.abs(totalDirectUSD + totalCreditUSD - totalNFUSD) < 0.01 ? "text-green-600" : "text-red-600"}`}>
-                        {formatUSD(totalDirectUSD + totalCreditUSD - totalNFUSD)}
-                      </p>
                     </div>
                   </div>
 
@@ -469,7 +468,7 @@ export default function CuadreNFForm() {
                       </div>
                       <div>
                         <span className="text-muted-foreground">Total Cobrado Real:</span>
-                        <p className="font-semibold text-green-700">{formatUSD(totalRealUSD > 0 ? totalRealUSD : totalDirectUSD)}</p>
+                        <p className="font-semibold text-green-700">{formatUSD(totalRealUSD)}</p>
                       </div>
                       {totalCreditUSD > 0 && (
                         <div>
@@ -480,15 +479,15 @@ export default function CuadreNFForm() {
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm border-t pt-2">
                       <div>
-                        <span className="text-muted-foreground">Cobrado + Crédito:</span>
-                        <p className="font-semibold">{formatUSD((totalRealUSD > 0 ? totalRealUSD : totalDirectUSD) + totalCreditUSD)}</p>
+                        <span className="text-muted-foreground">Cobrado Real + Crédito:</span>
+                        <p className="font-semibold">{formatUSD(totalRealUSD + totalCreditUSD)}</p>
                       </div>
-                      <div className={`rounded p-2 ${Math.abs((totalRealUSD > 0 ? totalRealUSD : totalDirectUSD) + totalCreditUSD - totalNFUSD) < 0.01 ? "bg-green-50" : "bg-red-50"}`}>
+                      <div className={`rounded p-2 ${Math.abs(totalRealUSD + totalCreditUSD - totalNFUSD) < 0.01 ? "bg-green-50" : "bg-red-50"}`}>
                         <span className="text-muted-foreground">Diferencia Cuadre:</span>
-                        <p className={`font-bold text-lg ${Math.abs((totalRealUSD > 0 ? totalRealUSD : totalDirectUSD) + totalCreditUSD - totalNFUSD) < 0.01 ? "text-green-600" : "text-red-600"}`}>
-                          {formatUSD((totalRealUSD > 0 ? totalRealUSD : totalDirectUSD) + totalCreditUSD - totalNFUSD)}
+                        <p className={`font-bold text-lg ${Math.abs(totalRealUSD + totalCreditUSD - totalNFUSD) < 0.01 ? "text-green-600" : "text-red-600"}`}>
+                          {formatUSD(totalRealUSD + totalCreditUSD - totalNFUSD)}
                         </p>
-                        {Math.abs((totalRealUSD > 0 ? totalRealUSD : totalDirectUSD) + totalCreditUSD - totalNFUSD) < 0.01 ? (
+                        {Math.abs(totalRealUSD + totalCreditUSD - totalNFUSD) < 0.01 ? (
                           <span className="text-xs text-green-700 font-semibold">CUADRADO</span>
                         ) : (
                           <span className="text-xs text-red-700 font-semibold">DESCUADRADO</span>
@@ -499,6 +498,61 @@ export default function CuadreNFForm() {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Section 5: Manual Adjustments */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">5. Ajustes y Excepciones</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Ajustes manuales para cuadrar diferencias. Montos en USD.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {ajustesManuales.map((ajuste, index) => (
+                <div key={index} className="flex gap-2 items-center text-sm">
+                  <span className="w-24 text-muted-foreground capitalize">{ajuste.tipo}</span>
+                  <span className="flex-1">{ajuste.descripcion}</span>
+                  <span className={`font-medium ${ajuste.monto >= 0 ? "text-green-600" : "text-red-600"}`}>
+                    {formatUSD(ajuste.monto)}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setAjustesManuales(prev => prev.filter((_, i) => i !== index))}
+                  >
+                    ×
+                  </Button>
+                </div>
+              ))}
+              <div className="flex gap-2 items-center pt-2 border-t">
+                <select
+                  className="border rounded px-2 py-1 text-sm"
+                  value={""}
+                  onChange={(e) => {}}
+                >
+                  <option value="">Tipo...</option>
+                  <option value="otro">Otro</option>
+                </select>
+                <Input
+                  placeholder="Descripción"
+                  className="flex-1"
+                  value={""}
+                  onChange={(e) => {}}
+                />
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="Monto"
+                  className="w-32"
+                  value={""}
+                  onChange={(e) => {}}
+                />
+                <Button size="sm" variant="outline">+ Agregar</Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
