@@ -289,7 +289,24 @@ router.delete("/api/cuadres/:id", async (req: Request, res: Response) => {
     if (!deleted) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: "Error al eliminar cuadre" });
+    res.status(500).json({ error: "Error al eliminar" });
+  }
+});
+
+router.patch("/api/cuadres/:id/estado", async (req: Request, res: Response) => {
+  try {
+    const id = param(req, "id");
+    const { estado } = req.body as { estado: "cuadrado" | "pendiente" | "descuadrado" };
+    if (!estado || !["cuadrado", "pendiente", "descuadrado"].includes(estado)) {
+      return res.status(400).json({ error: "Estado inválido" });
+    }
+    console.log(`[PATCH /cuadres/:id/estado] id=${id} estado=${estado}`);
+    const updated = await sheets.updateCuadreEstado(id, estado);
+    if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
+    res.json(updated);
+  } catch (err: any) {
+    console.error("[PATCH estado] Error:", err.message);
+    res.status(500).json({ error: "Error al actualizar estado", details: err.message });
   }
 });
 

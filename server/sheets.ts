@@ -681,6 +681,20 @@ export async function deleteCuadre(id: string): Promise<boolean> {
   return false;
 }
 
+export async function updateCuadreEstado(id: string, estado: "cuadrado" | "pendiente" | "descuadrado"): Promise<Cuadre | null> {
+  const rows = await getSheetData("Cuadres");
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === id) {
+      const cuadre = rowToCuadre(rows[i]);
+      console.log(`[updateCuadreEstado] id=${id} oldEstado=${cuadre.estado} newEstado=${estado}`);
+      const updated: Cuadre = { ...cuadre, estado };
+      await updateRow("Cuadres", i + 1, cuadreToRow(updated));
+      return updated;
+    }
+  }
+  return null;
+}
+
 // ---- MetodosVerificados ----
 // Columns: A=id, B=cuadreId, C=metodoId, D=metodoNombre, E=montoPOS_USD, F=montoPOS_Bs, G=montoReal, H=diferencia, I=observacion
 async function getMetodosByCuadre(cuadreId: string): Promise<MetodoVerificado[]> {
