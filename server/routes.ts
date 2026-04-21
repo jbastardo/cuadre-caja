@@ -327,9 +327,9 @@ router.post("/api/cuadres/:id/recalculate", async (req: Request, res: Response) 
 router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) => {
   try {
     const sessionId = Number(param(req, "sessionId"));
-    const { metodos, observaciones } = req.body;
+    const { metodos, observaciones, ajustesManuales } = req.body;
 
-    console.log("[NF POST] sessionId:", sessionId, "metodos:", metodos?.length, "observaciones:", observaciones);
+    console.log("[NF POST] sessionId:", sessionId, "metodos:", metodos?.length, "observaciones:", observaciones, "ajustes:", ajustesManuales?.length);
 
     // Check if cuadre exists for this session
     const existing = await sheets.getCuadreBySessionId(sessionId);
@@ -340,6 +340,7 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
         sessionId,
         metodos: metodos || [],
         observaciones: observaciones || "",
+        ajustesManuales: ajustesManuales || [],
       } as any);
       return res.json(updated);
     }
@@ -375,6 +376,7 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
       difCambiaria: 0,
       metodos: metodos || [],
       observaciones: observaciones || "",
+      ajustesManuales: ajustesManuales || [],
       // Optional fields with defaults
       totalRetencionesPOS: 0,
       totalRetencionesReal: 0,
@@ -398,13 +400,14 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
 
 router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
   try {
-    const { metodos, observaciones } = req.body;
+    const { metodos, observaciones, ajustesManuales } = req.body;
 
-    console.log("[NF PUT] id:", param(req, "id"), "metodos:", metodos?.length);
+    console.log("[NF PUT] id:", param(req, "id"), "metodos:", metodos?.length, "ajustes:", ajustesManuales?.length);
 
     const updated = await sheets.updateCuadre(param(req, "id"), {
       metodos: metodos || [],
       observaciones: observaciones || "",
+      ajustesManuales: ajustesManuales || [],
     } as any);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
