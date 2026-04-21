@@ -743,16 +743,6 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   return updateCuadreEstado(id, newEstado);
 }
 
-async function getCuadreById(id: string): Promise<Cuadre | null> {
-  const rows = await getSheetData("Cuadres");
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] === id) {
-      return rowToCuadre(rows[i]);
-    }
-  }
-  return null;
-}
-
 async function getMetodosVerificados(cuadreId: string): Promise<any[]> {
   const rows = await getSheetData("MetodosVerificados");
   return rows.slice(1).filter(r => r[1] === cuadreId).map(rowToMetodoVerificado);
