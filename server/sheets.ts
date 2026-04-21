@@ -695,6 +695,79 @@ export async function updateCuadreEstado(id: string, estado: "cuadrado" | "pendi
   return null;
 }
 
+export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null> {
+  const cuadre = await getCuadreById(id);
+  if (!cuadre) return null;
+
+  const metodos = await getMetodosVerificados(id);
+  const deducciones = await getDeducciones(id);
+  const ajustesManuales = await getAjustesManuales(id);
+
+  const totalMetodosReal = metodos.reduce((sum, m) => sum + (m.montoReal_Bs || m.montoReal || 0), 0);
+  const totalDeducciones = deducciones.reduce((sum, d) => sum + (d.monto || 0), 0);
+  const totalAjustesManuales = ajustesManuales.reduce((sum, a) => sum + (a.monto || 0), 0);
+
+  const deliveryDifTotal = metodos
+    .filter((m) =>
+      (m.metodoNombre || "").toLowerCase().includes("delivery") ||
+      (m.metodoNombre || "").toLowerCase().includes("diferencia")
+    )
+    .reduce((sum, m) => sum + (m.montoPOS_Bs || 0), 0);
+
+  const totalJustificado =
+    totalMetodosReal +
+    (cuadre.totalRetencionesReal || 0) +
+    (cuadre.retencionesPorCobrar || 0) +
+    (cuadre.totalAbonosReal || 0) +
+    (cuadre.totalCxCPendiente || 0) +
+    (cuadre.totalSaldoFavorReal || 0) +
+    deliveryDifTotal +
+    totalDeducciones +
+    totalAjustesManuales;
+
+  const diferencia = Math.round((totalJustificado - cuadre.ventaNetaZ) * 100) / 100;
+  const newEstado: "cuadrado" | "pendiente" =
+    cuadre.ventaNetaZ === 0
+      ? "cuadrado"
+      : Math.abs(diferencia) < 5.00
+      ? "cuadrado"
+      : "pendiente";
+
+  console.log(`[recalculateCuadreEstado] id=${id} oldEstado=${cuadre.estado} newEstado=${newEstado} diferencia=${diferencia}`);
+
+  if (cuadre.estado === newEstado) {
+    console.log(`[recalculateCuadreEstado] estado unchanged, returning existing`);
+    return cuadre;
+  }
+
+  return updateCuadreEstado(id, newEstado);
+}
+
+async function getCuadreById(id: string): Promise<Cuadre | null> {
+  const rows = await getSheetData("Cuadres");
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === id) {
+      return rowToCuadre(rows[i]);
+    }
+  }
+  return null;
+}
+
+async function getMetodosVerificados(cuadreId: string): Promise<any[]> {
+  const rows = await getSheetData("MetodosVerificados");
+  return rows.slice(1).filter(r => r[1] === cuadreId).map(rowToMetodoVerificado);
+}
+
+async function getDeducciones(cuadreId: string): Promise<any[]> {
+  const rows = await getSheetData("Deducciones");
+  return rows.slice(1).filter(r => r[1] === cuadreId).map(rowToDeduccion);
+}
+
+async function getAjustesManuales(cuadreId: string): Promise<any[]> {
+  const rows = await getSheetData("AjustesManuales");
+  return rows.slice(1).filter(r => r[1] === cuadreId).map(rowToAjusteManual);
+}
+
 // ---- MetodosVerificados ----
 // Columns: A=id, B=cuadreId, C=metodoId, D=metodoNombre, E=montoPOS_USD, F=montoPOS_Bs, G=montoReal, H=diferencia, I=observacion
 async function getMetodosByCuadre(cuadreId: string): Promise<MetodoVerificado[]> {

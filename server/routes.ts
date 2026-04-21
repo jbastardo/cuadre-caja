@@ -310,6 +310,19 @@ router.patch("/api/cuadres/:id/estado", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/api/cuadres/:id/recalculate", async (req: Request, res: Response) => {
+  try {
+    const id = param(req, "id");
+    console.log(`[POST /cuadres/:id/recalculate] id=${id}`);
+    const updated = await sheets.recalculateCuadreEstado(id);
+    if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
+    res.json(updated);
+  } catch (err: any) {
+    console.error("[POST recalculate] Error:", err.message);
+    res.status(500).json({ error: "Error al recalcular estado", details: err.message });
+  }
+});
+
 // ---- NF Cuadres ----
 router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) => {
   try {
