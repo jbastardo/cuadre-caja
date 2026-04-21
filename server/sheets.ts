@@ -699,9 +699,9 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   const cuadre = await getCuadreById(id);
   if (!cuadre) return null;
 
-  const metodos = await getMetodosVerificados(id);
-  const deducciones = await getDeducciones(id);
-  const ajustesManuales = await getAjustesManuales(id);
+  const metodos = cuadre.metodos || [];
+  const deducciones = cuadre.deducciones || [];
+  const ajustesManuales = cuadre.ajustesManuales || [];
 
   const totalMetodosReal = metodos.reduce((sum, m) => sum + (m.montoReal_Bs || m.montoReal || 0), 0);
   const totalDeducciones = deducciones.reduce((sum, d) => sum + (d.monto || 0), 0);
@@ -741,21 +741,6 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   }
 
   return updateCuadreEstado(id, newEstado);
-}
-
-async function getMetodosVerificados(cuadreId: string): Promise<any[]> {
-  const rows = await getSheetData("MetodosVerificados");
-  return rows.slice(1).filter(r => r[1] === cuadreId).map(rowToMetodoVerificado);
-}
-
-async function getDeducciones(cuadreId: string): Promise<any[]> {
-  const rows = await getSheetData("Deducciones");
-  return rows.slice(1).filter(r => r[1] === cuadreId).map(rowToDeduccion);
-}
-
-async function getAjustesManuales(cuadreId: string): Promise<any[]> {
-  const rows = await getSheetData("AjustesManuales");
-  return rows.slice(1).filter(r => r[1] === cuadreId).map(rowToAjusteManual);
 }
 
 // ---- MetodosVerificados ----
