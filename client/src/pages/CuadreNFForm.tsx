@@ -25,28 +25,51 @@ function getMethodDisplayName(methodId: number, methodName: string): string {
 const CREDIT_METHOD_IDS = new Set([14, 33]);
 
 // Payment method currency mapping (true = Bs, false = USD)
+// Based on actual method IDs from Odoo NF data
 const METHOD_CURRENCY_BS: Record<number, boolean> = {
-  3: true,   // P. MOVIL / VUELTO
-  4: true,   // P. Movil BNC BS
-  5: true,   // PXC Cashea
-  6: true,   // Efectivo BS
-  8: true,   // TRF Banesco Cte Bs
-  9: true,   // TRF Bancamiga Bs
-  11: true,  // PDV Banesco Bs
-  12: true,  // PDV MEGASOFT
-  14: true,  // Delivery (usually Bs for NF)
-  15: false, // Venta crédito (credit, not direct)
-  16: true,  // CXC Retenciones
-  17: true,  // Delivery Bs
-  19: false, // Venta a crédito IGTF (credit)
-  20: false, // Efectivo $
-  22: false, // TRF Banesco Verde $
-  23: false, // TRF Banesco Panama $
-  33: false, // Venta a crédito IGTF
-  35: false, // Zelle Chase $
-  38: false, // P.Movil BNC
-  42: true,  // PXC Cashea
-  21: false, // Binance CM
+  // USD methods
+  2: false,   // Efectivo Dolares
+  3: true,    // P. MOVIL / VUELTO
+  4: true,    // P. Movil BNC BS
+  5: true,    // PXC Cashea
+  6: true,    // Efectivo BS
+  7: true,    // TRF Venezuela Bs
+  8: true,    // TRF Banesco Cte Bs
+  9: true,    // TRF Bancamiga Bs
+  10: false,  // Reserved
+  11: true,   // PDV Banesco Bs
+  12: false,  // Zelle Chase $
+  13: false,  // Reserved
+  14: false,  // Venta a crédito (credit, not direct)
+  15: true,   // Efectivo BS
+  16: true,   // CXC Retenciones
+  17: true,   // Delivery Bs
+  18: false,  // Reserved
+  19: false,  // Venta a crédito IGTF (credit)
+  20: false,  // Efectivo $
+  21: false,  // Binance CM
+  22: false,  // TRF Banesco Verde $
+  23: false,  // TRF Banesco Panama $
+  24: false,  // Diferencia
+  25: false,  // Saldo a favor
+  26: true,   // Retención de IVA
+  27: false,  // Reserved
+  28: false,  // Reserved
+  29: false,  // Reserved
+  30: false,  // Reserved
+  31: false,  // Reserved
+  32: false,  // Efectivo Dolares
+  33: false,  // Venta a crédito IGTF
+  34: false,  // Reserved
+  35: false,  // BANCO VENEZUELA PDV
+  36: false,  // Reserved
+  37: false,  // BANCO VENEZUELA PAGO MOVIL
+  38: false,  // P.Movil BNC
+  39: false,  // Reserved
+  40: false,  // Reserved
+  41: false,  // Reserved
+  42: true,   // PXC Cashea
+  43: false,  // Binance
 };
 
 function isMethodBs(methodId: number): boolean {
