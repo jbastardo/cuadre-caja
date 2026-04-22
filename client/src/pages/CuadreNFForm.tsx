@@ -284,7 +284,7 @@ export default function CuadreNFForm() {
     });
   };
 
-const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+  const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
 
   // Fetch rate from API
   const { data: rateData } = useQuery({
