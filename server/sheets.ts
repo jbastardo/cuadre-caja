@@ -414,8 +414,8 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
   const metodos: MetodoVerificado[] = [];
   for (const m of data.metodos) {
     const mid = `MV-${Date.now()}-${m.metodoId}`;
-    const montoPosBs = m.montoPOS_Bs || 0;
-    const diff = Math.round(((m.montoReal || 0) - montoPosBs) * 100) / 100;
+    const montoPosBs = m.montoReal_Bs || m.montoPOS_Bs || 0;
+    const diff = Math.round(((m.montoReal || 0) - (m.montoPOS_USD || 0)) * 100) / 100;
     await appendRow("MetodosVerificados", [
       mid,
       id,
@@ -578,8 +578,8 @@ export async function updateCuadre(
   const metodos: MetodoVerificado[] = [];
   for (const m of data.metodos) {
     const mid = `MV-${Date.now()}-${m.metodoId}`;
-    const montoPosBs = m.montoPOS_Bs || 0;
-    const diff = Math.round(((m.montoReal || 0) - montoPosBs) * 100) / 100;
+    const montoPosBs = m.montoReal_Bs || m.montoPOS_Bs || 0;
+    const diff = Math.round(((m.montoReal || 0) - (m.montoPOS_USD || 0)) * 100) / 100;
     await appendRow("MetodosVerificados", [
       mid,
       id,

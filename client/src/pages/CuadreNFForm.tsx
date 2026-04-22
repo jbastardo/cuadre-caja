@@ -194,9 +194,10 @@ export default function CuadreNFForm() {
         
         existingCuadre.metodos.forEach((m: any) => {
           const methodId = m.metodoId;
-          if (isMethodBs(methodId) && m.montoReal_Bs) {
-            realAmountsFromExisting[methodId] = m.montoReal_Bs;
-          } else if (!isMethodBs(methodId) && m.montoReal) {
+          if (isMethodBs(methodId)) {
+            const bsAmount = m.montoReal_Bs || m.montoPOS_Bs || 0;
+            if (bsAmount) realAmountsFromExisting[methodId] = bsAmount;
+          } else if (m.montoReal) {
             realAmountsFromExisting[methodId] = m.montoReal;
           }
           if (m.observacion) {
