@@ -281,9 +281,14 @@ router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Datos inválidos", details: parsed.error.message });
     }
 
-    console.log("Saving cuadre - totalMetodosPOS:", parsed.data.totalMetodosPOS, "totalDirectoPOS:", parsed.data.totalDirectoPOS);
+    // Preserve observacionesNF from existing cuadre if not sent
+    const existing = await sheets.getCuadreById(param(req, "id"));
+    if (!existing) return res.status(404).json({ error: "Cuadre no encontrado" });
+    const data = { ...parsed.data, observacionesNF: existing.observacionesNF || "" };
 
-    const updated = await sheets.updateCuadre(param(req, "id"), parsed.data);
+    console.log("Saving cuadre - totalMetodosPOS:", data.totalMetodosPOS, "totalDirectoPOS:", data.totalDirectoPOS);
+
+    const updated = await sheets.updateCuadre(param(req, "id"), data);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err: any) {

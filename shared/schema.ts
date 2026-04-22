@@ -290,6 +290,9 @@ export const createCuadreSchema = z.object({
 
   observaciones: z.string().optional(),
 
+  // NF-specific observations (separate from fiscal observations)
+  observacionesNF: z.string().optional(),
+
   // Payment methods verified (in Bs)
   metodos: z.array(z.object({
     metodoId: z.number(),
