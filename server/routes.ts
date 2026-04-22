@@ -286,7 +286,7 @@ router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
     if (!existing) return res.status(404).json({ error: "Cuadre no encontrado" });
     const data = { ...parsed.data, observacionesNF: existing.observacionesNF || "" };
 
-    console.log("Saving cuadre - totalMetodosPOS:", data.totalMetodosPOS, "totalDirectoPOS:", data.totalDirectoPOS);
+    console.log("Saving cuadre - observaciones:", data.observaciones?.substring(0, 30), "observacionesNF:", data.observacionesNF?.substring(0, 30), "notasCreditoZ:", data.notasCreditoZ, "primeraNCZ:", data.primeraNCZ, "ultimaNCZ:", data.ultimaNCZ);
 
     const updated = await sheets.updateCuadre(param(req, "id"), data);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
