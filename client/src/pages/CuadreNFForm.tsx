@@ -284,10 +284,36 @@ export default function CuadreNFForm() {
     });
   };
 
-  const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
 
-  // Use rate from session or default
-  const tasa = session?.rate || session?.tasa_del_dia || 0;
+  // Fetch rate from API
+  const { data: rateData } = useQuery({
+    queryKey: ["rate", fecha],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`/api/odoo/rate?date=${fecha}`);
+        if (!res.ok) return { rate: 0 };
+        return res.json();
+      } catch {
+        return { rate: 0 };
+      }
+    },
+    retry: 1,
+    staleTime: 1000 * 60 * 5,
+  });
+  const tasa = rateData?.rate || session?.rate || session?.tasa_del_dia || 0;
+
+  // Separate payment methods: direct payments vs credit
+  const directPayments = useMemo(
+    () => (nfSummary?.payments || []).filter(p => !CREDIT_METHOD_IDS.has(p.methodId)),
+    [nfSummary]
+  );
+  const totalDirectUSD = useMemo(
+    () => Math.round(directPayments.reduce((s, p) => s + p.totalUSD, 0) * 100) / 100,
+    [directPayments]
+  );
+  const totalCreditUSD = nfSummary?.totalCreditUSD || 0;
+  const totalNFUSD = nfSummary?.totalUSD || 0;
 
   // Totals for real amounts (convert Bs methods to USD using tasa)
   const totalRealUSD = useMemo(() => {
