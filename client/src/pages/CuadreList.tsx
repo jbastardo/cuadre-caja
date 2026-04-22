@@ -26,6 +26,7 @@ const STATUS_DOT: Record<string, { bg: string; text: string; label: string }> = 
   descuadrado: { bg: "bg-red-500",    text: "text-red-700",    label: "Descuadrado" },
   pendiente:   { bg: "bg-amber-400",  text: "text-amber-700",  label: "Pendiente" },
   no_realizado:{ bg: "bg-gray-300",   text: "text-gray-500",   label: "Sin cuadre" },
+  nf:          { bg: "bg-purple-400",  text: "text-purple-700",  label: "No Fiscal" },
 };
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -193,7 +194,7 @@ export default function CuadreList() {
                   <div
                     key={date}
                     onClick={() => setSelectedDate(isSelected ? null : date)}
-                    className={`min-h-[90px] border-b border-r p-1.5 cursor-pointer transition-colors
+className={`min-h-[110px] border-b border-r p-1.5 cursor-pointer transition-colors
                       ${isSelected  ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : ""}
                       ${isToday     ? "bg-amber-50" : ""}
                       ${isWeekend && !isSelected && !isToday ? "bg-gray-50" : ""}
@@ -214,21 +215,25 @@ export default function CuadreList() {
                     {/* Cuadre chips */}
                     {dayCuadres.length > 0 && (
                       <div className="space-y-0.5">
-{dayCuadres.slice(0, 3).map(c => (
+                        {dayCuadres.slice(0, 4).map(c => {
+                          const isNF = c.ventaNetaZ === 0;
+                          return (
                             <div
                               key={c.id}
-                              onClick={e => { e.stopPropagation(); navigate(c.ventaNetaZ === 0 ? `/cuadre-nf?sessionId=${c.sessionId}` : `/cuadre/${c.id}`); }}
-                              className={`text-xs px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80
-                                ${c.estado === "cuadrado"    ? "bg-green-100 text-green-800" :
+                              onClick={e => { e.stopPropagation(); navigate(isNF ? `/cuadre-nf?sessionId=${c.sessionId}` : `/cuadre/${c.id}`); }}
+                              className={`text-xs px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80 flex items-center gap-0.5
+                                ${isNF ? "bg-purple-100 text-purple-800" :
+                                  c.estado === "cuadrado"    ? "bg-green-100 text-green-800" :
                                   c.estado === "descuadrado" ? "bg-red-100 text-red-800" :
                                                                "bg-amber-100 text-amber-800"}`}
                             >
-                              {c.ventaNetaZ === 0 && <span className="font-bold mr-0.5">NF</span>}
-                              {c.caja}
+                              {isNF && <span className="font-bold text-[10px] bg-purple-300 text-purple-900 px-0.5 rounded">NF</span>}
+                              <span className="truncate">{c.caja}</span>
                             </div>
-                          ))}
-                        {dayCuadres.length > 3 && (
-                          <div className="text-xs text-muted-foreground pl-1">+{dayCuadres.length - 3} más</div>
+                          );
+                        })}
+                        {dayCuadres.length > 4 && (
+                          <div className="text-xs text-muted-foreground pl-1">+{dayCuadres.length - 4} más</div>
                         )}
                       </div>
                     )}
@@ -276,10 +281,10 @@ export default function CuadreList() {
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-sm">{c.sessionName}</span>
                           <span className="text-xs text-muted-foreground bg-gray-100 px-1.5 py-0.5 rounded">{c.caja}</span>
-                          {c.ventaNetaZ === 0 && <span className="text-xs font-bold bg-purple-100 text-purple-800 px-1 py-0.5 rounded">NF</span>}
+                          {c.ventaNetaZ === 0 && <span className="text-[10px] font-bold bg-purple-200 text-purple-900 px-1.5 py-0.5 rounded">NF</span>}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {c.fecha} · {c.cajero} · Z: {c.zNumero}
+                          {c.fecha} · {c.cajero}{c.ventaNetaZ === 0 ? " · No Fiscal" : ` · Z: ${c.zNumero}`}
                           {c.cerradoPor && <span className="ml-2 text-gray-400">Cerrado por {c.cerradoPor}</span>}
                         </p>
                       </div>
@@ -298,6 +303,10 @@ export default function CuadreList() {
               {v.label}
             </span>
           ))}
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-400" />
+            No Fiscal (NF)
+          </span>
         </div>
 
       </main>
