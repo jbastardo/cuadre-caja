@@ -182,7 +182,8 @@ export async function updateUser(id: string, data: Partial<User>): Promise<UserP
 // AH=totalAbonosReal, AI=totalCxCPendiente, AJ=totalSaldoFavorPOS,
 // AK=totalSaldoFavorReal, AL=totalAjustesManuales, AM=primeraNCZ,
 // AN=ultimaNCZ, AO=retencionesPorCobrar, AP=saldoFavorObs,
-// AQ=totalMetodosPOS, AR=totalJustificadoReal, AS=totalDirectoPOS
+// AQ=totalMetodosPOS, AR=totalJustificadoReal, AS=totalDirectoPOS,
+// AT=observacionesNF
 
 function rowToCuadre(row: string[]): Cuadre {
   return {
@@ -231,6 +232,7 @@ function rowToCuadre(row: string[]): Cuadre {
     totalMetodosPOS: Number(row[42]) || 0,
     totalJustificadoReal: Number(row[43]) || 0,
     totalDirectoPOS: Number(row[44]) || 0,
+    observacionesNF: row[45] || "",
   };
 }
 
@@ -281,6 +283,7 @@ function cuadreToRow(c: Cuadre): any[] {
     c.totalMetodosPOS || 0,
     c.totalJustificadoReal || 0,
     c.totalDirectoPOS || 0,
+    c.observacionesNF || "",
   ];
   console.log("cuadreToRow - totalMetodosPOS:", c.totalMetodosPOS, "totalDirectoPOS:", c.totalDirectoPOS);
 }

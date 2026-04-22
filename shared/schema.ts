@@ -224,6 +224,7 @@ export const cuadreSchema = z.object({
 
   estado: z.enum(["cuadrado", "descuadrado", "pendiente"]),
   observaciones: z.string(),
+  observacionesNF: z.string().optional(),
   saldoFavorObs: z.string().optional(),
   cerradoPor: z.string(),
   creadoEn: z.string(),

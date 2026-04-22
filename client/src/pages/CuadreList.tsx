@@ -214,18 +214,19 @@ export default function CuadreList() {
                     {/* Cuadre chips */}
                     {dayCuadres.length > 0 && (
                       <div className="space-y-0.5">
-                        {dayCuadres.slice(0, 3).map(c => (
-                          <div
-                            key={c.id}
-                            onClick={e => { e.stopPropagation(); navigate(`/cuadre/${c.id}`); }}
-                            className={`text-xs px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80
-                              ${c.estado === "cuadrado"    ? "bg-green-100 text-green-800" :
-                                c.estado === "descuadrado" ? "bg-red-100 text-red-800" :
-                                                             "bg-amber-100 text-amber-800"}`}
-                          >
-                            {c.caja}
-                          </div>
-                        ))}
+{dayCuadres.slice(0, 3).map(c => (
+                            <div
+                              key={c.id}
+                              onClick={e => { e.stopPropagation(); navigate(c.ventaNetaZ === 0 ? `/cuadre-nf?sessionId=${c.sessionId}` : `/cuadre/${c.id}`); }}
+                              className={`text-xs px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80
+                                ${c.estado === "cuadrado"    ? "bg-green-100 text-green-800" :
+                                  c.estado === "descuadrado" ? "bg-red-100 text-red-800" :
+                                                               "bg-amber-100 text-amber-800"}`}
+                            >
+                              {c.ventaNetaZ === 0 && <span className="font-bold mr-0.5">NF</span>}
+                              {c.caja}
+                            </div>
+                          ))}
                         {dayCuadres.length > 3 && (
                           <div className="text-xs text-muted-foreground pl-1">+{dayCuadres.length - 3} más</div>
                         )}
@@ -269,18 +270,19 @@ export default function CuadreList() {
                   <div
                     key={c.id}
                     className="bg-white rounded-lg border px-4 py-3 flex items-center justify-between cursor-pointer hover:shadow-sm transition-shadow"
-                    onClick={() => navigate(`/cuadre/${c.id}`)}
+                    onClick={() => navigate(c.ventaNetaZ === 0 ? `/cuadre-nf?sessionId=${c.sessionId}` : `/cuadre/${c.id}`)}
                   >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm">{c.sessionName}</span>
-                        <span className="text-xs text-muted-foreground bg-gray-100 px-1.5 py-0.5 rounded">{c.caja}</span>
+<div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-sm">{c.sessionName}</span>
+                          <span className="text-xs text-muted-foreground bg-gray-100 px-1.5 py-0.5 rounded">{c.caja}</span>
+                          {c.ventaNetaZ === 0 && <span className="text-xs font-bold bg-purple-100 text-purple-800 px-1 py-0.5 rounded">NF</span>}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {c.fecha} · {c.cajero} · Z: {c.zNumero}
+                          {c.cerradoPor && <span className="ml-2 text-gray-400">Cerrado por {c.cerradoPor}</span>}
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {c.fecha} · {c.cajero} · Z: {c.zNumero}
-                        {c.cerradoPor && <span className="ml-2 text-gray-400">Cerrado por {c.cerradoPor}</span>}
-                      </p>
-                    </div>
                     <Badge className={getStatusColor(c.estado)}>{getStatusLabel(c.estado)}</Badge>
                   </div>
                 ))

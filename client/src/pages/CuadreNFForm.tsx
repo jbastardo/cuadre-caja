@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +10,7 @@ import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatUSD, formatDateTime, formatBs } from "@/lib/utils";
 import type { NonFiscalSummary } from "@shared/schema";
-import { ArrowLeft, Loader2, Save, Copy, Check } from "lucide-react";
+import { ArrowLeft, Loader2, Save, Copy, Check, Lock, RotateCcw, Trash2 } from "lucide-react";
 
 // Method name display overrides (same as fiscal page)
 const METHOD_NAME_OVERRIDES: Record<number, string> = {
@@ -82,10 +83,11 @@ function getMethodCurrencyLabel(methodId: number): string {
 
 export default function CuadreNFForm() {
   const [, navigate] = useLocation();
+  const { user } = useAuth();
 
   // Real amounts entered by the cashier per payment method (keyed by methodId) - in Bs
   const [realAmounts, setRealAmounts] = useState<Record<number, number>>({});
-  const [observaciones, setObservaciones] = useState("");
+  const [observacionesNF, setObservacionesNF] = useState("");
   const [metodosObservaciones, setMetodosObservaciones] = useState<Record<number, string>>({});
   const [ajustesManuales, setAjustesManuales] = useState<{ tipo: string; descripcion: string; monto: number }[]>([]);
 
@@ -187,7 +189,7 @@ export default function CuadreNFForm() {
   useEffect(() => {
     if (existingCuadre && existingCuadre.id && existingCuadre.id !== loadedCuadreId) {
       setLoadedCuadreId(existingCuadre.id);
-      setObservaciones(existingCuadre.observaciones || "");
+      setObservacionesNF(existingCuadre.observacionesNF || "");
       
       // Load metodos real amounts and observations from existing cuadre
       if (existingCuadre.metodos && Array.isArray(existingCuadre.metodos)) {
@@ -264,6 +266,48 @@ export default function CuadreNFForm() {
     },
   });
 
+  const isLocked = !!existingCuadre?.cerradoPor && existingCuadre.estado !== "pendiente";
+  const canClose = (user?.rol === "supervisor" || user?.rol === "admin") && existingCuadreId && !isLocked;
+  const canReopen = (user?.rol === "supervisor" || user?.rol === "admin") && isLocked;
+  const canDelete = user?.rol === "admin" && !!existingCuadreId;
+
+  const closeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/cuadres/${existingCuadreId}/close`, {
+        method: "POST",
+        body: JSON.stringify({ cerradoPor: user?.email }),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Cuadre cerrado" });
+      queryClient.invalidateQueries({ queryKey: ["cuadre", existingCuadreId] });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-lookup", sessionId] });
+    },
+  });
+
+  const reopenMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/cuadres/${existingCuadreId}/reopen`, { method: "POST" });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Cuadre reabierto" });
+      queryClient.invalidateQueries({ queryKey: ["cuadre", existingCuadreId] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(`/api/cuadres/${existingCuadreId}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      toast({ title: "Cuadre eliminado" });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-lookup", sessionId] });
+      navigate("/");
+    },
+  });
+
   const handleSave = () => {
     const metodosData = directPayments.map((p) => {
       const amountBs = realAmounts[p.methodId] || 0;
@@ -283,7 +327,7 @@ export default function CuadreNFForm() {
       sessionId,
       fecha,
       metodos: metodosData,
-      observaciones,
+      observacionesNF,
       ajustesManuales,
     });
   };
@@ -730,26 +774,45 @@ const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split
         {/* Observations */}
         <Card>
           <CardContent className="pt-4">
-            <Label>Observaciones generales</Label>
+            <Label>Observaciones NF</Label>
             <textarea
               className="w-full mt-2 p-2 border rounded-md text-sm min-h-[60px] resize-y"
-              value={observaciones}
-              onChange={(e) => setObservaciones(e.target.value)}
-              placeholder="Observaciones adicionales..."
+              value={observacionesNF}
+              onChange={(e) => setObservacionesNF(e.target.value)}
+              placeholder="Observaciones del cuadre no fiscal..."
             />
           </CardContent>
         </Card>
 
         {/* Actions */}
         <div className="flex flex-wrap gap-2 no-print pb-8">
-          <Button onClick={() => handleSave()} disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4 mr-1" />
-            )}
-            {saveMutation.isPending ? "Guardando..." : "Guardar"}
-          </Button>
+          {!isLocked && (
+            <Button onClick={() => handleSave()} disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-1" />
+              )}
+              {saveMutation.isPending ? "Guardando..." : "Guardar"}
+            </Button>
+          )}
+          {canClose && (
+            <Button variant="outline" onClick={() => closeMutation.mutate()} disabled={closeMutation.isPending}>
+              <Lock className="h-4 w-4 mr-1" /> Cerrar Cuadre
+            </Button>
+          )}
+          {canReopen && (
+            <Button variant="outline" onClick={() => reopenMutation.mutate()} disabled={reopenMutation.isPending}>
+              <RotateCcw className="h-4 w-4 mr-1" /> Reabrir
+            </Button>
+          )}
+          {canDelete && (
+            <Button variant="destructive" onClick={() => {
+              if (confirm("¿Seguro que deseas eliminar este cuadre?")) deleteMutation.mutate();
+            }} disabled={deleteMutation.isPending}>
+              <Trash2 className="h-4 w-4 mr-1" /> Eliminar
+            </Button>
+          )}
         </div>
       </main>
     </div>

@@ -327,9 +327,9 @@ router.post("/api/cuadres/:id/recalculate", async (req: Request, res: Response) 
 router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) => {
   try {
     const sessionId = Number(param(req, "sessionId"));
-    const { metodos, observaciones, ajustesManuales } = req.body;
+    const { metodos, observacionesNF, ajustesManuales } = req.body;
 
-    console.log("[NF POST] sessionId:", sessionId, "metodos:", metodos?.length, "observaciones:", observaciones, "ajustes:", ajustesManuales?.length);
+    console.log("[NF POST] sessionId:", sessionId, "metodos:", metodos?.length, "observacionesNF:", observacionesNF, "ajustes:", ajustesManuales?.length);
 
     // Check if cuadre exists for this session
     const existing = await sheets.getCuadreBySessionId(sessionId);
@@ -361,7 +361,8 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
         totalOdooBs: existing.totalOdooBs,
         difCambiaria: existing.difCambiaria,
         metodos: metodos || [],
-        observaciones: observaciones ?? existing.observaciones ?? "",
+        observaciones: existing.observaciones ?? "",
+        observacionesNF: observacionesNF ?? existing.observacionesNF ?? "",
         ajustesManuales: ajustesManuales || [],
         totalRetencionesPOS: existing.totalRetencionesPOS,
         totalRetencionesReal: existing.totalRetencionesReal,
@@ -410,7 +411,8 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
       totalOdooBs: 0,
       difCambiaria: 0,
       metodos: metodos || [],
-      observaciones: observaciones || "",
+      observaciones: "",
+      observacionesNF: observacionesNF || "",
       ajustesManuales: ajustesManuales || [],
       // Optional fields with defaults
       totalRetencionesPOS: 0,
@@ -436,7 +438,7 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
 router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const { metodos, observaciones, ajustesManuales } = req.body;
+    const { metodos, observacionesNF, ajustesManuales } = req.body;
 
     console.log("[NF PUT] id:", id, "metodos:", metodos?.length, "ajustes:", ajustesManuales?.length);
 
@@ -452,7 +454,6 @@ router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
       cajero: existing.cajero,
       maquinaFiscal: existing.maquinaFiscal,
       zNumero: existing.zNumero,
-      ventaBrutaZ: existing.ventaNetaZ === 0 ? 0 : existing.ventaNetaZ,
       ventaBrutaZ: existing.ventaBrutaZ,
       notasCreditoZ: existing.notasCreditoZ,
       baseImponibleZ: existing.baseImponibleZ,
@@ -468,7 +469,8 @@ router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
       totalOdooBs: existing.totalOdooBs,
       difCambiaria: existing.difCambiaria,
       metodos: metodos || [],
-      observaciones: observaciones ?? existing.observaciones ?? "",
+      observaciones: existing.observaciones ?? "",
+      observacionesNF: observacionesNF ?? existing.observacionesNF ?? "",
       ajustesManuales: ajustesManuales || [],
       totalRetencionesPOS: existing.totalRetencionesPOS,
       totalRetencionesReal: existing.totalRetencionesReal,
