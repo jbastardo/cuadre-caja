@@ -414,15 +414,16 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
   const metodos: MetodoVerificado[] = [];
   for (const m of data.metodos) {
     const mid = `MV-${Date.now()}-${m.metodoId}`;
-    const diff = Math.round((m.montoReal - m.montoPOS_Bs) * 100) / 100;
+    const montoPosBs = m.montoPOS_Bs || 0;
+    const diff = Math.round(((m.montoReal || 0) - montoPosBs) * 100) / 100;
     await appendRow("MetodosVerificados", [
       mid,
       id,
       m.metodoId,
       m.metodoNombre,
-      m.montoPOS_USD,
-      m.montoPOS_Bs,
-      m.montoReal,
+      m.montoPOS_USD || 0,
+      montoPosBs,
+      m.montoReal || 0,
       diff,
       m.observacion || "",
     ]);
@@ -431,9 +432,9 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
       cuadreId: id,
       metodoId: m.metodoId,
       metodoNombre: m.metodoNombre,
-      montoPOS_USD: m.montoPOS_USD,
-      montoPOS_Bs: m.montoPOS_Bs,
-      montoReal: m.montoReal,
+      montoPOS_USD: m.montoPOS_USD || 0,
+      montoPOS_Bs: montoPosBs,
+      montoReal: m.montoReal || 0,
       diferencia: diff,
       observacion: m.observacion || "",
     });
@@ -577,15 +578,16 @@ export async function updateCuadre(
   const metodos: MetodoVerificado[] = [];
   for (const m of data.metodos) {
     const mid = `MV-${Date.now()}-${m.metodoId}`;
-    const diff = Math.round((m.montoReal - m.montoPOS_Bs) * 100) / 100;
+    const montoPosBs = m.montoPOS_Bs || 0;
+    const diff = Math.round(((m.montoReal || 0) - montoPosBs) * 100) / 100;
     await appendRow("MetodosVerificados", [
       mid,
       id,
       m.metodoId,
       m.metodoNombre,
-      m.montoPOS_USD,
-      m.montoPOS_Bs,
-      m.montoReal,
+      m.montoPOS_USD || 0,
+      montoPosBs,
+      m.montoReal || 0,
       diff,
       m.observacion || "",
     ]);
@@ -594,9 +596,9 @@ export async function updateCuadre(
       cuadreId: id,
       metodoId: m.metodoId,
       metodoNombre: m.metodoNombre,
-      montoPOS_USD: m.montoPOS_USD,
-      montoPOS_Bs: m.montoPOS_Bs,
-      montoReal: m.montoReal,
+      montoPOS_USD: m.montoPOS_USD || 0,
+      montoPOS_Bs: montoPosBs,
+      montoReal: m.montoReal || 0,
       diferencia: diff,
       observacion: m.observacion || "",
     });

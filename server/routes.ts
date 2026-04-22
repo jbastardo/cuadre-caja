@@ -336,12 +336,47 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
     if (existing) {
       // Update existing cuadre with NF data
       console.log("[NF POST] Updating existing cuadre:", existing.id);
-      const updated = await sheets.updateCuadre(existing.id, {
-        sessionId,
+      const merged = {
+        ...existing,
+        sessionId: existing.sessionId,
+        sessionName: existing.sessionName,
+        fecha: existing.fecha,
+        caja: existing.caja,
+        cajero: existing.cajero,
+        maquinaFiscal: existing.maquinaFiscal,
+        zNumero: existing.zNumero,
+        ventaBrutaZ: existing.ventaBrutaZ,
+        notasCreditoZ: existing.notasCreditoZ,
+        ventaNetaZ: existing.ventaNetaZ,
+        baseImponibleZ: existing.baseImponibleZ,
+        exentoZ: existing.exentoZ,
+        ivaZ: existing.ivaZ,
+        igtfZ: existing.igtfZ,
+        primeraFacturaZ: existing.primeraFacturaZ,
+        ultimaFacturaZ: existing.ultimaFacturaZ,
+        primeraNCZ: existing.primeraNCZ || "",
+        ultimaNCZ: existing.ultimaNCZ || "",
+        tasaDia: existing.tasaDia,
+        totalOdooUSD: existing.totalOdooUSD,
+        totalOdooBs: existing.totalOdooBs,
+        difCambiaria: existing.difCambiaria,
         metodos: metodos || [],
-        observaciones: observaciones || "",
+        observaciones: observaciones ?? existing.observaciones ?? "",
         ajustesManuales: ajustesManuales || [],
-      } as any);
+        totalRetencionesPOS: existing.totalRetencionesPOS,
+        totalRetencionesReal: existing.totalRetencionesReal,
+        retencionesPorCobrar: existing.retencionesPorCobrar,
+        totalCreditoPOS: existing.totalCreditoPOS,
+        totalAbonosReal: existing.totalAbonosReal,
+        totalCxCPendiente: existing.totalCxCPendiente,
+        totalSaldoFavorPOS: existing.totalSaldoFavorPOS,
+        totalSaldoFavorReal: existing.totalSaldoFavorReal,
+        totalMetodosPOS: existing.totalMetodosPOS,
+        totalJustificadoReal: existing.totalJustificadoReal,
+        totalDirectoPOS: existing.totalDirectoPOS,
+        deducciones: [],
+      } as any;
+      const updated = await sheets.updateCuadre(existing.id, merged);
       return res.json(updated);
     }
 
@@ -400,15 +435,56 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
 
 router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
   try {
+    const id = param(req, "id");
     const { metodos, observaciones, ajustesManuales } = req.body;
 
-    console.log("[NF PUT] id:", param(req, "id"), "metodos:", metodos?.length, "ajustes:", ajustesManuales?.length);
+    console.log("[NF PUT] id:", id, "metodos:", metodos?.length, "ajustes:", ajustesManuales?.length);
 
-    const updated = await sheets.updateCuadre(param(req, "id"), {
+    const existing = await sheets.getCuadreById(id);
+    if (!existing) return res.status(404).json({ error: "Cuadre no encontrado" });
+
+    const merged = {
+      ...existing,
+      sessionId: existing.sessionId,
+      sessionName: existing.sessionName,
+      fecha: existing.fecha,
+      caja: existing.caja,
+      cajero: existing.cajero,
+      maquinaFiscal: existing.maquinaFiscal,
+      zNumero: existing.zNumero,
+      ventaBrutaZ: existing.ventaNetaZ === 0 ? 0 : existing.ventaNetaZ,
+      ventaBrutaZ: existing.ventaBrutaZ,
+      notasCreditoZ: existing.notasCreditoZ,
+      baseImponibleZ: existing.baseImponibleZ,
+      exentoZ: existing.exentoZ,
+      ivaZ: existing.ivaZ,
+      igtfZ: existing.igtfZ,
+      primeraFacturaZ: existing.primeraFacturaZ,
+      ultimaFacturaZ: existing.ultimaFacturaZ,
+      primeraNCZ: existing.primeraNCZ || "",
+      ultimaNCZ: existing.ultimaNCZ || "",
+      tasaDia: existing.tasaDia,
+      totalOdooUSD: existing.totalOdooUSD,
+      totalOdooBs: existing.totalOdooBs,
+      difCambiaria: existing.difCambiaria,
       metodos: metodos || [],
-      observaciones: observaciones || "",
+      observaciones: observaciones ?? existing.observaciones ?? "",
       ajustesManuales: ajustesManuales || [],
-    } as any);
+      totalRetencionesPOS: existing.totalRetencionesPOS,
+      totalRetencionesReal: existing.totalRetencionesReal,
+      retencionesPorCobrar: existing.retencionesPorCobrar,
+      totalCreditoPOS: existing.totalCreditoPOS,
+      totalAbonosReal: existing.totalAbonosReal,
+      totalCxCPendiente: existing.totalCxCPendiente,
+      totalSaldoFavorPOS: existing.totalSaldoFavorPOS,
+      totalSaldoFavorReal: existing.totalSaldoFavorReal,
+      totalMetodosPOS: existing.totalMetodosPOS,
+      totalJustificadoReal: existing.totalJustificadoReal,
+      totalDirectoPOS: existing.totalDirectoPOS,
+      deducciones: [],
+    } as any;
+
+    const updated = await sheets.updateCuadre(id, merged);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err: any) {
