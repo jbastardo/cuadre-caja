@@ -298,8 +298,19 @@ export default function CuadreNFForm() {
   const totalCreditUSD = nfSummary?.totalCreditUSD || 0;
   const totalNFUSD = nfSummary?.totalUSD || 0;
 
-  // Tasa del dia (exchange rate)
-  const tasa = session?.tasa_del_dia || session?.rate || 0;
+  const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+
+  // Fetch rate from API
+  const { data: rateData } = useQuery({
+    queryKey: ["rate", fecha],
+    queryFn: async () => {
+      const res = await fetch(`/api/odoo/rate?date=${fecha}`);
+      if (!res.ok) return { rate: 0 };
+      return res.json();
+    },
+    enabled: !!fecha,
+  });
+  const tasa = rateData?.rate || session?.tasa_del_dia || session?.rate || 0;
 
   // Totals for real amounts (convert Bs methods to USD using tasa)
   const totalRealUSD = useMemo(() => {
@@ -459,11 +470,11 @@ export default function CuadreNFForm() {
         {directPayments.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
-<div className="flex items-center justify-between">
+              <div className="flex items-center justify-between">
                 <CardTitle className="text-base">2. Métodos de Pago NF</CardTitle>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium text-purple-700">
-                    Tasa: <span className="font-bold">Bs {tasa?.toFixed(2) || "—"}</span>/$
+                    Tasa: <span className="font-bold">Bs {tasa > 0 ? tasa.toFixed(2) : "—"}</span>/$
                   </span>
                   <Button 
                     variant="outline" 
