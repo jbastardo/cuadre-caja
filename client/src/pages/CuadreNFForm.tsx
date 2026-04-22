@@ -290,11 +290,16 @@ export default function CuadreNFForm() {
   const { data: rateData } = useQuery({
     queryKey: ["rate", fecha],
     queryFn: async () => {
-      const res = await fetch(`/api/odoo/rate?date=${fecha}`);
-      if (!res.ok) return { rate: 0 };
-      return res.json();
+      try {
+        const res = await fetch(`/api/odoo/rate?date=${fecha}`);
+        if (!res.ok) return { rate: 0 };
+        return res.json();
+      } catch {
+        return { rate: 0 };
+      }
     },
-    enabled: !!fecha,
+    retry: 1,
+    staleTime: 1000 * 60 * 5,
   });
   const tasa = rateData?.rate || session?.tasa_del_dia || session?.rate || 0;
 
