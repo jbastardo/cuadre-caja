@@ -76,7 +76,12 @@ async function appendRow(sheetName: string, values: any[]): Promise<void> {
 
 async function updateRow(sheetName: string, rowIndex: number, values: any[]): Promise<void> {
   const sheets = getSheets();
-  const lastCol = values.length > 44 ? "AS" : values.length > 43 ? "AR" : values.length > 41 ? "AQ" : "AO";
+  const colLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const getCol = (n: number) => {
+    if (n <= 26) return colLetters[n - 1];
+    return colLetters[Math.floor((n - 1) / 26) - 1] + colLetters[(n - 1) % 26];
+  };
+  const lastCol = getCol(values.length);
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheetName}!A${rowIndex}:${lastCol}${rowIndex}`,
@@ -857,6 +862,10 @@ export async function initializeSheets(): Promise<{ initialized: string[] }> {
         "ultimaNCZ",
         "retencionesPorCobrar",
         "saldoFavorObs",
+        "totalMetodosPOS",
+        "totalJustificadoReal",
+        "totalDirectoPOS",
+        "observacionesNF",
       ],
       seedData: [],
     },
