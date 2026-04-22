@@ -10,6 +10,7 @@ import type {
   AjusteManual,
   CreateCuadre,
 } from "../shared/schema.js";
+import { CUADRE_TOLERANCE_BS } from "../shared/schema.js";
 import fs from "fs";
 import path from "path";
 
@@ -59,7 +60,7 @@ async function getSheetData(sheetName: string): Promise<string[][]> {
   const sheets = getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${sheetName}!A:AO`,
+    range: `${sheetName}!A:AU`,
   });
   return (res.data.values || []) as string[][];
 }
@@ -188,7 +189,7 @@ export async function updateUser(id: string, data: Partial<User>): Promise<UserP
 // AK=totalSaldoFavorReal, AL=totalAjustesManuales, AM=primeraNCZ,
 // AN=ultimaNCZ, AO=retencionesPorCobrar, AP=saldoFavorObs,
 // AQ=totalMetodosPOS, AR=totalJustificadoReal, AS=totalDirectoPOS,
-// AT=observacionesNF
+// AT=observacionesNF, AU=tipo
 
 function rowToCuadre(row: string[]): Cuadre {
   return {
@@ -238,6 +239,7 @@ function rowToCuadre(row: string[]): Cuadre {
     totalJustificadoReal: Number(row[43]) || 0,
     totalDirectoPOS: Number(row[44]) || 0,
     observacionesNF: row[45] || "",
+    tipo: (row[46] as "fiscal" | "nf") || "fiscal",
   };
 }
 
@@ -289,8 +291,8 @@ function cuadreToRow(c: Cuadre): any[] {
     c.totalJustificadoReal || 0,
     c.totalDirectoPOS || 0,
     c.observacionesNF || "",
+    c.tipo || "fiscal",
   ];
-  console.log("cuadreToRow - totalMetodosPOS:", c.totalMetodosPOS, "totalDirectoPOS:", c.totalDirectoPOS);
 }
 
 export async function getCuadres(filters?: { fecha?: string; caja?: string; estado?: string; cerrado?: string }): Promise<Cuadre[]> {
@@ -324,11 +326,14 @@ export async function getCuadreById(id: string): Promise<CuadreDetail | null> {
   return { ...cuadre, metodos, deducciones, ajustesManuales };
 }
 
-export async function getCuadreBySessionId(sessionId: number): Promise<Cuadre | null> {
+export async function getCuadreBySessionId(sessionId: number, tipo?: string): Promise<Cuadre | null> {
   const rows = await getSheetData("Cuadres");
   for (const row of rows.slice(1)) {
     if (Number(row[4]) === sessionId) {
-      return rowToCuadre(row);
+      const cuadreTipo = row[46] || "fiscal";
+      if (!tipo || cuadreTipo === tipo) {
+        return rowToCuadre(row);
+      }
     }
   }
   return null;
@@ -367,7 +372,7 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     estado = "cuadrado";
     console.log(`[createCuadre] NF cuadre detected, forcing estado=cuadrado`);
   } else {
-    estado = Math.abs(diferencia) < 5.00 ? "cuadrado" : "pendiente";
+    estado = Math.abs(diferencia) < CUADRE_TOLERANCE_BS ? "cuadrado" : "pendiente";
   }
   console.log(`[createCuadre] id=${id} diferencia=${diferencia} estado=${estado}`);
 
@@ -416,6 +421,7 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     totalJustificadoReal: data.totalJustificadoReal || 0,
     totalDirectoPOS: data.totalDirectoPOS || 0,
     observacionesNF: data.observacionesNF || "",
+    tipo: data.tipo || "fiscal",
   };
 
   await appendRow("Cuadres", cuadreToRow(cuadre));
@@ -521,13 +527,13 @@ export async function updateCuadre(
 
   const diferencia = Math.round((totalJustificado - data.ventaNetaZ) * 100) / 100;
   let estado: Cuadre["estado"];
-  if (existing.estado === "cuadrado" || existing.cerradoPor) {
+  if (existing.cerradoPor) {
     estado = existing.estado;
   } else if (data.ventaNetaZ === 0) {
     estado = "cuadrado";
     console.log(`[updateCuadre] NF cuadre detected, forcing estado=cuadrado`);
   } else {
-    estado = Math.abs(diferencia) < 5.00 ? "cuadrado" : "pendiente";
+    estado = Math.abs(diferencia) < CUADRE_TOLERANCE_BS ? "cuadrado" : "pendiente";
   }
   console.log(`[updateCuadre] id=${id} diferencia=${diferencia} estado=${estado}`);
 
@@ -576,8 +582,9 @@ export async function updateCuadre(
     totalJustificadoReal: data.totalJustificadoReal || 0,
     totalDirectoPOS: data.totalDirectoPOS || 0,
     observacionesNF: data.observacionesNF || "",
+    tipo: data.tipo || existing.tipo || "fiscal",
   };
-  console.log("updateCuadre - totalMetodosPOS:", cuadre.totalMetodosPOS, "totalDirectoPOS:", cuadre.totalDirectoPOS, "observaciones:", cuadre.observaciones?.substring(0, 30), "observacionesNF:", cuadre.observacionesNF?.substring(0, 30));
+  console.log("updateCuadre - totalMetodosPOS:", cuadre.totalMetodosPOS, "totalDirectoPOS:", cuadre.totalDirectoPOS, "tipo:", cuadre.tipo);
 
   await updateRow("Cuadres", rowIndex, cuadreToRow(cuadre));
 
@@ -651,7 +658,7 @@ export async function closeCuadre(id: string, cerradoPor: string): Promise<Cuadr
     if (rows[i][0] === id) {
       const cuadre = rowToCuadre(rows[i]);
       const now = new Date().toISOString();
-      const estado: Cuadre["estado"] = Math.abs(cuadre.diferencia) < 0.01 ? "cuadrado" : "descuadrado";
+      const estado: Cuadre["estado"] = Math.abs(cuadre.diferencia) < CUADRE_TOLERANCE_BS ? "cuadrado" : "descuadrado";
       const updated: Cuadre = { ...cuadre, estado, cerradoPor, cerradoEn: now };
       await updateRow("Cuadres", i + 1, cuadreToRow(updated));
       return updated;
@@ -741,7 +748,7 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   const newEstado: "cuadrado" | "pendiente" =
     cuadre.ventaNetaZ === 0
       ? "cuadrado"
-      : Math.abs(diferencia) < 5.00
+      : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
       ? "cuadrado"
       : "pendiente";
 
@@ -868,6 +875,7 @@ export async function initializeSheets(): Promise<{ initialized: string[] }> {
         "totalJustificadoReal",
         "totalDirectoPOS",
         "observacionesNF",
+        "tipo",
       ],
       seedData: [],
     },

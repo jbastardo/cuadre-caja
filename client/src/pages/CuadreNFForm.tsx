@@ -6,10 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatUSD, formatDateTime, formatBs } from "@/lib/utils";
+import { formatUSD, formatDateTime, formatBs, getStatusColor, getStatusLabel } from "@/lib/utils";
 import type { NonFiscalSummary } from "@shared/schema";
+
+// Tolerance for "cuadrado" status: ±0.01 USD (must match server CUADRE_TOLERANCE_USD)
+const CUADRE_TOLERANCE_USD = 0.01;
 import { ArrowLeft, Loader2, Save, Copy, Check, Lock, RotateCcw, Trash2 } from "lucide-react";
 
 // Method name display overrides (same as fiscal page)
@@ -168,7 +172,13 @@ export default function CuadreNFForm() {
 
   const existingCuadreId = useMemo(() => {
     if (!cuadresForDate) return null;
-    const match = cuadresForDate.find((c: any) => c.sessionId === sessionId);
+    const match = cuadresForDate.find((c: any) => c.sessionId === sessionId && c.tipo === "nf");
+    return match?.id || null;
+  }, [cuadresForDate, sessionId]);
+
+  const fiscalCuadreId = useMemo(() => {
+    if (!cuadresForDate) return null;
+    const match = cuadresForDate.find((c: any) => c.sessionId === sessionId && (c.tipo === "fiscal" || !c.tipo));
     return match?.id || null;
   }, [cuadresForDate, sessionId]);
 
@@ -426,8 +436,8 @@ const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split
           <button
             className="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-[#0A4083] hover:border-[#0A4083]/30"
             onClick={() => {
-              if (existingCuadreId) {
-                navigate(`/cuadre/${existingCuadreId}`);
+              if (fiscalCuadreId) {
+                navigate(`/cuadre/${fiscalCuadreId}`);
               } else {
                 navigate(`/cuadre/new?sessionId=${sessionId}`);
               }
@@ -454,9 +464,21 @@ const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split
                               {/* Section 1: Session Info */}
         <Card className="border-purple-200">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <span className="bg-purple-100 text-purple-800 text-xs font-bold px-2 py-0.5 rounded">NF</span>
-              Información de Sesión
+            <CardTitle className="text-base flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <span className="bg-purple-100 text-purple-800 text-xs font-bold px-2 py-0.5 rounded">NF</span>
+                Información de Sesión
+              </span>
+              {(() => {
+                const nfDiff = Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD);
+                const calculatedEstado = nfDiff < CUADRE_TOLERANCE_USD ? "cuadrado" : existingCuadre?.cerradoPor ? "descuadrado" : "pendiente";
+                const displayEstado = existingCuadre ? calculatedEstado : null;
+                return displayEstado ? (
+                  <Badge className={getStatusColor(displayEstado)}>
+                    {getStatusLabel(displayEstado)}
+                  </Badge>
+                ) : null;
+              })()}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -649,14 +671,16 @@ const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split
 
         {/* Section 5: Reconciliation / Summary */}
         {nfSummary && nfSummary.receiptCount > 0 && (
-          <Card className={`border-2 ${Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < 0.01 ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}>
+          <Card className={`border-2 ${Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < CUADRE_TOLERANCE_USD ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 4. Cuadre No Fiscal
-                {Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < 0.01 ? (
-                  <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">CUADRADO</span>
+                {Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < CUADRE_TOLERANCE_USD ? (
+                  <Badge className={getStatusColor("cuadrado")}>CUADRADO</Badge>
+                ) : existingCuadre?.cerradoPor ? (
+                  <Badge className={getStatusColor("descuadrado")}>DESCUADRADO</Badge>
                 ) : (
-                  <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded-full">DESCUADRADO</span>
+                  <Badge className={getStatusColor("pendiente")}>PENDIENTE</Badge>
                 )}
               </CardTitle>
             </CardHeader>
@@ -676,7 +700,7 @@ const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split
                 </div>
                 <div className="text-center p-3 bg-white rounded-lg border">
                   <p className="text-muted-foreground text-xs">Diferencia</p>
-                  <p className={`font-bold text-lg ${Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < 0.01 ? "text-green-600" : "text-red-600"}`}>
+                  <p className={`font-bold text-lg ${Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < CUADRE_TOLERANCE_USD ? "text-green-600" : "text-red-600"}`}>
                     {formatUSD(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD)}
                   </p>
                 </div>

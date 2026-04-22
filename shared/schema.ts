@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+// Universal tolerance for "cuadrado" status: ±5 Bs (fiscal) or ±0.01 USD (NF)
+export const CUADRE_TOLERANCE_BS = 5;
+export const CUADRE_TOLERANCE_USD = 0.01;
+
 // User
 export const userSchema = z.object({
   id: z.string(),
@@ -225,6 +229,7 @@ export const cuadreSchema = z.object({
   estado: z.enum(["cuadrado", "descuadrado", "pendiente"]),
   observaciones: z.string(),
   observacionesNF: z.string().optional(),
+  tipo: z.enum(["fiscal", "nf"]).optional(),
   saldoFavorObs: z.string().optional(),
   cerradoPor: z.string(),
   creadoEn: z.string(),
@@ -292,6 +297,9 @@ export const createCuadreSchema = z.object({
 
   // NF-specific observations (separate from fiscal observations)
   observacionesNF: z.string().optional(),
+
+  // Tipo: fiscal (default) or nf (non-fiscal)
+  tipo: z.enum(["fiscal", "nf"]).optional(),
 
   // Payment methods verified (in Bs)
   metodos: z.array(z.object({

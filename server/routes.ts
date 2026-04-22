@@ -133,10 +133,19 @@ router.get("/api/odoo/sessions", async (req: Request, res: Response) => {
       sheets.getCuadres({ fecha: date })
     ]);
     
-    const cuadreMap = new Map(cuadres.map(c => [c.sessionId, c]));
+    const cuadreMap = new Map<number, any>();
+    const cuadreNFMap = new Map<number, any>();
+    for (const c of cuadres) {
+      if (c.tipo === "nf") {
+        cuadreNFMap.set(c.sessionId, c);
+      } else {
+        cuadreMap.set(c.sessionId, c);
+      }
+    }
     res.json(sessions.map((s: any) => ({
       ...s,
-      cuadre: cuadreMap.get(s.id) || null
+      cuadre: cuadreMap.get(s.id) || null,
+      cuadreNF: cuadreNFMap.get(s.id) || null,
     })));
   } catch (err) {
     res.status(500).json({ error: "Error al obtener sesiones" });
@@ -263,8 +272,8 @@ router.post("/api/cuadres", async (req: Request, res: Response) => {
     const parsed = createCuadreSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Datos inválidos" });
 
-    const existing = await sheets.getCuadreBySessionId(parsed.data.sessionId);
-    if (existing) return res.status(409).json({ error: "Ya existe un cuadre para esta sesión", cuadreId: existing.id });
+    const existing = await sheets.getCuadreBySessionId(parsed.data.sessionId, "fiscal");
+    if (existing) return res.status(409).json({ error: "Ya existe un cuadre fiscal para esta sesión", cuadreId: existing.id });
 
     const newCuadre = await sheets.createCuadre(parsed.data);
     res.status(201).json(newCuadre);
@@ -284,7 +293,7 @@ router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
     // Preserve observacionesNF from existing cuadre if not sent
     const existing = await sheets.getCuadreById(param(req, "id"));
     if (!existing) return res.status(404).json({ error: "Cuadre no encontrado" });
-    const data = { ...parsed.data, observacionesNF: existing.observacionesNF || "" };
+    const data = { ...parsed.data, observacionesNF: existing.observacionesNF || "", tipo: existing.tipo || "fiscal" };
 
     console.log("Saving cuadre - observaciones:", data.observaciones?.substring(0, 30), "observacionesNF:", data.observacionesNF?.substring(0, 30), "notasCreditoZ:", data.notasCreditoZ, "primeraNCZ:", data.primeraNCZ, "ultimaNCZ:", data.ultimaNCZ);
 
@@ -345,11 +354,11 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
 
     console.log("[NF POST] sessionId:", sessionId, "metodos:", metodos?.length, "observacionesNF:", observacionesNF, "ajustes:", ajustesManuales?.length);
 
-    // Check if cuadre exists for this session
-    const existing = await sheets.getCuadreBySessionId(sessionId);
+    // Check if NF cuadre already exists for this session
+    const existing = await sheets.getCuadreBySessionId(sessionId, "nf");
     if (existing) {
-      // Update existing cuadre with NF data
-      console.log("[NF POST] Updating existing cuadre:", existing.id);
+      // Update existing NF cuadre
+      console.log("[NF POST] Updating existing NF cuadre:", existing.id);
       const merged = {
         ...existing,
         sessionId: existing.sessionId,
@@ -358,48 +367,21 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
         caja: existing.caja,
         cajero: existing.cajero,
         maquinaFiscal: existing.maquinaFiscal,
-        zNumero: existing.zNumero,
-        ventaBrutaZ: existing.ventaBrutaZ,
-        notasCreditoZ: existing.notasCreditoZ,
-        ventaNetaZ: existing.ventaNetaZ,
-        baseImponibleZ: existing.baseImponibleZ,
-        exentoZ: existing.exentoZ,
-        ivaZ: existing.ivaZ,
-        igtfZ: existing.igtfZ,
-        primeraFacturaZ: existing.primeraFacturaZ,
-        ultimaFacturaZ: existing.ultimaFacturaZ,
-        primeraNCZ: existing.primeraNCZ || "",
-        ultimaNCZ: existing.ultimaNCZ || "",
-        tasaDia: existing.tasaDia,
-        totalOdooUSD: existing.totalOdooUSD,
-        totalOdooBs: existing.totalOdooBs,
-        difCambiaria: existing.difCambiaria,
+        tipo: "nf" as const,
         metodos: metodos || [],
-        observaciones: existing.observaciones ?? "",
         observacionesNF: observacionesNF ?? existing.observacionesNF ?? "",
         ajustesManuales: ajustesManuales || [],
-        totalRetencionesPOS: existing.totalRetencionesPOS,
-        totalRetencionesReal: existing.totalRetencionesReal,
-        retencionesPorCobrar: existing.retencionesPorCobrar,
-        totalCreditoPOS: existing.totalCreditoPOS,
-        totalAbonosReal: existing.totalAbonosReal,
-        totalCxCPendiente: existing.totalCxCPendiente,
-        totalSaldoFavorPOS: existing.totalSaldoFavorPOS,
-        totalSaldoFavorReal: existing.totalSaldoFavorReal,
-        totalMetodosPOS: existing.totalMetodosPOS,
-        totalJustificadoReal: existing.totalJustificadoReal,
-        totalDirectoPOS: existing.totalDirectoPOS,
         deducciones: [],
       } as any;
       const updated = await sheets.updateCuadre(existing.id, merged);
       return res.json(updated);
     }
 
-    // Create new cuadre with NF data
+    // Create new NF cuadre
     const session = await odoo.getSessionById(sessionId);
     const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
 
-    console.log("[NF POST] Creating new cuadre, session:", session);
+    console.log("[NF POST] Creating new NF cuadre, session:", session);
 
     const newCuadre = await sheets.createCuadre({
       sessionId,
@@ -408,6 +390,7 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
       caja: session?.config_id?.[1] || "",
       cajero: session?.user_id?.[1] || "",
       maquinaFiscal: session?.serial_machine || "",
+      tipo: "nf",
       tasaDia: 0,
       zNumero: "",
       ventaBrutaZ: 0,
@@ -498,6 +481,7 @@ router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
       totalJustificadoReal: existing.totalJustificadoReal,
       totalDirectoPOS: existing.totalDirectoPOS,
       deducciones: [],
+      tipo: "nf" as const,
     } as any;
 
     const updated = await sheets.updateCuadre(id, merged);

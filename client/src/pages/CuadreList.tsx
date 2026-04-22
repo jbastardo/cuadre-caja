@@ -216,7 +216,7 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                     {dayCuadres.length > 0 && (
                       <div className="space-y-0.5">
                         {dayCuadres.slice(0, 4).map(c => {
-                          const isNF = c.ventaNetaZ === 0;
+                          const isNF = c.tipo === "nf";
                           return (
                             <div
                               key={c.id}
@@ -275,16 +275,16 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                   <div
                     key={c.id}
                     className="bg-white rounded-lg border px-4 py-3 flex items-center justify-between cursor-pointer hover:shadow-sm transition-shadow"
-                    onClick={() => navigate(c.ventaNetaZ === 0 ? `/cuadre-nf?sessionId=${c.sessionId}` : `/cuadre/${c.id}`)}
+                    onClick={() => navigate(c.tipo === "nf" ? `/cuadre-nf?sessionId=${c.sessionId}` : `/cuadre/${c.id}`)}
                   >
 <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-sm">{c.sessionName}</span>
                           <span className="text-xs text-muted-foreground bg-gray-100 px-1.5 py-0.5 rounded">{c.caja}</span>
-                          {c.ventaNetaZ === 0 && <span className="text-[10px] font-bold bg-purple-200 text-purple-900 px-1.5 py-0.5 rounded">NF</span>}
+                          {c.tipo === "nf" && <span className="text-[10px] font-bold bg-purple-200 text-purple-900 px-1.5 py-0.5 rounded">NF</span>}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {c.fecha} · {c.cajero}{c.ventaNetaZ === 0 ? " · No Fiscal" : ` · Z: ${c.zNumero}`}
+                          {c.fecha} · {c.cajero}{c.tipo === "nf" ? " · No Fiscal" : ` · Z: ${c.zNumero}`}
                           {c.cerradoPor && <span className="ml-2 text-gray-400">Cerrado por {c.cerradoPor}</span>}
                         </p>
                       </div>

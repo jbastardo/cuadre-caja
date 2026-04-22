@@ -14,6 +14,9 @@ import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatBs, formatUSD, getStatusColor, getStatusLabel, formatDateTime } from "@/lib/utils";
 import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow, SaldoFavorRow } from "@shared/schema";
+
+// Tolerance for "cuadrado" status: ±5 Bs (must match server CUADRE_TOLERANCE_BS)
+const CUADRE_TOLERANCE_BS = 5;
 import {
   ArrowLeft, Save, Printer, Trash2, Plus, RotateCcw, Lock, AlertTriangle, Loader2,
 } from "lucide-react";
@@ -706,12 +709,25 @@ export default function CuadreForm() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center justify-between">
-              Información de Sesión
-              {existingCuadre && (
-                <Badge className={getStatusColor(existingCuadre.estado)}>
-                  {getStatusLabel(existingCuadre.estado)}
-                </Badge>
-              )}
+              <span className="flex items-center gap-2">
+                Información de Sesión
+                <span className="bg-[#0A4083] text-white text-xs font-bold px-2 py-0.5 rounded">FISCAL</span>
+              </span>
+              {(() => {
+                const calculatedEstado = ventaNetaZ === 0
+                  ? "cuadrado" as const
+                  : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
+                    ? "cuadrado" as const
+                    : existingCuadre?.cerradoPor
+                      ? "descuadrado" as const
+                      : "pendiente" as const;
+                const displayEstado = existingCuadre ? calculatedEstado : null;
+                return displayEstado ? (
+                  <Badge className={getStatusColor(displayEstado)}>
+                    {getStatusLabel(displayEstado)}
+                  </Badge>
+                ) : null;
+              })()}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1471,7 +1487,7 @@ export default function CuadreForm() {
         </Card>
 
         {/* Section 8: Summary */}
-        <Card className={`border-2 ${Math.abs(diferencia) < 0.01 && ventaNetaZ > 0 ? "border-green-300" : ventaNetaZ > 0 ? "border-red-300" : "border-gray-300"}`}>
+        <Card className={`border-2 ${Math.abs(diferencia) < CUADRE_TOLERANCE_BS && ventaNetaZ > 0 ? "border-green-300" : ventaNetaZ > 0 ? "border-red-300" : "border-gray-300"}`}>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">8. Resumen del Cuadre</CardTitle>
           </CardHeader>
@@ -1571,8 +1587,8 @@ export default function CuadreForm() {
                     {formatBs(diferencia)}
                   </p>
                   {ventaNetaZ > 0 && (
-                    <Badge className={`mt-1 ${Math.abs(diferencia) < 0.01 ? getStatusColor("cuadrado") : getStatusColor("descuadrado")}`}>
-                      {Math.abs(diferencia) < 0.01 ? "CUADRADO" : "DESCUADRADO"}
+                    <Badge className={`mt-1 ${Math.abs(diferencia) < CUADRE_TOLERANCE_BS ? getStatusColor("cuadrado") : existingCuadre?.cerradoPor ? getStatusColor("descuadrado") : getStatusColor("pendiente")}`}>
+                      {Math.abs(diferencia) < CUADRE_TOLERANCE_BS ? "CUADRADO" : existingCuadre?.cerradoPor ? "DESCUADRADO" : "PENDIENTE"}
                     </Badge>
                   )}
                 </div>
