@@ -286,22 +286,8 @@ export default function CuadreNFForm() {
 
   const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
 
-  // Fetch rate from API
-  const { data: rateData } = useQuery({
-    queryKey: ["rate", fecha],
-    queryFn: async () => {
-      try {
-        const res = await fetch(`/api/odoo/rate?date=${fecha}`);
-        if (!res.ok) return { rate: 0 };
-        return res.json();
-      } catch {
-        return { rate: 0 };
-      }
-    },
-    retry: 1,
-    staleTime: 1000 * 60 * 5,
-  });
-  const tasa = rateData?.rate || session?.tasa_del_dia || session?.rate || 0;
+  // Use rate from session or default
+  const tasa = session?.rate || session?.tasa_del_dia || 0;
 
   // Totals for real amounts (convert Bs methods to USD using tasa)
   const totalRealUSD = useMemo(() => {
