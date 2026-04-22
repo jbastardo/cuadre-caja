@@ -194,7 +194,7 @@ export default function CuadreList() {
                   <div
                     key={date}
                     onClick={() => setSelectedDate(isSelected ? null : date)}
-className={`min-h-[110px] border-b border-r p-1.5 cursor-pointer transition-colors
+className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colors
                       ${isSelected  ? "bg-blue-50 ring-2 ring-inset ring-blue-400" : ""}
                       ${isToday     ? "bg-amber-50" : ""}
                       ${isWeekend && !isSelected && !isToday ? "bg-gray-50" : ""}

@@ -577,7 +577,7 @@ export async function updateCuadre(
     totalDirectoPOS: data.totalDirectoPOS || 0,
     observacionesNF: data.observacionesNF || "",
   };
-  console.log("updateCuadre - totalMetodosPOS:", cuadre.totalMetodosPOS, "totalDirectoPOS:", cuadre.totalDirectoPOS);
+  console.log("updateCuadre - totalMetodosPOS:", cuadre.totalMetodosPOS, "totalDirectoPOS:", cuadre.totalDirectoPOS, "observaciones:", cuadre.observaciones?.substring(0, 30), "observacionesNF:", cuadre.observacionesNF?.substring(0, 30));
 
   await updateRow("Cuadres", rowIndex, cuadreToRow(cuadre));
 
