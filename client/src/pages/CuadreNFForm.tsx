@@ -61,10 +61,10 @@ const METHOD_CURRENCY_BS: Record<number, boolean> = {
   32: false,  // Efectivo Dolares
   33: false,  // Venta a crédito IGTF
   34: false,  // Reserved
-  35: false,  // BANCO VENEZUELA PDV
+  35: true,   // BANCO VENEZUELA PDV
   36: false,  // Reserved
-  37: false,  // BANCO VENEZUELA PAGO MOVIL
-  38: false,  // P.Movil BNC
+  37: true,   // BANCO VENEZUELA PAGO MOVIL
+  38: true,   // P.Movil BNC
   39: false,  // Reserved
   40: false,  // Reserved
   41: false,  // Reserved
@@ -459,20 +459,25 @@ export default function CuadreNFForm() {
         {directPayments.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
+<div className="flex items-center justify-between">
                 <CardTitle className="text-base">2. Métodos de Pago NF</CardTitle>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={copyFromPOS}
-                  className="text-purple-700 border-purple-300 hover:bg-purple-50"
-                >
-                  {copiedFromPOS ? <Check className="h-4 w-4 mr-1" /> : <Copy className="h-4 w-4 mr-1" />}
-                  {copiedFromPOS ? "Copiado" : "Copiar del POS"}
-                </Button>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-purple-700">
+                    Tasa: <span className="font-bold">Bs {tasa?.toFixed(2) || "—"}</span>/$
+                  </span>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={copyFromPOS}
+                    className="text-purple-700 border-purple-300 hover:bg-purple-50"
+                  >
+                    {copiedFromPOS ? <Check className="h-4 w-4 mr-1" /> : <Copy className="h-4 w-4 mr-1" />}
+                    {copiedFromPOS ? "Copiado" : "Copiar del POS"}
+                  </Button>
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Desglose de pagos. Ingrese el monto real recibido por cada método para conciliar. Tasa: Bs {tasa?.toFixed(2) || "—"}/$
+              <p className="text-xs text-muted-foreground mt-1">
+                Desglose de pagos. Ingrese el monto real recibido por cada método para conciliar.
               </p>
             </CardHeader>
             <CardContent>
