@@ -284,21 +284,7 @@ export default function CuadreNFForm() {
     });
   };
 
-  const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
-
-  // Separate payment methods: direct payments vs credit
-  const directPayments = useMemo(
-    () => (nfSummary?.payments || []).filter(p => !CREDIT_METHOD_IDS.has(p.methodId)),
-    [nfSummary]
-  );
-  const totalDirectUSD = useMemo(
-    () => Math.round(directPayments.reduce((s, p) => s + p.totalUSD, 0) * 100) / 100,
-    [directPayments]
-  );
-  const totalCreditUSD = nfSummary?.totalCreditUSD || 0;
-  const totalNFUSD = nfSummary?.totalUSD || 0;
-
-  const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
 
   // Fetch rate from API
   const { data: rateData } = useQuery({
