@@ -9,7 +9,7 @@ import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatUSD, formatDateTime, formatBs } from "@/lib/utils";
 import type { NonFiscalSummary } from "@shared/schema";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Save, Copy, Check } from "lucide-react";
 
 // Method name display overrides (same as fiscal page)
 const METHOD_NAME_OVERRIDES: Record<number, string> = {
@@ -53,18 +53,24 @@ function isMethodBs(methodId: number): boolean {
   return METHOD_CURRENCY_BS[methodId] ?? false;
 }
 
+function getMethodCurrencyLabel(methodId: number): string {
+  return isMethodBs(methodId) ? "Bs" : "$";
+}
+
 export default function CuadreNFForm() {
   const [, navigate] = useLocation();
 
   // Real amounts entered by the cashier per payment method (keyed by methodId) - in Bs
   const [realAmounts, setRealAmounts] = useState<Record<number, number>>({});
   const [observaciones, setObservaciones] = useState("");
+  const [metodosObservaciones, setMetodosObservaciones] = useState<Record<number, string>>({});
   const [ajustesManuales, setAjustesManuales] = useState<{ tipo: string; descripcion: string; monto: number }[]>([]);
 
   // New adjustment form state
   const [newAjusteTipo, setNewAjusteTipo] = useState("");
   const [newAjusteDescripcion, setNewAjusteDescripcion] = useState("");
   const [newAjusteMonto, setNewAjusteMonto] = useState(0);
+  const [copiedFromPOS, setCopiedFromPOS] = useState(false);
 
   const addAjuste = () => {
     if (!newAjusteTipo || !newAjusteDescripcion || newAjusteMonto === 0) return;
@@ -77,6 +83,26 @@ export default function CuadreNFForm() {
     setNewAjusteDescripcion("");
     setNewAjusteMonto(0);
   };
+
+  const copyFromPOS = () => {
+    // Copy all POS amounts as real amounts
+    const newRealAmounts: Record<number, number> = {};
+    directPayments.forEach((p) => {
+      // For Bs methods, use 0 (cashier must count Bs)
+      // For USD methods, copy the POS amount directly
+      if (!isMethodBs(p.methodId)) {
+        newRealAmounts[p.methodId] = p.totalUSD;
+      }
+    });
+    setRealAmounts(newRealAmounts);
+    setCopiedFromPOS(true);
+    setTimeout(() => setCopiedFromPOS(false), 2000);
+    toast({ title: "Copia realizada", description: "Montos USD copiados del POS. Ingrese los montos en Bs para métodos bolívar." });
+  };
+
+  const updateMetodoObservacion = useCallback((methodId: number, value: string) => {
+    setMetodosObservaciones(prev => ({ ...prev, [methodId]: value }));
+  }, []);
 
   const updateRealAmount = useCallback((methodId: number, value: number) => {
     setRealAmounts(prev => ({ ...prev, [methodId]: value }));
@@ -133,10 +159,40 @@ export default function CuadreNFForm() {
     enabled: !!existingCuadreId,
   });
 
-  // Load observaciones when existingCuadre changes
+  // Load existing data when existingCuadre changes
   useEffect(() => {
-    if (existingCuadre?.observaciones) {
-      setObservaciones(existingCuadre.observaciones);
+    if (existingCuadre) {
+      setObservaciones(existingCuadre.observaciones || "");
+      
+      // Load metodos real amounts and observations from existing cuadre
+      if (existingCuadre.metodos && Array.isArray(existingCuadre.metodos)) {
+        const realAmountsFromExisting: Record<number, number> = {};
+        const metodosObsFromExisting: Record<number, string> = {};
+        
+        existingCuadre.metodos.forEach((m: any) => {
+          const methodId = m.metodoId;
+          if (isMethodBs(methodId) && m.montoReal_Bs) {
+            realAmountsFromExisting[methodId] = m.montoReal_Bs;
+          } else if (!isMethodBs(methodId) && m.montoReal) {
+            realAmountsFromExisting[methodId] = m.montoReal;
+          }
+          if (m.observacion) {
+            metodosObsFromExisting[methodId] = m.observacion;
+          }
+        });
+        
+        if (Object.keys(realAmountsFromExisting).length > 0) {
+          setRealAmounts(realAmountsFromExisting);
+        }
+        if (Object.keys(metodosObsFromExisting).length > 0) {
+          setMetodosObservaciones(metodosObsFromExisting);
+        }
+      }
+      
+      // Load ajustes manuales
+      if (existingCuadre.ajustesManuales && Array.isArray(existingCuadre.ajustesManuales)) {
+        setAjustesManuales(existingCuadre.ajustesManuales);
+      }
     }
   }, [existingCuadre]);
 
@@ -193,7 +249,7 @@ export default function CuadreNFForm() {
         montoPOS_USD: p.totalUSD,
         montoReal_Bs: isBs ? amountBs : 0,
         montoReal: amountUSD,
-        observacion: "",
+        observacion: metodosObservaciones[p.methodId] || "",
       };
     });
     saveMutation.mutate({
@@ -380,9 +436,20 @@ export default function CuadreNFForm() {
         {directPayments.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">2. Métodos de Pago NF</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">2. Métodos de Pago NF</CardTitle>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={copyFromPOS}
+                  className="text-purple-700 border-purple-300 hover:bg-purple-50"
+                >
+                  {copiedFromPOS ? <Check className="h-4 w-4 mr-1" /> : <Copy className="h-4 w-4 mr-1" />}
+                  {copiedFromPOS ? "Copiado" : "Copiar del POS"}
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
-                Desglose de pagos directos. Ingrese el monto real recibido por cada método para conciliar.
+                Desglose de pagos. Ingrese el monto real recibido por cada método para conciliar. Tasa: Bs {tasa?.toFixed(2) || "—"}/$
               </p>
             </CardHeader>
             <CardContent>
@@ -392,54 +459,58 @@ export default function CuadreNFForm() {
                     <tr className="border-b text-left">
                       <th className="pb-2 font-medium">Método</th>
                       <th className="pb-2 font-medium text-right">Ops</th>
-                      <th className="pb-2 font-medium text-right">POS (USD)</th>
+                      <th className="pb-2 font-medium text-right">POS ($)</th>
                       <th className="pb-2 font-medium text-right">Real</th>
-                      <th className="pb-2 font-medium text-right">Eq. USD</th>
-                      <th className="pb-2 font-medium">Obs</th>
+                      <th className="pb-2 font-medium text-right">Dif</th>
                     </tr>
                   </thead>
                   <tbody>
                     {directPayments.map((p) => {
                       const real = realAmounts[p.methodId] || 0;
                       const isBs = isMethodBs(p.methodId);
-                      const realUSD = isBs && tasa && real ? Math.round(real / tasa * 100) / 100 : 0;
+                      const realInUSD = isBs && tasa && real ? real / tasa : real;
+                      const diff = real > 0 ? Math.round((realInUSD - p.totalUSD) * 100) / 100 : 0;
+                      const diffColor = real === 0 ? "text-muted-foreground" : Math.abs(diff) < 0.01 ? "text-green-600" : diff < 0 ? "text-red-600" : "text-amber-600";
+                      const currencyLabel = getMethodCurrencyLabel(p.methodId);
                       return (
                         <tr key={p.methodId} className="border-b">
-                          <td className="py-2 font-medium">{getMethodDisplayName(p.methodId, p.methodName)}</td>
+                          <td className="py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{getMethodDisplayName(p.methodId, p.methodName)}</span>
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${isBs ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>
+                                {currencyLabel}
+                              </span>
+                            </div>
+                          </td>
                           <td className="py-2 text-right text-muted-foreground">{p.count}</td>
                           <td className="py-2 text-right">{formatUSD(p.totalUSD)}</td>
                           <td className="py-2 text-right">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              className="w-32 text-right ml-auto"
-                              value={realAmounts[p.methodId] || ""}
-                              onChange={(e) => updateRealAmount(p.methodId, Number(e.target.value) || 0)}
-                              placeholder="—"
-                            />
+                            <div className="flex items-center justify-end gap-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                className="w-28 text-right"
+                                value={realAmounts[p.methodId] || ""}
+                                onChange={(e) => updateRealAmount(p.methodId, Number(e.target.value) || 0)}
+                                placeholder="0"
+                              />
+                              <span className="text-xs text-muted-foreground w-5">{currencyLabel}</span>
+                            </div>
                           </td>
-                          <td className="py-2 text-right text-muted-foreground">
-                            {realUSD > 0 ? formatUSD(realUSD) : "—"}
-                          </td>
-                          <td className="py-2">
-                            <Input
-                              type="text"
-                              className="w-full text-xs"
-                              placeholder="..."
-                              value={""}
-                              onChange={(e) => {}}
-                            />
+                          <td className={`py-2 text-right font-medium ${diffColor}`}>
+                            {real === 0 ? "—" : formatUSD(diff)}
                           </td>
                         </tr>
                       );
                     })}
-                    <tr className="border-t-2 font-bold">
+                    <tr className="border-t-2 font-bold bg-gray-50">
                       <td className="py-2">TOTAL</td>
                       <td className="py-2 text-right">{directPayments.reduce((s, p) => s + p.count, 0)}</td>
                       <td className="py-2 text-right">{formatUSD(totalDirectUSD)}</td>
-                      <td className="py-2 text-right">—</td>
                       <td className="py-2 text-right text-green-600">{formatUSD(totalRealUSD)}</td>
-                      <td className="py-2"></td>
+                      <td className={`py-2 text-right ${Math.abs(totalRealUSD - totalDirectUSD) < 0.01 ? "text-green-600" : "text-red-600"}`}>
+                        {formatUSD(totalRealUSD - totalDirectUSD)}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -487,98 +558,73 @@ export default function CuadreNFForm() {
         )}
 
         {/* Section 5: Reconciliation / Summary */}
-        <Card className={`border-2 ${nfSummary && nfSummary.receiptCount > 0 ? "border-purple-300" : "border-gray-300"}`}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">4. Cuadre No Fiscal</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!nfSummary || nfSummary.receiptCount === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                Sin operaciones no fiscales en esta sesión.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-sm border-b pb-1">RESUMEN INGRESOS NF (USD)</h3>
-                  <div className="flex justify-between text-sm">
-                    <span>Pagos directos:</span>
-                    <span>{formatUSD(totalDirectUSD)}</span>
-                  </div>
-                  {totalCreditUSD > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span>Ventas a crédito (pendiente):</span>
-                      <span className="text-amber-700">{formatUSD(totalCreditUSD)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-bold border-t pt-1">
-                    <span>TOTAL NF:</span>
-                    <span className="text-purple-800">{formatUSD(totalNFUSD)}</span>
-                  </div>
+        {nfSummary && nfSummary.receiptCount > 0 && (
+          <Card className={`border-2 ${Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < 0.01 ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                4. Cuadre No Fiscal
+                {Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < 0.01 ? (
+                  <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">CUADRADO</span>
+                ) : (
+                  <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded-full">DESCUADRADO</span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="text-center p-3 bg-white rounded-lg border">
+                  <p className="text-muted-foreground text-xs">Total POS</p>
+                  <p className="font-bold text-lg">{formatUSD(totalNFUSD)}</p>
                 </div>
-
-                {/* Reconciliation check */}
-                <div className="border-t pt-4 space-y-3">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Pagos directos (POS):</span>
-                      <p className="font-semibold">{formatUSD(totalDirectUSD)}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Crédito (pendiente):</span>
-                      <p className="font-semibold text-amber-700">{formatUSD(totalCreditUSD)}</p>
-                    </div>
-                    <div className="bg-purple-50 rounded p-2">
-                      <span className="text-purple-700 text-xs">Total Ventas NF (referencia):</span>
-                      <p className="font-bold text-purple-900">{formatUSD(totalNFUSD)}</p>
-                    </div>
-                  </div>
-
-                  {/* Cuadre de Caja NF */}
-                  <div className="border-t pt-4 space-y-3">
-                    <h3 className="font-semibold text-sm border-b pb-1">CUADRE DE CAJA NF</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Total Facturado NF:</span>
-                        <p className="font-semibold">{formatUSD(totalNFUSD)}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Total Cobrado Real:</span>
-                        <p className="font-semibold text-green-700">{formatUSD(totalRealUSD)}</p>
-                      </div>
-                      {totalCreditUSD > 0 && (
-                        <div>
-                          <span className="text-muted-foreground">Crédito Pendiente:</span>
-                          <p className="font-semibold text-amber-700">{formatUSD(totalCreditUSD)}</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm border-t pt-2">
-                      <div>
-                        <span className="text-muted-foreground">Cobrado Real + Crédito:</span>
-                        <p className="font-semibold">{formatUSD(totalRealUSD + totalCreditUSD)}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Ajustes:</span>
-                        <p className={`font-semibold ${totalAjustesUSD >= 0 ? "text-green-600" : "text-red-600"}`}>{formatUSD(totalAjustesUSD)}</p>
-                      </div>
-                      <div className={`rounded p-2 ${Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < 0.01 ? "bg-green-50" : "bg-red-50"}`}>
-                        <span className="text-muted-foreground">Diferencia Cuadre:</span>
-                        <p className={`font-bold text-lg ${Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < 0.01 ? "text-green-600" : "text-red-600"}`}>
-                          {formatUSD(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD)}
-                        </p>
-                        {Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < 0.01 ? (
-                          <span className="text-xs text-green-700 font-semibold">CUADRADO</span>
-                        ) : (
-                          <span className="text-xs text-red-700 font-semibold">DESCUADRADO</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                <div className="text-center p-3 bg-white rounded-lg border">
+                  <p className="text-muted-foreground text-xs">Cobrado Real</p>
+                  <p className="font-bold text-lg text-green-700">{formatUSD(totalRealUSD)}</p>
+                </div>
+                <div className="text-center p-3 bg-white rounded-lg border">
+                  <p className="text-muted-foreground text-xs">Crédito</p>
+                  <p className="font-bold text-lg text-amber-700">{formatUSD(totalCreditUSD)}</p>
+                </div>
+                <div className="text-center p-3 bg-white rounded-lg border">
+                  <p className="text-muted-foreground text-xs">Diferencia</p>
+                  <p className={`font-bold text-lg ${Math.abs(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD) < 0.01 ? "text-green-600" : "text-red-600"}`}>
+                    {formatUSD(totalRealUSD + totalCreditUSD + totalAjustesUSD - totalNFUSD)}
+                  </p>
                 </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              
+              {/* Detail breakdown */}
+              <div className="mt-4 space-y-2 text-sm">
+                <div className="flex justify-between border-b pb-1">
+                  <span>Pagos directos (POS):</span>
+                  <span>{formatUSD(totalDirectUSD)}</span>
+                </div>
+                <div className="flex justify-between border-b pb-1">
+                  <span>Cobrado real:</span>
+                  <span className={Math.abs(totalRealUSD - totalDirectUSD) < 0.01 ? "text-green-600" : "text-red-600"}>
+                    {formatUSD(totalRealUSD)}
+                    {totalRealUSD > 0 && ` (${totalRealUSD >= totalDirectUSD ? "+" : ""}${formatUSD(totalRealUSD - totalDirectUSD)})`}
+                  </span>
+                </div>
+                {totalCreditUSD > 0 && (
+                  <div className="flex justify-between border-b pb-1">
+                    <span>Ventas a crédito:</span>
+                    <span className="text-amber-700">{formatUSD(totalCreditUSD)}</span>
+                  </div>
+                )}
+                {totalAjustesUSD !== 0 && (
+                  <div className="flex justify-between border-b pb-1">
+                    <span>Ajustes:</span>
+                    <span className={totalAjustesUSD >= 0 ? "text-green-600" : "text-red-600"}>{formatUSD(totalAjustesUSD)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-base pt-2 border-t-2">
+                  <span>TOTAL NF:</span>
+                  <span className="text-purple-800">{formatUSD(totalNFUSD)}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Section 5: Manual Adjustments */}
         <Card>
