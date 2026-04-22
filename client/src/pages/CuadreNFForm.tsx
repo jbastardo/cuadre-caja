@@ -183,8 +183,10 @@ export default function CuadreNFForm() {
   });
 
   // Load existing data when existingCuadre changes
+  const [loadedCuadreId, setLoadedCuadreId] = useState<string | null>(null);
   useEffect(() => {
-    if (existingCuadre) {
+    if (existingCuadre && existingCuadre.id && existingCuadre.id !== loadedCuadreId) {
+      setLoadedCuadreId(existingCuadre.id);
       setObservaciones(existingCuadre.observaciones || "");
       
       // Load metodos real amounts and observations from existing cuadre
@@ -251,9 +253,10 @@ export default function CuadreNFForm() {
       });
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cuadre", existingCuadreId] });
+    onSuccess: (saved: any) => {
+      const newId = saved?.id || existingCuadreId;
       queryClient.invalidateQueries({ queryKey: ["cuadres-lookup", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["cuadre", newId] });
       toast({ title: "Guardado", description: "Cuadre NF guardado exitosamente." });
     },
     onError: (error: Error) => {
