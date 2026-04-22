@@ -230,18 +230,6 @@ export default function CuadreNFForm() {
     enabled: !!sessionId,
   });
 
-  // Tasa del dia (exchange rate) - fetch separately
-  const { data: rateData } = useQuery({
-    queryKey: ["rate", fecha],
-    queryFn: async () => {
-      const res = await fetch(`/api/odoo/rate?date=${fecha}`);
-      if (!res.ok) return { rate: 0 };
-      return res.json();
-    },
-    enabled: !!fecha,
-  });
-  const tasa = rateData?.rate || 0;
-
   // Non-fiscal data
   const { data: nfSummary, isLoading: isLoadingNF } = useQuery<NonFiscalSummary>({
     queryKey: ["non-fiscal", sessionId],
@@ -310,8 +298,8 @@ export default function CuadreNFForm() {
   const totalCreditUSD = nfSummary?.totalCreditUSD || 0;
   const totalNFUSD = nfSummary?.totalUSD || 0;
 
-  // Tasa del dia (exchange rate) - from rate API
-  // Note: tasa is now fetched separately via rateData query above
+  // Tasa del dia (exchange rate)
+  const tasa = session?.tasa_del_dia || session?.rate || 0;
 
   // Totals for real amounts (convert Bs methods to USD using tasa)
   const totalRealUSD = useMemo(() => {
