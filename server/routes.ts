@@ -64,6 +64,15 @@ router.get("/api/cache/stats", (_req: Request, res: Response) => {
   res.json({ cacheStats: odoo.getCacheStats() });
 });
 
+router.post("/api/sheets/init", async (_req: Request, res: Response) => {
+  try {
+    const result = await sheets.initializeSheets();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 // ---- Auth ----
 router.post("/api/auth/login", async (req: Request, res: Response) => {
   try {

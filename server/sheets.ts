@@ -415,6 +415,7 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     totalMetodosPOS: data.totalMetodosPOS || 0,
     totalJustificadoReal: data.totalJustificadoReal || 0,
     totalDirectoPOS: data.totalDirectoPOS || 0,
+    observacionesNF: data.observacionesNF || "",
   };
 
   await appendRow("Cuadres", cuadreToRow(cuadre));
@@ -574,6 +575,7 @@ export async function updateCuadre(
     totalMetodosPOS: data.totalMetodosPOS || 0,
     totalJustificadoReal: data.totalJustificadoReal || 0,
     totalDirectoPOS: data.totalDirectoPOS || 0,
+    observacionesNF: data.observacionesNF || "",
   };
   console.log("updateCuadre - totalMetodosPOS:", cuadre.totalMetodosPOS, "totalDirectoPOS:", cuadre.totalDirectoPOS);
 
@@ -897,27 +899,41 @@ export async function initializeSheets(): Promise<{ initialized: string[] }> {
   ];
 
   for (const config of sheetConfigs) {
+    // Always update headers (row 1) to add new columns
+    try {
+      await sheetsClient.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${config.name}!A1`,
+        valueInputOption: "RAW",
+        requestBody: { values: [config.headers] },
+      });
+      initialized.push(`${config.name}: headers updated`);
+    } catch (e: any) {
+      initialized.push(`${config.name}: header update failed - ${e?.message || e}`);
+    }
+
+    // Only seed data if sheet is empty
     try {
       const existing = await sheetsClient.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${config.name}!A1:A1`,
+        range: `${config.name}!A2:A2`,
       });
-      if (existing.data.values && existing.data.values.length > 0) {
-        initialized.push(`${config.name}: already has data, skipped`);
-        continue;
+      if (!existing.data.values || existing.data.values.length === 0) {
+        if (config.seedData.length > 0) {
+          await sheetsClient.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${config.name}!A2`,
+            valueInputOption: "RAW",
+            requestBody: { values: config.seedData },
+          });
+          initialized.push(`${config.name}: seed data written`);
+        }
+      } else {
+        initialized.push(`${config.name}: has data, skipped seed`);
       }
     } catch {
-      // Sheet might not exist or be empty, continue
+      // Sheet might not exist yet
     }
-
-    const rows = [config.headers, ...config.seedData];
-    await sheetsClient.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${config.name}!A1`,
-      valueInputOption: "RAW",
-      requestBody: { values: rows },
-    });
-    initialized.push(`${config.name}: headers + ${config.seedData.length} rows written`);
   }
 
   return { initialized };
