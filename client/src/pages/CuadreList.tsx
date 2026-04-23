@@ -212,11 +212,12 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                       )}
                     </div>
 
-                    {/* Cuadre chips */}
+{/* Cuadre chips */}
                     {dayCuadres.length > 0 && (
                       <div className="space-y-0.5">
                         {dayCuadres.slice(0, 4).map(c => {
                           const isNF = c.tipo === "nf";
+                          const estadoShort = c.estado === "cuadrado" ? "✓" : c.estado === "descuadrado" ? "✗" : "△";
                           return (
                             <div
                               key={c.id}
@@ -225,9 +226,10 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                                 ${isNF ? "bg-purple-100 text-purple-800" :
                                   c.estado === "cuadrado"    ? "bg-green-100 text-green-800" :
                                   c.estado === "descuadrado" ? "bg-red-100 text-red-800" :
-                                                               "bg-amber-100 text-amber-800"}`}
+                                                              "bg-amber-100 text-amber-800"}`}
                             >
                               {isNF && <span className="font-bold text-[10px] bg-purple-300 text-purple-900 px-0.5 rounded">NF</span>}
+                              <span className={`font-bold ${c.estado === "cuadrado" ? "text-green-600" : c.estado === "descuadrado" ? "text-red-600" : "text-amber-600"}`}>{estadoShort}</span>
                               <span className="truncate">{c.caja}</span>
                             </div>
                           );

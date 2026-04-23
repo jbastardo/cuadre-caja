@@ -13,12 +13,12 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatBs, formatUSD, getStatusColor, getStatusLabel, formatDateTime } from "@/lib/utils";
-import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow, SaldoFavorRow } from "@shared/schema";
+import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow, SaldoFavorRow, Cuadre } from "@shared/schema";
 
 // Tolerance for "cuadrado" status: ±5 Bs (must match server CUADRE_TOLERANCE_BS)
 const CUADRE_TOLERANCE_BS = 5;
 import {
-  ArrowLeft, Save, Printer, Trash2, Plus, RotateCcw, Lock, AlertTriangle, Loader2,
+  ArrowLeft, ChevronLeft, ChevronRight, Save, Printer, Trash2, Plus, RotateCcw, Lock, AlertTriangle, Loader2,
 } from "lucide-react";
 
 // Payment method IDs to exclude from Section 3 display (they have dedicated sections).
@@ -155,6 +155,26 @@ export default function CuadreForm() {
     },
     enabled: !!cuadreId && !isNew,
   });
+
+  // Navigation: fetch all cuadres for prev/next
+  const { data: allCuadres = [] } = useQuery<Cuadre[]>({
+    queryKey: ["cuadres-all"],
+    queryFn: () => fetch("/api/cuadres").then(r => r.json()),
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const fiscalCuadres = useMemo(
+    () => allCuadres.filter(c => c.tipo !== "nf").sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id)),
+    [allCuadres]
+  );
+
+  const currentIndex = useMemo(
+    () => fiscalCuadres.findIndex(c => c.id === cuadreId),
+    [fiscalCuadres, cuadreId]
+  );
+
+  const prevCuadre = currentIndex > 0 ? fiscalCuadres[currentIndex - 1] : null;
+  const nextCuadre = currentIndex >= 0 && currentIndex < fiscalCuadres.length - 1 ? fiscalCuadres[currentIndex + 1] : null;
 
   const effectiveSessionId = isNew ? sessionId : existingCuadre?.sessionId;
 
@@ -673,6 +693,16 @@ export default function CuadreForm() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!isNew && prevCuadre && (
+              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate(`/cuadre/${prevCuadre.id}`)}>
+                <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
+              </Button>
+            )}
+            {!isNew && nextCuadre && (
+              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate(`/cuadre/${nextCuadre.id}`)}>
+                Siguiente <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
             {!isNew && (
               <Button variant="ghost" size="sm" className="text-white hover:bg-white/20"
                 onClick={() => navigate(`/cuadre/${cuadreId}/report`)}>

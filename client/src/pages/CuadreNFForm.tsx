@@ -14,7 +14,7 @@ import type { NonFiscalSummary } from "@shared/schema";
 
 // Tolerance for "cuadrado" status: ±0.01 USD (must match server CUADRE_TOLERANCE_USD)
 const CUADRE_TOLERANCE_USD = 0.01;
-import { ArrowLeft, Loader2, Save, Copy, Check, Lock, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Save, Copy, Check, Lock, RotateCcw, Trash2 } from "lucide-react";
 
 // Method name display overrides (same as fiscal page)
 const METHOD_NAME_OVERRIDES: Record<number, string> = {
@@ -193,6 +193,26 @@ export default function CuadreNFForm() {
     },
     enabled: !!existingCuadreId,
   });
+
+  // Navigation: all NF cuadres for prev/next
+  const { data: allCuadres = [] } = useQuery<any[]>({
+    queryKey: ["cuadres-all"],
+    queryFn: () => fetch("/api/cuadres").then(r => r.json()),
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const nfCuadres = useMemo(
+    () => allCuadres.filter((c: any) => c.tipo === "nf" || (c.ventaNetaZ === 0 && !c.zNumero)).sort((a: any, b: any) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id)),
+    [allCuadres]
+  );
+
+  const currentNFIndex = useMemo(
+    () => nfCuadres.findIndex((c: any) => c.id === existingCuadreId),
+    [nfCuadres, existingCuadreId]
+  );
+
+  const prevNF = currentNFIndex > 0 ? nfCuadres[currentNFIndex - 1] : null;
+  const nextNF = currentNFIndex >= 0 && currentNFIndex < nfCuadres.length - 1 ? nfCuadres[currentNFIndex + 1] : null;
 
   // Load existing data when existingCuadre changes
   const [loadedCuadreId, setLoadedCuadreId] = useState<string | null>(null);
@@ -426,6 +446,18 @@ const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split
               </h1>
               <p className="text-xs opacity-80">Operaciones en divisas (USD) — Recibos</p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {prevNF && (
+              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate(`/cuadre-nf?sessionId=${prevNF.sessionId}`)}>
+                <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
+              </Button>
+            )}
+            {nextNF && (
+              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate(`/cuadre-nf?sessionId=${nextNF.sessionId}`)}>
+                Siguiente <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
           </div>
         </div>
       </header>
