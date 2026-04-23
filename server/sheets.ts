@@ -192,54 +192,60 @@ export async function updateUser(id: string, data: Partial<User>): Promise<UserP
 // AT=observacionesNF, AU=tipo
 
 function rowToCuadre(row: string[]): Cuadre {
+  // Pad short rows (old data before new columns were added)
+  const padded = [...row];
+  while (padded.length < 47) padded.push("");
+
   return {
-    id: row[0] || "",
-    fecha: row[1] || "",
-    caja: row[2] || "",
-    maquinaFiscal: row[3] || "",
-    sessionId: Number(row[4]) || 0,
-    sessionName: row[5] || "",
-    cajero: row[6] || "",
-    zNumero: row[7] || "",
-    ventaBrutaZ: Number(row[8]) || 0,
-    notasCreditoZ: Number(row[9]) || 0,
-    ventaNetaZ: Number(row[10]) || 0,
-    baseImponibleZ: Number(row[11]) || 0,
-    exentoZ: Number(row[12]) || 0,
-    ivaZ: Number(row[13]) || 0,
-    igtfZ: Number(row[14]) || 0,
-    primeraFacturaZ: row[15] || "",
-    ultimaFacturaZ: row[16] || "",
-    primeraNCZ: row[38] || "",
-    ultimaNCZ: row[39] || "",
-    tasaDia: Number(row[17]) || 0,
-    totalOdooUSD: Number(row[18]) || 0,
-    totalOdooBs: Number(row[19]) || 0,
-    difCambiaria: Number(row[20]) || 0,
-    totalMetodosReal: Number(row[21]) || 0,
-    totalDeducciones: Number(row[22]) || 0,
-    totalJustificado: Number(row[23]) || 0,
-    diferencia: Number(row[24]) || 0,
-    estado: (row[25] as "cuadrado" | "descuadrado" | "pendiente") || "pendiente",
-    observaciones: row[26] || "",
-    cerradoPor: row[27] || "",
-    creadoEn: row[28] || "",
-    cerradoEn: row[29] || "",
-    totalRetencionesPOS: Number(row[30]) || 0,
-    totalRetencionesReal: Number(row[31]) || 0,
-    totalCreditoPOS: Number(row[32]) || 0,
-    totalAbonosReal: Number(row[33]) || 0,
-    totalCxCPendiente: Number(row[34]) || 0,
-    totalSaldoFavorPOS: Number(row[35]) || 0,
-    totalSaldoFavorReal: Number(row[36]) || 0,
-    totalAjustesManuales: Number(row[37]) || 0,
-    retencionesPorCobrar: Number(row[40]) || 0,
-    saldoFavorObs: row[41] || "",
-    totalMetodosPOS: Number(row[42]) || 0,
-    totalJustificadoReal: Number(row[43]) || 0,
-    totalDirectoPOS: Number(row[44]) || 0,
-    observacionesNF: row[45] || "",
-    tipo: (row[46] as "fiscal" | "nf") || "fiscal",
+    id: padded[0] || "",
+    fecha: padded[1] || "",
+    caja: padded[2] || "",
+    maquinaFiscal: padded[3] || "",
+    sessionId: Number(padded[4]) || 0,
+    sessionName: padded[5] || "",
+    cajero: padded[6] || "",
+    zNumero: padded[7] || "",
+    ventaBrutaZ: Number(padded[8]) || 0,
+    notasCreditoZ: Number(padded[9]) || 0,
+    ventaNetaZ: Number(padded[10]) || 0,
+    baseImponibleZ: Number(padded[11]) || 0,
+    exentoZ: Number(padded[12]) || 0,
+    ivaZ: Number(padded[13]) || 0,
+    igtfZ: Number(padded[14]) || 0,
+    primeraFacturaZ: padded[15] || "",
+    ultimaFacturaZ: padded[16] || "",
+    primeraNCZ: padded[38] || "",
+    ultimaNCZ: padded[39] || "",
+    tasaDia: Number(padded[17]) || 0,
+    totalOdooUSD: Number(padded[18]) || 0,
+    totalOdooBs: Number(padded[19]) || 0,
+    difCambiaria: Number(padded[20]) || 0,
+    totalMetodosReal: Number(padded[21]) || 0,
+    totalDeducciones: Number(padded[22]) || 0,
+    totalJustificado: Number(padded[23]) || 0,
+    diferencia: Number(padded[24]) || 0,
+    estado: (padded[25] as "cuadrado" | "descuadrado" | "pendiente") || "pendiente",
+    observaciones: padded[26] || "",
+    cerradoPor: padded[27] || "",
+    creadoEn: padded[28] || "",
+    cerradoEn: padded[29] || "",
+    totalRetencionesPOS: Number(padded[30]) || 0,
+    totalRetencionesReal: Number(padded[31]) || 0,
+    totalCreditoPOS: Number(padded[32]) || 0,
+    totalAbonosReal: Number(padded[33]) || 0,
+    totalCxCPendiente: Number(padded[34]) || 0,
+    totalSaldoFavorPOS: Number(padded[35]) || 0,
+    totalSaldoFavorReal: Number(padded[36]) || 0,
+    totalAjustesManuales: Number(padded[37]) || 0,
+    retencionesPorCobrar: Number(padded[40]) || 0,
+    saldoFavorObs: padded[41] || "",
+    totalMetodosPOS: Number(padded[42]) || 0,
+    totalJustificadoReal: Number(padded[43]) || 0,
+    totalDirectoPOS: Number(padded[44]) || 0,
+    observacionesNF: padded[45] || "",
+    // Heuristic: old NF rows have tipo empty/missing and ventaNetaZ=0 with no zNumero
+    tipo: (padded[46] === "nf" ? "nf" : padded[46] === "fiscal" ? "fiscal" :
+      (Number(padded[10]) === 0 && !padded[7]) ? "nf" : "fiscal") as "fiscal" | "nf",
   };
 }
 
@@ -330,7 +336,9 @@ export async function getCuadreBySessionId(sessionId: number, tipo?: string): Pr
   const rows = await getSheetData("Cuadres");
   for (const row of rows.slice(1)) {
     if (Number(row[4]) === sessionId) {
-      const cuadreTipo = row[46] || "fiscal";
+      const rawTipo = row[46];
+      const cuadreTipo = rawTipo === "nf" ? "nf" : rawTipo === "fiscal" ? "fiscal" :
+        (Number(row[10]) === 0 && !row[7]) ? "nf" : "fiscal";
       if (!tipo || cuadreTipo === tipo) {
         return rowToCuadre(row);
       }
@@ -394,6 +402,8 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     igtfZ: data.igtfZ,
     primeraFacturaZ: data.primeraFacturaZ,
     ultimaFacturaZ: data.ultimaFacturaZ,
+    primeraNCZ: data.primeraNCZ || "",
+    ultimaNCZ: data.ultimaNCZ || "",
     tasaDia: data.tasaDia,
     totalOdooUSD: data.totalOdooUSD,
     totalOdooBs: data.totalOdooBs,
@@ -555,6 +565,8 @@ export async function updateCuadre(
     igtfZ: data.igtfZ,
     primeraFacturaZ: data.primeraFacturaZ,
     ultimaFacturaZ: data.ultimaFacturaZ,
+    primeraNCZ: data.primeraNCZ || "",
+    ultimaNCZ: data.ultimaNCZ || "",
     tasaDia: data.tasaDia,
     totalOdooUSD: data.totalOdooUSD,
     totalOdooBs: data.totalOdooBs,
@@ -658,7 +670,9 @@ export async function closeCuadre(id: string, cerradoPor: string): Promise<Cuadr
     if (rows[i][0] === id) {
       const cuadre = rowToCuadre(rows[i]);
       const now = new Date().toISOString();
-      const estado: Cuadre["estado"] = Math.abs(cuadre.diferencia) < CUADRE_TOLERANCE_BS ? "cuadrado" : "descuadrado";
+      const estado: Cuadre["estado"] = (cuadre.tipo === "nf" || cuadre.ventaNetaZ === 0)
+        ? "cuadrado"
+        : Math.abs(cuadre.diferencia) < CUADRE_TOLERANCE_BS ? "cuadrado" : "descuadrado";
       const updated: Cuadre = { ...cuadre, estado, cerradoPor, cerradoEn: now };
       await updateRow("Cuadres", i + 1, cuadreToRow(updated));
       return updated;
