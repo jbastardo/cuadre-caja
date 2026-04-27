@@ -70,6 +70,11 @@ export interface FiscalPayment {
   totalBs: number;
   isCompanion?: boolean;
   orderRefs?: string[]; // Order/invoice references for delivery/diferencia methods
+  // Per-session breakdown (null when no companion session)
+  mainAmountUSD?: number;
+  companionAmountUSD?: number;
+  mainAmountBs?: number;
+  companionAmountBs?: number;
 }
 
 export interface FiscalSummary {

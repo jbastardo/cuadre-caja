@@ -730,11 +730,18 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   // Also get per-session payments to tag companion (CASHEA) methods with isCompanion
   const posPayments = await getSessionPayments(sessionIds);
 
-  // Get companion-only payments to tag them
+  // Get per-session payment breakdown for companion tagging
+  const mainMethodTotals: Record<number, number> = {};
   const companionMethodTotals: Record<number, number> = {};
   if (companionSessionId) {
-    const companionPayments = await getSessionPayments([companionSessionId]);
-    for (const cp of companionPayments) {
+    const [mainPmts, companionPmts] = await Promise.all([
+      getSessionPayments([mainSessionId]),
+      getSessionPayments([companionSessionId]),
+    ]);
+    for (const mp of mainPmts) {
+      mainMethodTotals[mp.methodId] = mp.total;
+    }
+    for (const cp of companionPmts) {
       companionMethodTotals[cp.methodId] = cp.total;
     }
   }
@@ -744,10 +751,14 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
     methodName: p.methodName,
     totalUSD: p.total,
     totalBs: Math.round(p.total * rate * 100) / 100,
-    // Mark as companion if ALL of this method's payments came from companion session
+    // Mark as companion if ANY of this method's payments came from companion session
     isCompanion: companionSessionId
-      ? (companionMethodTotals[p.methodId] || 0) === p.total
+      ? (companionMethodTotals[p.methodId] || 0) > 0
       : false,
+    mainAmountUSD: companionSessionId ? (mainMethodTotals[p.methodId] || 0) : undefined,
+    companionAmountUSD: companionSessionId ? (companionMethodTotals[p.methodId] || 0) : undefined,
+    mainAmountBs: companionSessionId ? Math.round((mainMethodTotals[p.methodId] || 0) * rate * 100) / 100 : undefined,
+    companionAmountBs: companionSessionId ? Math.round((companionMethodTotals[p.methodId] || 0) * rate * 100) / 100 : undefined,
   }));
 
   // For delivery/diferencia methods, fetch individual order references

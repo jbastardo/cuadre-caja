@@ -1084,9 +1084,15 @@ export default function CuadreForm() {
                       <tr key={m.metodoId} className="border-b">
                         <td className="py-2 font-medium">
                           {displayName}
-                          {fiscalSummary?.payments?.find(p => p.methodId === m.metodoId)?.isCompanion && (
-                            <span className="text-amber-600 ml-1" title="CASHEA">*</span>
-                          )}
+                          {(() => {
+                            const fp = fiscalSummary?.payments?.find(p => p.methodId === m.metodoId);
+                            if (!fp || !fp.companionAmountUSD) return null;
+                            return (
+                              <span className="text-amber-600 ml-1 text-xs" title={`Main: ${formatUSD(fp.mainAmountUSD || 0)} | CASHEA: ${formatUSD(fp.companionAmountUSD)}`}>
+                                *
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="py-2 text-right text-muted-foreground">
                           {formatUSD(m.montoPOS_USD)}
@@ -1123,8 +1129,25 @@ export default function CuadreForm() {
                 </tbody>
               </table>
             </div>
-            {fiscalSummary?.payments?.some(p => p.isCompanion) && (
-              <p className="text-xs text-amber-600 mt-2">* Método de pago proveniente de la sesión CASHEA</p>
+            {fiscalSummary?.companionSessionName && directMetodos.some(m => {
+              const fp = fiscalSummary?.payments?.find(p => p.methodId === m.metodoId);
+              return fp && fp.companionAmountUSD && fp.companionAmountUSD > 0;
+            }) && (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-2 text-xs text-amber-800">
+                <p className="font-semibold mb-1">Desglose por caja (métodos con CASHEA *):</p>
+                {directMetodos.map(m => {
+                  const fp = fiscalSummary?.payments?.find(p => p.methodId === m.metodoId);
+                  if (!fp || !fp.companionAmountUSD || fp.companionAmountUSD <= 0) return null;
+                  return (
+                    <div key={m.metodoId} className="flex justify-between">
+                      <span>{getMethodDisplayName(m.metodoId, m.metodoNombre)}:</span>
+                      <span>
+                        {formatUSD(fp.mainAmountUSD || 0)} (Caja) + <span className="text-amber-700">{formatUSD(fp.companionAmountUSD)}</span> ({fiscalSummary.companionCajaName || "CASHEA"}) = {formatUSD(fp.totalUSD)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             )}
             <div className="mt-2 text-right text-sm font-medium">
               Total real métodos directos: <strong>{formatBs(totalDirectMetodosReal)}</strong>
@@ -1448,13 +1471,11 @@ export default function CuadreForm() {
                       {deliveryDifMetodos.map((m) => {
                         const fpPayment = fiscalSummary?.payments?.find(p => p.methodId === m.metodoId);
                         const refs = fpPayment?.orderRefs || [];
+                        const hasCompanion = fpPayment && fpPayment.companionAmountUSD && fpPayment.companionAmountUSD > 0;
                         return (
                           <tr key={m.metodoId} className="border-b bg-orange-50">
                             <td className="py-2 font-medium">
                               {getMethodDisplayName(m.metodoId, m.metodoNombre)}
-                              {fpPayment?.isCompanion && (
-                                <span className="text-amber-600 ml-1" title="CASHEA">*</span>
-                              )}
                             </td>
                             <td className="py-2 text-right text-muted-foreground">{formatUSD(m.montoPOS_USD)}</td>
                             <td className="py-2 text-right font-medium">{formatBs(m.montoPOS_Bs)}</td>
@@ -1464,6 +1485,26 @@ export default function CuadreForm() {
                       })}
                     </tbody>
                   </table>
+                  {fiscalSummary?.companionSessionName && deliveryDifMetodos.some(m => {
+                    const fp = fiscalSummary?.payments?.find(p => p.methodId === m.metodoId);
+                    return fp && fp.companionAmountUSD && fp.companionAmountUSD > 0;
+                  }) && (
+                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-2 text-xs text-amber-800">
+                      <p className="font-semibold mb-1">Desglose por caja (Delivery/Dif.):</p>
+                      {deliveryDifMetodos.map(m => {
+                        const fp = fiscalSummary?.payments?.find(p => p.methodId === m.metodoId);
+                        if (!fp || !fp.companionAmountUSD || fp.companionAmountUSD <= 0) return null;
+                        return (
+                          <div key={m.metodoId} className="flex justify-between">
+                            <span>{getMethodDisplayName(m.metodoId, m.metodoNombre)}:</span>
+                            <span>
+                              <span className="font-medium">{formatUSD(fp.mainAmountUSD || 0)}</span> (Caja) + <span className="font-medium text-amber-700">{formatUSD(fp.companionAmountUSD)}</span> ({fiscalSummary.companionCajaName || "CASHEA"}) = <span className="font-bold">{formatUSD(fp.totalUSD)}</span>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
                 <div className="mt-1 text-right text-xs font-medium">
                   Total Delivery/Dif.: <strong>{formatBs(totalDeliveryDifPOS_Bs)}</strong>
