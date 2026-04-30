@@ -1372,92 +1372,84 @@ export default function CuadreForm() {
           </CardContent>
         </Card>
 
-        {/* Section 6: Saldos a Favor */}
+        {/* Section 6: Saldos a Favor y Delivery */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">6. Saldos a Favor</CardTitle>
+            <CardTitle className="text-base">6. Saldos a Favor y Delivery</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Créditos aplicados de transacciones anteriores. POS: {formatBs(totalSaldoFavorPOS_Bs)} ({formatUSD(totalSaldoFavorPOS_USD)})
+              Créditos de transacciones anteriores + Delivery cobrado (no facturado). El delivery queda como saldo a favor del cliente y se rebaja mediante asiento contable.
             </p>
           </CardHeader>
-          <CardContent>
-            {/* Detail table */}
-            {saldoFavorDetail && saldoFavorDetail.length > 0 && (
-              <div className="mb-4 overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b text-left">
-                      <th className="py-1 pr-2">Factura</th>
-                      <th className="py-1 pr-2">Cliente</th>
-                      <th className="py-1 pr-2 text-right">Monto ($)</th>
-                      <th className="py-1 text-right">Monto (Bs)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {saldoFavorDetail.map((row, idx) => (
-                      <tr key={idx} className="border-b border-dashed">
-                        <td className="py-1 pr-2 font-mono text-xs">{row.invoiceNumber || row.orderName}</td>
-                        <td className="py-1 pr-2">{row.partner || "—"}</td>
-                        <td className="py-1 pr-2 text-right">{formatUSD(row.amount)}</td>
-                        <td className="py-1 text-right">{formatBs(row.amountBs)}</td>
+          <CardContent className="space-y-4">
+            {/* Sub-sección: Saldos a Favor (créditos previos) */}
+            <div>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Saldos a Favor (Créditos Previos)</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                POS: {formatBs(totalSaldoFavorPOS_Bs)} ({formatUSD(totalSaldoFavorPOS_USD)})
+              </p>
+              {/* Detail table */}
+              {saldoFavorDetail && saldoFavorDetail.length > 0 && (
+                <div className="mb-3 overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="py-1 pr-2">Factura</th>
+                        <th className="py-1 pr-2">Cliente</th>
+                        <th className="py-1 pr-2 text-right">Monto ($)</th>
+                        <th className="py-1 text-right">Monto (Bs)</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <Label className="text-xs">Según POS (Bs)</Label>
-                <p className="font-semibold text-lg mt-1">{formatBs(totalSaldoFavorPOS_Bs)}</p>
-              </div>
-              <div>
-                <Label className="text-xs">Verificado real (Bs)</Label>
-                <Input
-                  type="number" step="0.01"
-                  className="mt-1"
-                  value={saldoFavorReal || ""}
-                  onChange={(e) => setSaldoFavorReal(Number(e.target.value) || 0)}
-                  disabled={!!isLocked}
-                  placeholder="Bs"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Observación</Label>
-                <Input
-                  className="mt-1"
-                  value={saldoFavorObs}
-                  onChange={(e) => setSaldoFavorObs(e.target.value)}
-                  disabled={!!isLocked}
-                  placeholder="Observación"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Deducciones: Auto delivery/diferencia + manual deductions */}
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base">7. Deducciones</CardTitle>
-                <p className="text-xs text-muted-foreground">Delivery, diferencias y otras deducciones. Todos los montos en Bs.</p>
-              </div>
-              {!isLocked && (
-                <Button variant="outline" size="sm" onClick={addDeduccion}>
-                  <Plus className="h-4 w-4 mr-1" /> Agregar manual
-                </Button>
+                    </thead>
+                    <tbody>
+                      {saldoFavorDetail.map((row, idx) => (
+                        <tr key={idx} className="border-b border-dashed">
+                          <td className="py-1 pr-2 font-mono text-xs">{row.invoiceNumber || row.orderName}</td>
+                          <td className="py-1 pr-2">{row.partner || "—"}</td>
+                          <td className="py-1 pr-2 text-right">{formatUSD(row.amount)}</td>
+                          <td className="py-1 text-right">{formatBs(row.amountBs)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-xs">Según POS (Bs)</Label>
+                  <p className="font-semibold text-lg mt-1">{formatBs(totalSaldoFavorPOS_Bs)}</p>
+                </div>
+                <div>
+                  <Label className="text-xs">Verificado real (Bs)</Label>
+                  <Input
+                    type="number" step="0.01"
+                    className="mt-1"
+                    value={saldoFavorReal || ""}
+                    onChange={(e) => setSaldoFavorReal(Number(e.target.value) || 0)}
+                    disabled={!!isLocked}
+                    placeholder="Bs"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Observación</Label>
+                  <Input
+                    className="mt-1"
+                    value={saldoFavorObs}
+                    onChange={(e) => setSaldoFavorObs(e.target.value)}
+                    disabled={!!isLocked}
+                    placeholder="Observación"
+                  />
+                </div>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent>
-            {/* Auto-populated delivery/diferencia entries from Odoo */}
+
+            {/* Sub-sección: Delivery Cobrado (no facturado) */}
             {deliveryDifMetodos.length > 0 && (
-              <div className="mb-4">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Desde Odoo POS (automático)</Label>
-                <div className="overflow-x-auto mt-1">
+              <div className="border-t pt-4">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Delivery Cobrado (No Facturado — Saldo a Favor del Cliente)</Label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Monto cobrado en caja pero NO facturado. Queda como saldo a favor del cliente y se rebaja mediante asiento contable de administración.
+                </p>
+                <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left">
@@ -1471,9 +1463,8 @@ export default function CuadreForm() {
                       {deliveryDifMetodos.map((m) => {
                         const fpPayment = fiscalSummary?.payments?.find(p => p.methodId === m.metodoId);
                         const refs = fpPayment?.orderRefs || [];
-                        const hasCompanion = fpPayment && fpPayment.companionAmountUSD && fpPayment.companionAmountUSD > 0;
                         return (
-                          <tr key={m.metodoId} className="border-b bg-orange-50">
+                          <tr key={m.metodoId} className="border-b bg-blue-50">
                             <td className="py-2 font-medium">
                               {getMethodDisplayName(m.metodoId, m.metodoNombre)}
                             </td>
@@ -1490,7 +1481,7 @@ export default function CuadreForm() {
                     return fp && fp.companionAmountUSD && fp.companionAmountUSD > 0;
                   }) && (
                     <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-2 text-xs text-amber-800">
-                      <p className="font-semibold mb-1">Desglose por caja (Delivery/Dif.):</p>
+                      <p className="font-semibold mb-1">Desglose por caja (Delivery):</p>
                       {deliveryDifMetodos.map(m => {
                         const fp = fiscalSummary?.payments?.find(p => p.methodId === m.metodoId);
                         if (!fp || !fp.companionAmountUSD || fp.companionAmountUSD <= 0) return null;
@@ -1498,7 +1489,7 @@ export default function CuadreForm() {
                           <div key={m.metodoId} className="flex justify-between">
                             <span>{getMethodDisplayName(m.metodoId, m.metodoNombre)}:</span>
                             <span>
-                              <span className="font-medium">{formatUSD(fp.mainAmountUSD || 0)}</span> (Caja) + <span className="font-medium text-amber-700">{formatUSD(fp.companionAmountUSD)}</span> ({fiscalSummary.companionCajaName || "CASHEA"}) = <span className="font-bold">{formatUSD(fp.totalUSD)}</span>
+                              {formatUSD(fp.mainAmountUSD || 0)} (Caja) + <span className="text-amber-700">{formatUSD(fp.companionAmountUSD)}</span> ({fiscalSummary.companionCajaName || "CASHEA"}) = {formatUSD(fp.totalUSD)}
                             </span>
                           </div>
                         );
@@ -1506,16 +1497,36 @@ export default function CuadreForm() {
                     </div>
                   )}
                 </div>
-                <div className="mt-1 text-right text-xs font-medium">
-                  Total Delivery/Dif.: <strong>{formatBs(totalDeliveryDifPOS_Bs)}</strong>
+                <div className="mt-2 text-right text-sm font-medium">
+                  Total Delivery (Saldo a Favor): <strong className="text-blue-700">{formatBs(totalDeliveryDifPOS_Bs)}</strong>
+                </div>
+                <div className="mt-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
+                  <strong>Nota contable:</strong> Este monto fue cobrado en caja pero NO se facturó. Queda como saldo a favor del cliente. El equipo de administración lo rebaja mediante asiento contable (pago al prestador del servicio de transporte).
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
 
+        {/* Deducciones: Manual deductions only (delivery moved to Section 6) */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">7. Deducciones Manuales</CardTitle>
+                <p className="text-xs text-muted-foreground">Retenciones, notas de crédito y otras deducciones manuales. Todos los montos en Bs. (El delivery está en la Sección 6 como saldo a favor).</p>
+              </div>
+              {!isLocked && (
+                <Button variant="outline" size="sm" onClick={addDeduccion}>
+                  <Plus className="h-4 w-4 mr-1" /> Agregar
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
             {/* Manual deductions */}
             {deducciones.length > 0 && (
               <div className="space-y-3">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Manuales</Label>
                 {deducciones.map((d, idx) => (
                   <div key={idx} className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end border-b pb-3">
                     <div>
@@ -1551,8 +1562,8 @@ export default function CuadreForm() {
               </div>
             )}
 
-            {deducciones.length === 0 && deliveryDifMetodos.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">Sin deducciones</p>
+            {deducciones.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">Sin deducciones manuales</p>
             )}
           </CardContent>
         </Card>
