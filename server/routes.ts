@@ -22,7 +22,9 @@ async function getPoolClient() {
   return pool;
 }
 
-// Rate limiting for auth endpoints
+// Rate limiting for auth endpoints (DISABLED - enable after trust proxy is configured)
+const authLimiter = (req: Request, res: Response, next: Function) => next(); // Disabled temporarily
+/*
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // Limit each IP to 5 login attempts per windowMs
@@ -30,6 +32,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+*/
 
 // Helpers para tipado y extracción de parámetros
 function param(req: Request, name: string): string {
