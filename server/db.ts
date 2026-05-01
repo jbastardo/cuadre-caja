@@ -282,7 +282,7 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
         Math.round(totalAjustesManuales * 100) / 100,
         data.saldoFavorObs || "",
         data.totalMetodosPOS || 0, data.totalJustificadoReal || 0, data.totalDirectoPOS || 0,
-        "", now, "",
+        "", now, null,
       ]
     );
 
