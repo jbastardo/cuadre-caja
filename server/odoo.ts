@@ -14,7 +14,7 @@ interface CacheEntry<T> {
   expires: number;
 }
 
-const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_TTL = 15 * 60 * 1000; // 15 minutes
 
 class SimpleCache {
   private store = new Map<string, CacheEntry<any>>();

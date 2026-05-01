@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from "pg";
+import bcrypt from "bcrypt";
 import type {
   User,
   UserPublic,
@@ -10,6 +11,8 @@ import type {
   CreateCuadre,
 } from "../shared/schema.js";
 import { CUADRE_TOLERANCE_BS } from "../shared/schema.js";
+
+const SALT_ROUNDS = 10;
 
 // ─── Connection Pool ─────────────────────────────────────────────────────────
 
@@ -122,9 +125,10 @@ export async function getUserByEmail(email: string): Promise<User | null> {
 
 export async function createUser(data: Omit<User, "id">): Promise<UserPublic> {
   const id = `USR-${Date.now()}`;
+  const hashedPassword = await bcrypt.hash(data.password, SALT_ROUNDS);
   await pool.query(
     "INSERT INTO usuarios (id, nombre, email, password, rol, activo) VALUES ($1, $2, $3, $4, $5, $6)",
-    [id, data.nombre, data.email, data.password, data.rol, data.activo]
+    [id, data.nombre, data.email, hashedPassword, data.rol, data.activo]
   );
   const { password, ...pub } = { id, ...data };
   return pub;
@@ -134,12 +138,16 @@ export async function updateUser(id: string, data: Partial<User>): Promise<UserP
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
-  for (const [key, val] of Object.entries(data)) {
-    if (val !== undefined) {
-      fields.push(`${key} = $${idx++}`);
-      values.push(val);
-    }
+
+  if (data.nombre !== undefined) { fields.push(`nombre=$${idx++}`); values.push(data.nombre); }
+  if (data.email !== undefined) { fields.push(`email=$${idx++}`); values.push(data.email); }
+  if (data.password !== undefined) {
+    const hashedPassword = await bcrypt.hash(data.password, SALT_ROUNDS);
+    fields.push(`password=$${idx++}`); values.push(hashedPassword);
   }
+  if (data.rol !== undefined) { fields.push(`rol=$${idx++}`); values.push(data.rol); }
+  if (data.activo !== undefined) { fields.push(`activo=$${idx++}`); values.push(data.activo); }
+
   if (fields.length === 0) return null;
   values.push(id);
   const { rows } = await pool.query(
@@ -150,23 +158,41 @@ export async function updateUser(id: string, data: Partial<User>): Promise<UserP
 }
 
 // ─── Cuadres ─────────────────────────────────────────────────────────────────
-
-export async function getCuadres(filters?: { fecha?: string; caja?: string; estado?: string; cerrado?: string }): Promise<Cuadre[]> {
-  let sql = "SELECT * FROM cuadres WHERE 1=1";
+export async function getCuadres(
+  filters?: { fecha?: string; caja?: string; estado?: string; cerrado?: string },
+  page: number = 1,
+  limit: number = 50
+): Promise<{ data: Cuadre[]; total: number; page: number; totalPages: number }> {
+  const offset = (page - 1) * limit;
   const params: any[] = [];
   let pIdx = 1;
 
-  if (filters?.fecha) { sql += ` AND fecha = $${pIdx++}`; params.push(filters.fecha); }
-  if (filters?.caja) { sql += ` AND caja = $${pIdx++}`; params.push(filters.caja); }
-  if (filters?.estado) { sql += ` AND estado = $${pIdx++}`; params.push(filters.estado); }
+  let whereClause = "WHERE 1=1";
+  if (filters?.fecha) { whereClause += ` AND fecha = $${pIdx++}`; params.push(filters.fecha); }
+  if (filters?.caja) { whereClause += ` AND caja = $${pIdx++}`; params.push(filters.caja); }
+  if (filters?.estado) { whereClause += ` AND estado = $${pIdx++}`; params.push(filters.estado); }
   if (filters?.cerrado) {
-    const isCerrado = filters.cerrado === "si";
-    sql += isCerrado ? ` AND cerrado_por IS NOT NULL AND cerrado_por != ''` : ` AND (cerrado_por IS NULL OR cerrado_por = '')`;
+    if (filters.cerrado === "true") whereClause += ` AND cerrado_por != ''`;
+    else if (filters.cerrado === "false") whereClause += ` AND cerrado_por = ''`;
   }
 
-  sql += " ORDER BY fecha DESC, creado_en DESC";
-  const { rows } = await pool.query(sql, params);
-  return rows.map(rowToCuadre);
+  // Get total count
+  const countResult = await pool.query(`SELECT COUNT(*) FROM cuadres ${whereClause}`, params);
+  const total = parseInt(countResult.rows[0].count);
+
+  // Get paginated data
+  const dataParams = [...params, limit, offset];
+  const { rows } = await pool.query(
+    `SELECT * FROM cuadres ${whereClause} ORDER BY fecha DESC, caja LIMIT $${pIdx++} OFFSET $${pIdx++}`,
+    dataParams
+  );
+
+  return {
+    data: rows.map(rowToCuadre),
+    total,
+    page,
+    totalPages: Math.ceil(total / limit)
+  };
 }
 
 export async function getCuadreById(id: string): Promise<CuadreDetail | null> {

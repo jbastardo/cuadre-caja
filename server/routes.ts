@@ -1,9 +1,20 @@
 import { Router, type Request, type Response } from "express";
+import rateLimit from "express-rate-limit";
 import * as odoo from "./odoo.js";
 import * as db from "./db.js";
 import * as sheets from "./sheets.js";
+import bcrypt from "bcrypt";
 import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
 import crypto from "crypto";
+
+// Rate limiting for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 login attempts per windowMs
+  message: { error: "Demasiados intentos, intente más tarde" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Helpers para tipado y extracción de parámetros
 function param(req: Request, name: string): string {
@@ -21,18 +32,11 @@ export const router = Router();
 // ---- Health Check ----
 router.get("/api/health", (_req: Request, res: Response) => {
   const hasSheetId = !!process.env.CUADRECAJA_SPREADSHEET_ID;
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
   const hasOdoo = !!process.env.ODOO_URL && !!process.env.ODOO_USERNAME;
-  const odooConfig = {
-    url: process.env.ODOO_URL || "",
-    db: process.env.ODOO_DB || "",
-    username: process.env.ODOO_USERNAME || "",
-    hasPassword: !!process.env.ODOO_PASSWORD
-  };
 
   let googleJsonValid = false;
   let parseError = "none";
-
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
   try {
     if (raw) {
       const parsed = JSON.parse(raw);
@@ -49,7 +53,6 @@ router.get("/api/health", (_req: Request, res: Response) => {
       googleAuth: googleJsonValid,
       odoo: hasOdoo
     },
-    odooConfig,
     parseError,
     cacheStats: odoo.getCacheStats(),
   });
@@ -65,135 +68,98 @@ router.get("/api/cache/stats", (_req: Request, res: Response) => {
   res.json({ cacheStats: odoo.getCacheStats() });
 });
 
-router.post("/api/db/init", async (_req: Request, res: Response) => {
-  try {
-    const result = await db.initializeDb();
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+// ---- Input Sanitization ----
+function sanitizeString(str: string): string {
+  if (typeof str !== 'string') return str;
+  return str.trim().replace(/[<>]/g, ''); // Basic XSS prevention
+}
+
+function sanitizeBody(body: any): any {
+  if (typeof body !== 'object' || body === null) return body;
+  
+  const sanitized = { ...body };
+  for (const key of Object.keys(sanitized)) {
+    if (typeof sanitized[key] === 'string') {
+      sanitized[key] = sanitizeString(sanitized[key]);
+    } else if (Array.isArray(sanitized[key])) {
+      sanitized[key] = sanitized[key].map((item: any) => 
+        typeof item === 'object' ? sanitizeBody(item) : 
+        typeof item === 'string' ? sanitizeString(item) : item
+      );
+    }
   }
-});
+  return sanitized;
+}
 
-// Migration endpoint: Google Sheets → PostgreSQL
-router.post("/api/db/migrate", async (_req: Request, res: Response) => {
+// ---- Auth Middleware ----
+function requireAuth(req: Request, res: Response, next: Function) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "No autorizado" });
+  }
+  // Simple token check - in production use JWT
+  const userEmail = req.headers['x-user-email'] as string;
+  if (!userEmail) {
+    return res.status(401).json({ error: "No autorizado" });
+  }
+  (req as any).userEmail = userEmail;
+  
+  // Sanitize input
+  req.body = sanitizeBody(req.body);
+  
+  next();
+}
+
+// Temporary endpoint to add indexes (remove after use)
+router.post("/api/admin/add-indexes", requireAuth, async (_req: Request, res: Response) => {
   try {
-    const result = await db.initializeDb();
-    console.log("DB schema:", result.initialized);
-
-    // Migrate Users
-    console.log("Migrating users...");
-    const sheetUsers = await sheets.getUsers();
-    const dbUsers = await db.getUsers();
-    const existingEmails = new Set(dbUsers.map(u => u.email));
-    let userCount = 0;
-    for (const u of sheetUsers) {
-      if (!existingEmails.has(u.email)) {
-        const fullUser = await sheets.getUserByEmail(u.email);
-        if (fullUser) {
-          await db.createUser({
-            nombre: fullUser.nombre,
-            email: fullUser.email,
-            password: fullUser.password,
-            rol: fullUser.rol,
-            activo: fullUser.activo,
-          });
-          userCount++;
-        }
-      }
+    const indexes = [
+      "CREATE INDEX IF NOT EXISTS idx_cuadres_fecha ON cuadres(fecha DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_cuadres_caja ON cuadres(caja)",
+      "CREATE INDEX IF NOT EXISTS idx_cuadres_estado ON cuadres(estado)",
+      "CREATE INDEX IF NOT EXISTS idx_cuadres_session_id ON cuadres(session_id)",
+      "CREATE INDEX IF NOT EXISTS idx_metodos_cuadre_id ON metodos_verificados(cuadre_id)",
+      "CREATE INDEX IF NOT EXISTS idx_deducciones_cuadre_id ON deducciones(cuadre_id)",
+      "CREATE INDEX IF NOT EXISTS idx_ajustes_cuadre_id ON ajustes_manuales(cuadre_id)",
+      "CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email)"
+    ];
+    
+    for (const sql of indexes) {
+      await pool.query(sql);
     }
-
-    // Migrate Cuadres
-    console.log("Migrating cuadres...");
-    const sheetCuadres = await sheets.getCuadres();
-    const dbCuadres = await db.getCuadres();
-    const existingIds = new Set(dbCuadres.map(c => c.id));
-    let cuadreCount = 0;
-    let errorCount = 0;
-
-    for (const c of sheetCuadres) {
-      if (existingIds.has(c.id)) continue;
-      try {
-        const metodos = await sheets.getMetodosByCuadre(c.id);
-        const deducciones = await sheets.getDeduccionesByCuadre(c.id);
-        const ajustes = await sheets.getAjustesByCuadre(c.id);
-
-        await db.createCuadre({
-          fecha: c.fecha,
-          caja: c.caja,
-          maquinaFiscal: c.maquinaFiscal,
-          sessionId: c.sessionId,
-          sessionName: c.sessionName,
-          cajero: c.cajero,
-          zNumero: c.zNumero,
-          ventaBrutaZ: c.ventaBrutaZ,
-          notasCreditoZ: c.notasCreditoZ,
-          ventaNetaZ: c.ventaNetaZ,
-          baseImponibleZ: c.baseImponibleZ,
-          exentoZ: c.exentoZ,
-          ivaZ: c.ivaZ,
-          igtfZ: c.igtfZ,
-          primeraFacturaZ: c.primeraFacturaZ,
-          ultimaFacturaZ: c.ultimaFacturaZ,
-          primeraNCZ: c.primeraNCZ || "",
-          ultimaNCZ: c.ultimaNCZ || "",
-          tasaDia: c.tasaDia,
-          totalOdooUSD: c.totalOdooUSD,
-          totalOdooBs: c.totalOdooBs,
-          difCambiaria: c.difCambiaria,
-          metodos: metodos,
-          deducciones: deducciones,
-          ajustesManuales: ajustes,
-          observaciones: c.observaciones,
-          observacionesNF: c.observacionesNF || "",
-          tipo: c.tipo || "fiscal",
-          totalRetencionesPOS: c.totalRetencionesPOS || 0,
-          totalRetencionesReal: c.totalRetencionesReal || 0,
-          retencionesPorCobrar: c.retencionesPorCobrar || 0,
-          totalCreditoPOS: c.totalCreditoPOS || 0,
-          totalAbonosReal: c.totalAbonosReal || 0,
-          totalCxCPendiente: c.totalCxCPendiente || 0,
-          totalSaldoFavorPOS: c.totalSaldoFavorPOS || 0,
-          totalSaldoFavorReal: c.totalSaldoFavorReal || 0,
-          totalAjustesManuales: c.totalAjustesManuales || 0,
-          saldoFavorObs: c.saldoFavorObs || "",
-          totalMetodosPOS: c.totalMetodosPOS || 0,
-          totalJustificadoReal: c.totalJustificadoReal || 0,
-          totalDirectoPOS: c.totalDirectoPOS || 0,
-        });
-        cuadreCount++;
-      } catch (err: any) {
-        errorCount++;
-        console.error(`Error migrating ${c.id}:`, err?.message);
-      }
-    }
-
-    res.json({
-      success: true,
-      usersMigrated: userCount,
-      cuadresMigrated: cuadreCount,
-      errors: errorCount,
-    });
+    
+    res.json({ success: true, message: "Indexes created" });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
 // ---- Auth ----
-router.post("/api/auth/login", async (req: Request, res: Response) => {
+router.post("/api/auth/login", authLimiter, async (req: Request, res: Response) => {
   try {
     const parsed = loginSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: "Datos requeridos" });
+    if (!parsed.success) {
+      const errors = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`);
+      return res.status(400).json({ error: "Datos inválidos", details: errors });
+    }
 
     const user = await db.getUserByEmail(parsed.data.email);
-    if (!user || user.password !== parsed.data.password) {
-      return res.status(401).json({ error: "Credenciales inválidas" });
+    if (!user) {
+      return res.status(401).json({ error: "Email o contraseña incorrectos" });
     }
-    if (!user.activo) return res.status(403).json({ error: "Usuario desactivado" });
+    
+    const validPassword = await bcrypt.compare(parsed.data.password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: "Email o contraseña incorrectos" });
+    }
+    
+    if (!user.activo) return res.status(403).json({ error: "Su cuenta está desactivada. Contacte al administrador" });
 
     const { password, ...safeUser } = user;
     res.json(safeUser);
   } catch (err: any) {
-    res.status(500).json({ error: "Error en login", details: err?.message });
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Error interno del servidor. Intente más tarde" });
   }
 });
 
@@ -219,7 +185,7 @@ router.post("/api/auth/change-password", async (req: Request, res: Response) => 
 });
 
 // ---- Odoo Endpoints ----
-router.get("/api/odoo/rate", async (req: Request, res: Response) => {
+router.get("/api/odoo/rate", requireAuth, async (req: Request, res: Response) => {
   try {
     const date = query(req, "date") || new Date().toISOString().split("T")[0];
     const rate = await odoo.getDayRate(date);
@@ -230,7 +196,7 @@ router.get("/api/odoo/rate", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/odoo/sessions", async (req: Request, res: Response) => {
+router.get("/api/odoo/sessions", requireAuth, async (req: Request, res: Response) => {
   try {
     const date = query(req, "date") || new Date().toISOString().split("T")[0];
     const [sessions, cuadres] = await Promise.all([
@@ -257,7 +223,7 @@ router.get("/api/odoo/sessions", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/odoo/session/:id/fiscal-summary", async (req: Request, res: Response) => {
+router.get("/api/odoo/session/:id/fiscal-summary", requireAuth, async (req: Request, res: Response) => {
   try {
     const summary = await odoo.getFiscalSummary(Number(param(req, "id")));
     res.json(summary);
@@ -267,7 +233,7 @@ router.get("/api/odoo/session/:id/fiscal-summary", async (req: Request, res: Res
 });
 
 // Nota: Asegúrate de que odoo.ts exporte estas funciones
-router.get("/api/odoo/session/:id/retentions", async (req: Request, res: Response) => {
+router.get("/api/odoo/session/:id/retentions", requireAuth, async (req: Request, res: Response) => {
   try {
     const data = await odoo.getSessionRetentions(Number(param(req, "id")));
     res.json(data);
@@ -276,7 +242,7 @@ router.get("/api/odoo/session/:id/retentions", async (req: Request, res: Respons
   }
 });
 
-router.get("/api/odoo/session/:id", async (req: Request, res: Response) => {
+router.get("/api/odoo/session/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const session = await odoo.getSessionById(Number(param(req, "id")));
     if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
@@ -287,7 +253,7 @@ router.get("/api/odoo/session/:id", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/odoo/session/:id/credit-sales", async (req: Request, res: Response) => {
+router.get("/api/odoo/session/:id/credit-sales", requireAuth, async (req: Request, res: Response) => {
   try {
     const data = await odoo.getCreditSales(Number(param(req, "id")));
     res.json(data);
@@ -297,7 +263,7 @@ router.get("/api/odoo/session/:id/credit-sales", async (req: Request, res: Respo
   }
 });
 
-router.get("/api/odoo/session/:id/saldo-favor", async (req: Request, res: Response) => {
+router.get("/api/odoo/session/:id/saldo-favor", requireAuth, async (req: Request, res: Response) => {
   try {
     const data = await odoo.getSaldoFavorDetail(Number(param(req, "id")));
     res.json(data);
@@ -307,7 +273,7 @@ router.get("/api/odoo/session/:id/saldo-favor", async (req: Request, res: Respon
   }
 });
 
-router.get("/api/odoo/session/:id/non-fiscal", async (req: Request, res: Response) => {
+router.get("/api/odoo/session/:id/non-fiscal", requireAuth, async (req: Request, res: Response) => {
   try {
     const data = await odoo.getNonFiscalSummary(Number(param(req, "id")));
     res.json(data);
@@ -318,7 +284,7 @@ router.get("/api/odoo/session/:id/non-fiscal", async (req: Request, res: Respons
 });
 
 // ---- Cuadres CRUD ----
-router.get("/api/cuadres", async (req: Request, res: Response) => {
+router.get("/api/cuadres", requireAuth, async (req: Request, res: Response) => {
   try {
     const filters = {
       fecha: query(req, "fecha"),
@@ -326,14 +292,17 @@ router.get("/api/cuadres", async (req: Request, res: Response) => {
       estado: query(req, "estado"),
       cerrado: query(req, "cerrado")
     };
-    const data = await db.getCuadres(filters);
+    const page = parseInt(query(req, "page") || "1");
+    const limit = parseInt(query(req, "limit") || "50");
+    const data = await db.getCuadres(filters, page, limit);
     res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: "Error al obtener cuadres" });
+  } catch (err: any) {
+    console.error("Error getting cuadres:", err);
+    res.status(500).json({ error: "No se pudieron cargar los cuadres. Intente más tarde" });
   }
 });
 
-router.get("/api/cuadres/:id", async (req: Request, res: Response) => {
+router.get("/api/cuadres/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
     const cuadre = await db.getCuadreById(id);
@@ -372,7 +341,7 @@ router.get("/api/cuadres/:id", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/cuadres", async (req: Request, res: Response) => {
+router.post("/api/cuadres", requireAuth, async (req: Request, res: Response) => {
   // Fast fix: coerce numeric strings to numbers
   const body = req.body;
   const numFields = [
@@ -413,7 +382,7 @@ router.post("/api/cuadres", async (req: Request, res: Response) => {
   }
 });
 
-router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
+router.put("/api/cuadres/:id", requireAuth, async (req: Request, res: Response) => {
   // Fast fix: coerce numeric strings to numbers
   const body = req.body;
   const numFields = [
@@ -460,17 +429,18 @@ router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
   }
 });
 
-router.delete("/api/cuadres/:id", async (req: Request, res: Response) => {
+router.delete("/api/cuadres/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const deleted = await db.deleteCuadre(param(req, "id"));
-    if (!deleted) return res.status(404).json({ error: "Cuadre no encontrado" });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Error al eliminar" });
+    if (!deleted) return res.status(404).json({ error: "El cuadre no existe o ya fue eliminado" });
+    res.json({ success: true, message: "Cuadre eliminado correctamente" });
+  } catch (err: any) {
+    console.error("Delete error:", err);
+    res.status(500).json({ error: "No se pudo eliminar el cuadre. Intente más tarde" });
   }
 });
 
-router.patch("/api/cuadres/:id/estado", async (req: Request, res: Response) => {
+router.patch("/api/cuadres/:id/estado", requireAuth, async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
     const { estado } = req.body as { estado: "cuadrado" | "pendiente" | "descuadrado" };
@@ -487,7 +457,7 @@ router.patch("/api/cuadres/:id/estado", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/cuadres/:id/recalculate", async (req: Request, res: Response) => {
+router.post("/api/cuadres/:id/recalculate", requireAuth, async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
     console.log(`[POST /cuadres/:id/recalculate] id=${id}`);
@@ -501,7 +471,7 @@ router.post("/api/cuadres/:id/recalculate", async (req: Request, res: Response) 
 });
 
 // ---- NF Cuadres ----
-router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) => {
+router.post("/api/cuadres/nf/:sessionId", requireAuth, async (req: Request, res: Response) => {
   try {
     const sessionId = Number(param(req, "sessionId"));
     const { metodos, observacionesNF, ajustesManuales } = req.body;
@@ -586,7 +556,7 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
   }
 });
 
-router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
+router.put("/api/cuadres/nf/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
     const { metodos, observacionesNF, ajustesManuales } = req.body;
@@ -647,7 +617,7 @@ router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/cuadres/:id/close", async (req: Request, res: Response) => {
+router.post("/api/cuadres/:id/close", requireAuth, async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
     const { cerradoPor } = req.body;
@@ -659,7 +629,7 @@ router.post("/api/cuadres/:id/close", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/cuadres/:id/reopen", async (req: Request, res: Response) => {
+router.post("/api/cuadres/:id/reopen", requireAuth, async (req: Request, res: Response) => {
   try {
     const reopened = await db.reopenCuadre(param(req, "id"));
     if (!reopened) return res.status(404).json({ error: "Cuadre no encontrado" });
@@ -670,7 +640,7 @@ router.post("/api/cuadres/:id/reopen", async (req: Request, res: Response) => {
 });
 
 // ---- Users ----
-router.get("/api/users", async (_req: Request, res: Response) => {
+router.get("/api/users", requireAuth, async (_req: Request, res: Response) => {
   try {
     const users = await db.getUsers();
     res.json(users);
@@ -686,7 +656,7 @@ const abonosStore: Map<string, any[]> = new Map();
 // =============================================================================
 // CONCILIACIÓN DE PAGOS DIFERIDOS
 // =============================================================================
-router.get("/api/conciliacion/pagos-diferidos", async (req: Request, res: Response) => {
+router.get("/api/conciliacion/pagos-diferidos", requireAuth, async (req: Request, res: Response) => {
   try {
     const fechaDesde    = query(req, "fechaDesde");
     const fechaHasta    = query(req, "fechaHasta");
@@ -731,7 +701,7 @@ router.get("/api/conciliacion/pagos-diferidos", async (req: Request, res: Respon
 });
 
 // Nuevo endpoint principal: lista de facturas CxC y CxP con filtros y Bs
-router.get("/api/cuentas/facturas", async (req: Request, res: Response) => {
+router.get("/api/cuentas/facturas", requireAuth, async (req: Request, res: Response) => {
   try {
     const tipo = query(req, "tipo") || "cxc"; // "cxc" | "cxp"
     const fechaDesde = query(req, "fechaDesde");
@@ -763,7 +733,7 @@ router.get("/api/cuentas/facturas", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/cuentas/balance", async (req: Request, res: Response) => {
+router.get("/api/cuentas/balance", requireAuth, async (req: Request, res: Response) => {
   try {
     const fechaDesde = query(req, "fechaDesde");
     const fechaHasta = query(req, "fechaHasta");
@@ -788,7 +758,7 @@ router.get("/api/cuentas/balance", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/cuentas/pagos-credito", async (req: Request, res: Response) => {
+router.get("/api/cuentas/pagos-credito", requireAuth, async (req: Request, res: Response) => {
   try {
     const fechaDesde = query(req, "fechaDesde");
     const fechaHasta = query(req, "fechaHasta");
@@ -825,7 +795,7 @@ router.get("/api/cuentas/pagos-credito", async (req: Request, res: Response) => 
   }
 });
 
-router.get("/api/cuentas/destiempo", async (req: Request, res: Response) => {
+router.get("/api/cuentas/destiempo", requireAuth, async (req: Request, res: Response) => {
   try {
     const fechaDesde = query(req, "fechaDesde");
     const fechaHasta = query(req, "fechaHasta");
@@ -841,7 +811,7 @@ router.get("/api/cuentas/destiempo", async (req: Request, res: Response) => {
 });
 
 // Endpoint para obtener listas de filtros dinámicos
-router.get("/api/cuentas/filtros", async (_req: Request, res: Response) => {
+router.get("/api/cuentas/filtros", requireAuth, async (_req: Request, res: Response) => {
   try {
     const [metodosPOS, bancos] = await Promise.all([
       odoo.getMetodosPOS(),
@@ -854,7 +824,7 @@ router.get("/api/cuentas/filtros", async (_req: Request, res: Response) => {
 });
 
 // Debug endpoint: credit sales with raw Odoo payment data
-router.get("/api/debug/credit-sales/:id", async (req: Request, res: Response) => {
+router.get("/api/debug/credit-sales/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const data = await odoo.getCreditSalesDebug(Number(param(req, "id")));
     res.json(data);
@@ -878,7 +848,7 @@ router.get("/api/debug/pagos-ref", async (req: Request, res: Response) => {
 });
 
 // Debug endpoint: inspeccionar un pago específico por nombre
-router.get("/api/debug/pago", async (req: Request, res: Response) => {
+router.get("/api/debug/pago", requireAuth, async (req: Request, res: Response) => {
   try {
     const nombre = query(req, "nombre") || "BANBS/2026/0832";
     const pago = await odoo.debugPago(nombre);
@@ -888,7 +858,7 @@ router.get("/api/debug/pago", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/cuentas/movimientos", async (req: Request, res: Response) => {
+router.get("/api/cuentas/movimientos", requireAuth, async (req: Request, res: Response) => {
   try {
     const tipo = query(req, "tipo") || "cxc";
     const fechaDesde = query(req, "fechaDesde");
@@ -901,7 +871,7 @@ router.get("/api/cuentas/movimientos", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/api/cuentas/abonos", async (req: Request, res: Response) => {
+router.post("/api/cuentas/abonos", requireAuth, async (req: Request, res: Response) => {
   try {
     const { cuentaId, monto, fecha, notas } = req.body;
     if (!cuentaId || !monto || !fecha) {
@@ -927,7 +897,7 @@ router.post("/api/cuentas/abonos", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/api/cuentas/conciliacion", async (_req: Request, res: Response) => {
+router.get("/api/cuentas/conciliacion", requireAuth, async (_req: Request, res: Response) => {
   try {
     const conciliacion = await odoo.getConciliacionBancaria();
     res.json(conciliacion);
