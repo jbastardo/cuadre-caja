@@ -9,7 +9,7 @@
     "migrate": "tsx server/migrate.ts",
     "dev:local": "npm run build && cross-env NODE_ENV=production tsx server/index.ts",
     "build": "vite build",
-    "start": "tsx server/index.ts",
+    "start": "tsx server/index.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
