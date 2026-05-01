@@ -12,7 +12,8 @@
 import "dotenv/config";
 import * as db from "./db.js";
 import * as sheets from "./sheets.js";
-import type { CreateCuadre, MetodoVerificado, Deduccion, AjusteManual } from "../shared/schema.js";
+import { getMetodosByCuadre, getDeduccionesByCuadre, getAjustesByCuadre } from "./sheets.js";
+import type { CreateCuadre } from "../shared/schema.js";
 
 async function setup() {
   console.log("╔══════════════════════════════════════════════╗");
@@ -91,9 +92,9 @@ async function setup() {
         if (existingIds.has(c.id)) continue;
 
         try {
-          const metodos = await getSheetMetodos(c.id);
-          const deducciones = await getSheetDeducciones(c.id);
-          const ajustesManuales = await getSheetAjustes(c.id);
+          const metodos = await getMetodosByCuadre(c.id);
+          const deducciones = await getDeduccionesByCuadre(c.id);
+          const ajustesManuales = await getAjustesByCuadre(c.id);
 
           const createData: CreateCuadre = {
             fecha: c.fecha,
@@ -180,43 +181,6 @@ async function setup() {
   console.log("  2. Login: juan@onprotec.com / 9803");
 
   await db.closePool();
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-async function getSheetMetodos(cuadreId: string): Promise<MetodoVerificado[]> {
-  try {
-    const rows = await sheets.getSheetData("MetodosVerificados");
-    if (!rows) return [];
-    return rows.slice(1).filter((r: string[]) => r[1] === cuadreId).map((r: string[]) => ({
-      id: r[0] || "", cuadreId: r[1] || "", metodoId: Number(r[2]) || 0,
-      metodoNombre: r[3] || "", montoPOS_USD: Number(r[4]) || 0,
-      montoPOS_Bs: Number(r[5]) || 0, montoReal: Number(r[6]) || 0,
-      diferencia: Number(r[7]) || 0, observacion: r[8] || "",
-    }));
-  } catch { return []; }
-}
-
-async function getSheetDeducciones(cuadreId: string): Promise<Deduccion[]> {
-  try {
-    const rows = await sheets.getSheetData("Deducciones");
-    if (!rows) return [];
-    return rows.slice(1).filter((r: string[]) => r[1] === cuadreId).map((r: string[]) => ({
-      id: r[0] || "", cuadreId: r[1] || "", tipo: r[2] || "",
-      descripcion: r[3] || "", monto: Number(r[4]) || 0, comprobante: r[5] || "",
-    }));
-  } catch { return []; }
-}
-
-async function getSheetAjustes(cuadreId: string): Promise<AjusteManual[]> {
-  try {
-    const rows = await sheets.getSheetData("AjustesManuales");
-    if (!rows) return [];
-    return rows.slice(1).filter((r: string[]) => r[1] === cuadreId).map((r: string[]) => ({
-      id: r[0] || "", cuadreId: r[1] || "", tipo: r[2] || "",
-      descripcion: r[3] || "", monto: Number(r[4]) || 0, referencia: r[5] || "",
-    }));
-  } catch { return []; }
 }
 
 setup().catch(console.error);
