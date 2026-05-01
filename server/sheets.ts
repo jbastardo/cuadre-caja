@@ -778,7 +778,7 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
 
 // ---- MetodosVerificados ----
 // Columns: A=id, B=cuadreId, C=metodoId, D=metodoNombre, E=montoPOS_USD, F=montoPOS_Bs, G=montoReal, H=diferencia, I=observacion
-async function getMetodosByCuadre(cuadreId: string): Promise<MetodoVerificado[]> {
+export async function getMetodosByCuadre(cuadreId: string): Promise<MetodoVerificado[]> {
   const rows = await getSheetData("MetodosVerificados");
   return rows
     .slice(1)
@@ -797,7 +797,7 @@ async function getMetodosByCuadre(cuadreId: string): Promise<MetodoVerificado[]>
 }
 
 // ---- Deducciones ----
-async function getDeduccionesByCuadre(cuadreId: string): Promise<Deduccion[]> {
+export async function getDeduccionesByCuadre(cuadreId: string): Promise<Deduccion[]> {
   const rows = await getSheetData("Deducciones");
   return rows
     .slice(1)
@@ -814,7 +814,7 @@ async function getDeduccionesByCuadre(cuadreId: string): Promise<Deduccion[]> {
 
 // ---- AjustesManuales ----
 // Columns: A=id, B=cuadreId, C=tipo, D=descripcion, E=monto, F=referencia
-async function getAjustesByCuadre(cuadreId: string): Promise<AjusteManual[]> {
+export async function getAjustesByCuadre(cuadreId: string): Promise<AjusteManual[]> {
   const rows = await getSheetData("AjustesManuales");
   return rows
     .slice(1)
