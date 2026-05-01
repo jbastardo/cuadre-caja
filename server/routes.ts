@@ -1,5 +1,4 @@
-import { Router, type Request, type Response, type Express } from "express";
-import rateLimit from "express-rate-limit";
+import { Router, type Request, type Response } from "express";
 import * as odoo from "./odoo.js";
 import * as db from "./db.js";
 import * as sheets from "./sheets.js";
@@ -22,17 +21,7 @@ async function getPoolClient() {
   return pool;
 }
 
-// Rate limiting for auth endpoints (DISABLED - enable after trust proxy is configured)
-const authLimiter = (req: Request, res: Response, next: Function) => next(); // Disabled temporarily
-/*
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per windowMs
-  message: { error: "Demasiados intentos, intente más tarde" },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-*/
+// Rate limiting removed - will add after fixing trust proxy
 
 // Helpers para tipado y extracción de parámetros
 function param(req: Request, name: string): string {
@@ -164,7 +153,7 @@ router.post("/api/admin/hash-passwords", async (_req: Request, res: Response) =>
 });
 
 // ---- Auth ----
-router.post("/api/auth/login", authLimiter, async (req: Request, res: Response) => {
+router.post("/api/auth/login", async (req: Request, res: Response) => {
   try {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
