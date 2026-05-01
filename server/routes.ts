@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type Express } from "express";
 import rateLimit from "express-rate-limit";
 import * as odoo from "./odoo.js";
 import * as db from "./db.js";
@@ -6,6 +6,12 @@ import * as sheets from "./sheets.js";
 import bcrypt from "bcrypt";
 import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
 import crypto from "crypto";
+
+// Enable trust proxy for Railway
+const app = Router() as any;
+if (process.env.NODE_ENV === "production") {
+  // This will be set on the actual express app
+}
 
 // Pool will be initialized after module loads
 let pool: any = null;
@@ -146,7 +152,10 @@ router.post("/api/admin/add-indexes", requireAuth, async (_req: Request, res: Re
 // TEMPORAL: Hash existing plaintext passwords (remove after use)
 router.post("/api/admin/hash-passwords", async (_req: Request, res: Response) => {
   try {
-    const pool = await getPoolClient();
+    // Import pool dynamically from db module
+    const dbModule = await import('./db.js');
+    const pool = await dbModule.getPool();
+    
     const users = await pool.query("SELECT id, password FROM usuarios");
     let updated = 0;
     
