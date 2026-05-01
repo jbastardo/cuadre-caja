@@ -3,10 +3,18 @@ import rateLimit from "express-rate-limit";
 import * as odoo from "./odoo.js";
 import * as db from "./db.js";
 import * as sheets from "./sheets.js";
-import { getPool } from "./db.js";
 import bcrypt from "bcrypt";
 import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
 import crypto from "crypto";
+
+// Pool will be initialized after module loads
+let pool: any = null;
+async function getPoolClient() {
+  if (!pool) {
+    pool = await db.getPool();
+  }
+  return pool;
+}
 
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
@@ -136,12 +144,6 @@ router.post("/api/admin/add-indexes", requireAuth, async (_req: Request, res: Re
 });
 
 // TEMPORAL: Hash existing plaintext passwords (remove after use)
-let _pool: any = null;
-async function getPoolClient() {
-  if (!_pool) _pool = await getPool();
-  return _pool;
-}
-
 router.post("/api/admin/hash-passwords", async (_req: Request, res: Response) => {
   try {
     const pool = await getPoolClient();
