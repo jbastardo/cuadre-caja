@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import * as odoo from "./odoo.js";
 import * as db from "./db.js";
+import * as sheets from "./sheets.js";
 import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
 import crypto from "crypto";
 
@@ -68,6 +69,110 @@ router.post("/api/db/init", async (_req: Request, res: Response) => {
   try {
     const result = await db.initializeDb();
     res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+// Migration endpoint: Google Sheets → PostgreSQL
+router.post("/api/db/migrate", async (_req: Request, res: Response) => {
+  try {
+    const result = await db.initializeDb();
+    console.log("DB schema:", result.initialized);
+
+    // Migrate Users
+    console.log("Migrating users...");
+    const sheetUsers = await sheets.getUsers();
+    const dbUsers = await db.getUsers();
+    const existingEmails = new Set(dbUsers.map(u => u.email));
+    let userCount = 0;
+    for (const u of sheetUsers) {
+      if (!existingEmails.has(u.email)) {
+        const fullUser = await sheets.getUserByEmail(u.email);
+        if (fullUser) {
+          await db.createUser({
+            nombre: fullUser.nombre,
+            email: fullUser.email,
+            password: fullUser.password,
+            rol: fullUser.rol,
+            activo: fullUser.activo,
+          });
+          userCount++;
+        }
+      }
+    }
+
+    // Migrate Cuadres
+    console.log("Migrating cuadres...");
+    const sheetCuadres = await sheets.getCuadres();
+    const dbCuadres = await db.getCuadres();
+    const existingIds = new Set(dbCuadres.map(c => c.id));
+    let cuadreCount = 0;
+    let errorCount = 0;
+
+    for (const c of sheetCuadres) {
+      if (existingIds.has(c.id)) continue;
+      try {
+        const metodos = await sheets.getMetodosByCuadre(c.id);
+        const deducciones = await sheets.getDeduccionesByCuadre(c.id);
+        const ajustes = await sheets.getAjustesByCuadre(c.id);
+
+        await db.createCuadre({
+          fecha: c.fecha,
+          caja: c.caja,
+          maquinaFiscal: c.maquinaFiscal,
+          sessionId: c.sessionId,
+          sessionName: c.sessionName,
+          cajero: c.cajero,
+          zNumero: c.zNumero,
+          ventaBrutaZ: c.ventaBrutaZ,
+          notasCreditoZ: c.notasCreditoZ,
+          ventaNetaZ: c.ventaNetaZ,
+          baseImponibleZ: c.baseImponibleZ,
+          exentoZ: c.exentoZ,
+          ivaZ: c.ivaZ,
+          igtfZ: c.igtfZ,
+          primeraFacturaZ: c.primeraFacturaZ,
+          ultimaFacturaZ: c.ultimaFacturaZ,
+          primeraNCZ: c.primeraNCZ || "",
+          ultimaNCZ: c.ultimaNCZ || "",
+          tasaDia: c.tasaDia,
+          totalOdooUSD: c.totalOdooUSD,
+          totalOdooBs: c.totalOdooBs,
+          difCambiaria: c.difCambiaria,
+          metodos: metodos,
+          deducciones: deducciones,
+          ajustesManuales: ajustes,
+          observaciones: c.observaciones,
+          observacionesNF: c.observacionesNF || "",
+          tipo: c.tipo || "fiscal",
+          totalRetencionesPOS: c.totalRetencionesPOS || 0,
+          totalRetencionesReal: c.totalRetencionesReal || 0,
+          retencionesPorCobrar: c.retencionesPorCobrar || 0,
+          totalCreditoPOS: c.totalCreditoPOS || 0,
+          totalAbonosReal: c.totalAbonosReal || 0,
+          totalCxCPendiente: c.totalCxCPendiente || 0,
+          totalSaldoFavorPOS: c.totalSaldoFavorPOS || 0,
+          totalSaldoFavorReal: c.totalSaldoFavorReal || 0,
+          totalAjustesManuales: c.totalAjustesManuales || 0,
+          saldoFavorObs: c.saldoFavorObs || "",
+          totalMetodosPOS: c.totalMetodosPOS || 0,
+          totalJustificadoReal: c.totalJustificadoReal || 0,
+          totalDirectoPOS: c.totalDirectoPOS || 0,
+        });
+        cuadreCount++;
+      } catch (err: any) {
+        errorCount++;
+        console.error(`Error migrating ${c.id}:`, err?.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      usersMigrated: userCount,
+      cuadresMigrated: cuadreCount,
+      errors: errorCount,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }
