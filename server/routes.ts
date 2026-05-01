@@ -3,6 +3,7 @@ import rateLimit from "express-rate-limit";
 import * as odoo from "./odoo.js";
 import * as db from "./db.js";
 import * as sheets from "./sheets.js";
+import { getPool } from "./db.js";
 import bcrypt from "bcrypt";
 import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
 import crypto from "crypto";
@@ -135,8 +136,15 @@ router.post("/api/admin/add-indexes", requireAuth, async (_req: Request, res: Re
 });
 
 // TEMPORAL: Hash existing plaintext passwords (remove after use)
+let _pool: any = null;
+async function getPoolClient() {
+  if (!_pool) _pool = await getPool();
+  return _pool;
+}
+
 router.post("/api/admin/hash-passwords", async (_req: Request, res: Response) => {
   try {
+    const pool = await getPoolClient();
     const users = await pool.query("SELECT id, password FROM usuarios");
     let updated = 0;
     
@@ -151,6 +159,7 @@ router.post("/api/admin/hash-passwords", async (_req: Request, res: Response) =>
     
     res.json({ success: true, message: `Updated ${updated} passwords` });
   } catch (err: any) {
+    console.error("Hash passwords error:", err);
     res.status(500).json({ error: err.message });
   }
 });
