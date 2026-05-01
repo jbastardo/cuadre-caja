@@ -11,14 +11,14 @@ RUN npm install --include=dev
 # Copy source code
 COPY . .
 
-# Build the project
+# Build the project (vite + esbuild)
 RUN npm run build
 
 # Verify build output exists
-RUN ls -la dist/server/ || (echo "BUILD FAILED: dist/server/ not found" && exit 1)
+RUN ls -la dist/ || (echo "BUILD FAILED: dist/ not found" && exit 1)
 
 # Expose the port
 EXPOSE 3000
 
-# Start the server
-CMD ["node", "dist/server/index.js"]
+# Start the server (esbuild outputs to dist/index.js)
+CMD ["node", "dist/index.js"]
