@@ -373,26 +373,33 @@ router.get("/api/cuadres/:id", async (req: Request, res: Response) => {
 });
 
 router.post("/api/cuadres", async (req: Request, res: Response) => {
-  console.log("=== POST /api/cuadres ===");
-  console.log("Headers:", JSON.stringify(req.headers));
-  console.log("Body (raw):", JSON.stringify(req.body, null, 2));
-  console.log("Body type check:", {
-    metodos: Array.isArray(req.body.metodos) ? `Array(${req.body.metodos.length})` : typeof req.body.metodos,
-    metodosSample: req.body.metodos?.[0] ? JSON.stringify(req.body.metodos[0]) : "N/A",
-    montoRealType: req.body.metodos?.[0]?.montoReal ? typeof req.body.metodos[0].montoReal : "N/A",
+  // Fast fix: coerce numeric strings to numbers
+  const body = req.body;
+  const numFields = [
+    'tasaDia', 'ventaBrutaZ', 'notasCreditoZ', 'ventaNetaZ', 'baseImponibleZ',
+    'exentoZ', 'ivaZ', 'igtfZ', 'totalOdooUSD', 'totalOdooBs', 'difCambiaria',
+    'totalRetencionesPOS', 'totalRetencionesReal', 'retencionesPorCobrar',
+    'totalCreditoPOS', 'totalAbonosReal', 'totalCxCPendiente',
+    'totalSaldoFavorPOS', 'totalSaldoFavorReal', 'totalAjustesManuales',
+    'totalMetodosPOS', 'totalJustificadoReal', 'totalDirectoPOS'
+  ];
+  numFields.forEach(f => { if (body[f] !== undefined && typeof body[f] === 'string') body[f] = Number(body[f]); });
+  if (body.metodos) body.metodos.forEach((m: any) => {
+    ['metodoId', 'montoPOS_USD', 'montoPOS_Bs', 'montoReal'].forEach(f => {
+      if (m[f] !== undefined && typeof m[f] === 'string') m[f] = Number(m[f]);
+    });
   });
-  
+  if (body.deducciones) body.deducciones.forEach((d: any) => {
+    if (d.monto !== undefined && typeof d.monto === 'string') d.monto = Number(d.monto);
+  });
+  if (body.ajustesManuales) body.ajustesManuales.forEach((a: any) => {
+    if (a.monto !== undefined && typeof a.monto === 'string') a.monto = Number(a.monto);
+  });
+
   try {
-    const parsed = createCuadreSchema.safeParse(req.body);
+    const parsed = createCuadreSchema.safeParse(body);
     if (!parsed.success) {
       console.error("Validation error details:", parsed.error.issues);
-      console.error("Problematic fields:", parsed.error.issues.map(i => ({
-        path: i.path,
-        expected: i.expected,
-        received: i.received,
-        code: i.code,
-        message: i.message
-      })));
       return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
     }
 
@@ -407,8 +414,31 @@ router.post("/api/cuadres", async (req: Request, res: Response) => {
 });
 
 router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
+  // Fast fix: coerce numeric strings to numbers
+  const body = req.body;
+  const numFields = [
+    'tasaDia', 'ventaBrutaZ', 'notasCreditoZ', 'ventaNetaZ', 'baseImponibleZ',
+    'exentoZ', 'ivaZ', 'igtfZ', 'totalOdooUSD', 'totalOdooBs', 'difCambiaria',
+    'totalRetencionesPOS', 'totalRetencionesReal', 'retencionesPorCobrar',
+    'totalCreditoPOS', 'totalAbonosReal', 'totalCxCPendiente',
+    'totalSaldoFavorPOS', 'totalSaldoFavorReal', 'totalAjustesManuales',
+    'totalMetodosPOS', 'totalJustificadoReal', 'totalDirectoPOS'
+  ];
+  numFields.forEach(f => { if (body[f] !== undefined && typeof body[f] === 'string') body[f] = Number(body[f]); });
+  if (body.metodos) body.metodos.forEach((m: any) => {
+    ['metodoId', 'montoPOS_USD', 'montoPOS_Bs', 'montoReal'].forEach(f => {
+      if (m[f] !== undefined && typeof m[f] === 'string') m[f] = Number(m[f]);
+    });
+  });
+  if (body.deducciones) body.deducciones.forEach((d: any) => {
+    if (d.monto !== undefined && typeof d.monto === 'string') d.monto = Number(d.monto);
+  });
+  if (body.ajustesManuales) body.ajustesManuales.forEach((a: any) => {
+    if (a.monto !== undefined && typeof a.monto === 'string') a.monto = Number(a.monto);
+  });
+
   try {
-    const parsed = createCuadreSchema.safeParse(req.body);
+    const parsed = createCuadreSchema.safeParse(body);
     if (!parsed.success) {
       console.error("Validation error details:", parsed.error.issues);
       return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
