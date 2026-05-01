@@ -181,9 +181,23 @@ router.post("/api/auth/login", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Email o contraseña incorrectos" });
     }
     
-    const validPassword = await bcrypt.compare(parsed.data.password, user.password);
+    // TEMPORAL: Try bcrypt first, then plaintext (for migration)
+    let validPassword = false;
+    if (user.password.startsWith('$2b$')) {
+      validPassword = await bcrypt.compare(parsed.data.password, user.password);
+    } else {
+      // Plaintext comparison (old passwords)
+      validPassword = user.password === parsed.data.password;
+    }
+    
     if (!validPassword) {
       return res.status(401).json({ error: "Email o contraseña incorrectos" });
+    }
+    
+    // Auto-hash password on successful login (migration)
+    if (!user.password.startsWith('$2b$')) {
+      const hashedPassword = await bcrypt.hash(user.password, 10);
+      await db.updateUser(user.id, { password: user.password }); // This will hash it
     }
     
     if (!user.activo) return res.status(403).json({ error: "Su cuenta está desactivada. Contacte al administrador" });
