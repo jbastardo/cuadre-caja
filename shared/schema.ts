@@ -308,11 +308,11 @@ export const createCuadreSchema = z.object({
 
   // Payment methods verified (in Bs)
   metodos: z.array(z.object({
-    metodoId: z.number(),
+    metodoId: z.coerce.number(),
     metodoNombre: z.string(),
-    montoPOS_USD: z.number(),
-    montoPOS_Bs: z.number(),
-    montoReal: z.number(),
+    montoPOS_USD: z.coerce.number(),
+    montoPOS_Bs: z.coerce.number(),
+    montoReal: z.coerce.number(),
     observacion: z.string().optional(),
   })),
 

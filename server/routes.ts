@@ -373,9 +373,28 @@ router.get("/api/cuadres/:id", async (req: Request, res: Response) => {
 });
 
 router.post("/api/cuadres", async (req: Request, res: Response) => {
+  console.log("=== POST /api/cuadres ===");
+  console.log("Headers:", JSON.stringify(req.headers));
+  console.log("Body (raw):", JSON.stringify(req.body, null, 2));
+  console.log("Body type check:", {
+    metodos: Array.isArray(req.body.metodos) ? `Array(${req.body.metodos.length})` : typeof req.body.metodos,
+    metodosSample: req.body.metodos?.[0] ? JSON.stringify(req.body.metodos[0]) : "N/A",
+    montoRealType: req.body.metodos?.[0]?.montoReal ? typeof req.body.metodos[0].montoReal : "N/A",
+  });
+  
   try {
     const parsed = createCuadreSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: "Datos inválidos" });
+    if (!parsed.success) {
+      console.error("Validation error details:", parsed.error.issues);
+      console.error("Problematic fields:", parsed.error.issues.map(i => ({
+        path: i.path,
+        expected: i.expected,
+        received: i.received,
+        code: i.code,
+        message: i.message
+      })));
+      return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
+    }
 
     const existing = await db.getCuadreBySessionId(parsed.data.sessionId, "fiscal");
     if (existing) return res.status(409).json({ error: "Ya existe un cuadre fiscal para esta sesión", cuadreId: existing.id });
@@ -391,8 +410,8 @@ router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
   try {
     const parsed = createCuadreSchema.safeParse(req.body);
     if (!parsed.success) {
-      console.error("Validation error:", parsed.error);
-      return res.status(400).json({ error: "Datos inválidos", details: parsed.error.message });
+      console.error("Validation error details:", parsed.error.issues);
+      return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
     }
 
     // Preserve observacionesNF from existing cuadre if not sent
