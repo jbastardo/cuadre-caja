@@ -140,8 +140,9 @@ export async function getUsers(): Promise<UserPublic[]> {
 
 export async function getUserByEmail(email: string): Promise<User | null> {
   const rows = await getSheetData("Usuarios");
+  const normalizedTarget = email.trim().toLowerCase();
   for (const row of rows.slice(1)) {
-    if (row[2]?.toLowerCase() === email.toLowerCase()) {
+    if (row[2]?.trim().toLowerCase() === normalizedTarget) {
       return rowToUser(row);
     }
   }

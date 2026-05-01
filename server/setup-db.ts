@@ -55,23 +55,38 @@ async function setup() {
     try {
       const sheetUsers = await sheets.getUsers();
       const dbUsers = await db.getUsers();
-      const existingEmails = new Set(dbUsers.map(u => u.email));
+      const existingEmails = new Set(dbUsers.map(u => u.email.trim().toLowerCase()));
       let migrated = 0;
 
+      console.log(`    Sheet users: ${sheetUsers.length}, DB users: ${dbUsers.size ?? dbUsers.length}`);
+
       for (const u of sheetUsers) {
-        if (!existingEmails.has(u.email)) {
-          const fullUser = await sheets.getUserByEmail(u.email);
+        const normalizedEmail = u.email.trim().toLowerCase();
+        if (!normalizedEmail) {
+          console.log(`    ⚠ Skipping user with empty email: ${u.nombre}`);
+          continue;
+        }
+        if (existingEmails.has(normalizedEmail)) {
+          console.log(`    ~ Already exists: ${u.email}`);
+          continue;
+        }
+        try {
+          const fullUser = await sheets.getUserByEmail(u.email.trim());
           if (fullUser) {
             await db.createUser({
               nombre: fullUser.nombre,
-              email: fullUser.email,
+              email: fullUser.email.trim(),
               password: fullUser.password,
               rol: fullUser.rol,
               activo: fullUser.activo,
             });
             migrated++;
-            console.log(`    ✓ ${u.nombre}`);
+            console.log(`    ✓ ${u.nombre} (${u.email})`);
+          } else {
+            console.log(`    ✗ getUserByEmail returned null for: ${u.email}`);
           }
+        } catch (userErr: any) {
+          console.log(`    ✗ Failed to migrate user ${u.email}: ${userErr?.message || userErr}`);
         }
       }
       console.log(`  → ${migrated} users migrated\n`);
@@ -163,7 +178,7 @@ async function setup() {
           if (migrated % 10 === 0) console.log(`    ... ${migrated} cuadres`);
         } catch (err: any) {
           errors++;
-          if (errors <= 3) console.log(`    ✗ ${c.id}: ${err?.message || err}`);
+          console.log(`    ✗ ${c.id}: ${err?.message || err}`);
         }
       }
       console.log(`  → ${migrated} cuadres migrated, ${errors} errors\n`);
