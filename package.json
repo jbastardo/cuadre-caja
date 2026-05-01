@@ -7,9 +7,9 @@
     "dev": "tsx server/index.ts",
     "setup-db": "tsx server/setup-db.ts",
     "migrate": "tsx server/migrate.ts",
-    "dev:local": "npm run build && cross-env NODE_ENV=production tsx server/index.ts",
-    "build": "vite build",
-    "start": "tsx server/index.ts"
+    "build:server": "esbuild server/**/*.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build": "vite build && npm run build:server",
+    "start": "node dist/server/index.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
