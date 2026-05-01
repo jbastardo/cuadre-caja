@@ -46,6 +46,23 @@ export async function closePool() {
   await pool.end();
 }
 
+// TEMPORAL: Hash existing plaintext passwords (remove after use)
+export async function hashExistingPasswords(): Promise<number> {
+  const users = await pool.query("SELECT id, password FROM usuarios");
+  let updated = 0;
+  
+  for (const row of users.rows) {
+    // Check if already hashed (bcrypt hashes start with $2b$)
+    if (!row.password.startsWith('$2b$')) {
+      const hashed = await bcrypt.hash(row.password, SALT_ROUNDS);
+      await pool.query("UPDATE usuarios SET password = $1 WHERE id = $2", [hashed, row.id]);
+      updated++;
+    }
+  }
+  
+  return updated;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function rowToUser(row: any): User {
