@@ -56,7 +56,7 @@ function getSheets() {
   return google.sheets({ version: "v4", auth: getAuth() });
 }
 
-async function getSheetData(sheetName: string): Promise<string[][]> {
+export async function getSheetData(sheetName: string): Promise<string[][]> {
   const sheets = getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,

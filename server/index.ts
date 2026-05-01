@@ -3,7 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import { router } from "./routes.js";
 import { setupVite, serveStatic } from "./vite.js";
-import * as sheets from "./sheets.js";
+import * as db from "./db.js";
 
 const app = express();
 
@@ -50,12 +50,12 @@ async function start() {
     await setupVite(app);
   }
 
-  // Ensure sheet headers are up-to-date
+  // Ensure DB schema is up-to-date
   try {
-    const result = await sheets.initializeSheets();
-    console.log("Sheets init:", result.initialized);
+    const result = await db.initializeDb();
+    console.log("DB init:", result.initialized);
   } catch (e: any) {
-    console.warn("Sheets init warning:", e?.message || e);
+    console.warn("DB init warning:", e?.message || e);
   }
 
   app.listen(PORT, "0.0.0.0", () => {

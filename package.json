@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server/index.ts",
+    "setup-db": "tsx server/setup-db.ts",
+    "migrate": "tsx server/migrate.ts",
     "dev:local": "npm run build && cross-env NODE_ENV=production tsx server/index.ts",
     "build": "vite build",
-    "start": "NODE_ENV=production tsx server/index.ts"
+    "start": "tsx server/index.ts",
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -34,6 +36,7 @@
     "express": "^4.21.1",
     "googleapis": "^144.0.0",
     "helmet": "^8.1.0",
+    "pg": "^8.13.1",
     "lucide-react": "^0.460.0",
     "postcss": "^8.4.49",
     "react": "^18.3.1",

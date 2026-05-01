@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import * as odoo from "./odoo.js";
-import * as sheets from "./sheets.js";
+import * as db from "./db.js";
 import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
 import crypto from "crypto";
 
@@ -64,9 +64,9 @@ router.get("/api/cache/stats", (_req: Request, res: Response) => {
   res.json({ cacheStats: odoo.getCacheStats() });
 });
 
-router.post("/api/sheets/init", async (_req: Request, res: Response) => {
+router.post("/api/db/init", async (_req: Request, res: Response) => {
   try {
-    const result = await sheets.initializeSheets();
+    const result = await db.initializeDb();
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
@@ -79,7 +79,7 @@ router.post("/api/auth/login", async (req: Request, res: Response) => {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Datos requeridos" });
 
-    const user = await sheets.getUserByEmail(parsed.data.email);
+    const user = await db.getUserByEmail(parsed.data.email);
     if (!user || user.password !== parsed.data.password) {
       return res.status(401).json({ error: "Credenciales inválidas" });
     }
@@ -102,11 +102,11 @@ router.post("/api/auth/change-password", async (req: Request, res: Response) => 
     if (passwordNueva.length < 4) {
       return res.status(400).json({ error: "La contraseña nueva debe tener al menos 4 caracteres" });
     }
-    const user = await sheets.getUserByEmail(email);
+    const user = await db.getUserByEmail(email);
     if (!user || user.password !== passwordActual) {
       return res.status(401).json({ error: "Contraseña actual incorrecta" });
     }
-    await sheets.updateUser(user.id, { password: passwordNueva });
+    await db.updateUser(user.id, { password: passwordNueva });
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
@@ -130,7 +130,7 @@ router.get("/api/odoo/sessions", async (req: Request, res: Response) => {
     const date = query(req, "date") || new Date().toISOString().split("T")[0];
     const [sessions, cuadres] = await Promise.all([
       odoo.getSessions(date),
-      sheets.getCuadres({ fecha: date })
+      db.getCuadres({ fecha: date })
     ]);
     
     const cuadreMap = new Map<number, any>();
@@ -221,7 +221,7 @@ router.get("/api/cuadres", async (req: Request, res: Response) => {
       estado: query(req, "estado"),
       cerrado: query(req, "cerrado")
     };
-    const data = await sheets.getCuadres(filters);
+    const data = await db.getCuadres(filters);
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: "Error al obtener cuadres" });
@@ -231,7 +231,7 @@ router.get("/api/cuadres", async (req: Request, res: Response) => {
 router.get("/api/cuadres/:id", async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
-    const cuadre = await sheets.getCuadreById(id);
+    const cuadre = await db.getCuadreById(id);
     if (!cuadre) return res.status(404).json({ error: "Cuadre no encontrado" });
 
     // Get serial machine from Odoo session
@@ -272,10 +272,10 @@ router.post("/api/cuadres", async (req: Request, res: Response) => {
     const parsed = createCuadreSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Datos inválidos" });
 
-    const existing = await sheets.getCuadreBySessionId(parsed.data.sessionId, "fiscal");
+    const existing = await db.getCuadreBySessionId(parsed.data.sessionId, "fiscal");
     if (existing) return res.status(409).json({ error: "Ya existe un cuadre fiscal para esta sesión", cuadreId: existing.id });
 
-    const newCuadre = await sheets.createCuadre(parsed.data);
+    const newCuadre = await db.createCuadre(parsed.data);
     res.status(201).json(newCuadre);
   } catch (err) {
     res.status(500).json({ error: "Error al crear cuadre" });
@@ -291,13 +291,13 @@ router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
     }
 
     // Preserve observacionesNF from existing cuadre if not sent
-    const existing = await sheets.getCuadreById(param(req, "id"));
+    const existing = await db.getCuadreById(param(req, "id"));
     if (!existing) return res.status(404).json({ error: "Cuadre no encontrado" });
     const data = { ...parsed.data, observacionesNF: existing.observacionesNF || "", tipo: existing.tipo || "fiscal" };
 
     console.log("Saving cuadre - observaciones:", data.observaciones?.substring(0, 30), "observacionesNF:", data.observacionesNF?.substring(0, 30), "notasCreditoZ:", data.notasCreditoZ, "primeraNCZ:", data.primeraNCZ, "ultimaNCZ:", data.ultimaNCZ);
 
-    const updated = await sheets.updateCuadre(param(req, "id"), data);
+    const updated = await db.updateCuadre(param(req, "id"), data);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err: any) {
@@ -308,7 +308,7 @@ router.put("/api/cuadres/:id", async (req: Request, res: Response) => {
 
 router.delete("/api/cuadres/:id", async (req: Request, res: Response) => {
   try {
-    const deleted = await sheets.deleteCuadre(param(req, "id"));
+    const deleted = await db.deleteCuadre(param(req, "id"));
     if (!deleted) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json({ success: true });
   } catch (err) {
@@ -324,7 +324,7 @@ router.patch("/api/cuadres/:id/estado", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Estado inválido" });
     }
     console.log(`[PATCH /cuadres/:id/estado] id=${id} estado=${estado}`);
-    const updated = await sheets.updateCuadreEstado(id, estado);
+    const updated = await db.updateCuadreEstado(id, estado);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err: any) {
@@ -337,7 +337,7 @@ router.post("/api/cuadres/:id/recalculate", async (req: Request, res: Response) 
   try {
     const id = param(req, "id");
     console.log(`[POST /cuadres/:id/recalculate] id=${id}`);
-    const updated = await sheets.recalculateCuadreEstado(id);
+    const updated = await db.recalculateCuadreEstado(id);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err: any) {
@@ -355,7 +355,7 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
     console.log("[NF POST] sessionId:", sessionId, "metodos:", metodos?.length, "observacionesNF:", observacionesNF, "ajustes:", ajustesManuales?.length);
 
     // Check if NF cuadre already exists for this session
-    const existing = await sheets.getCuadreBySessionId(sessionId, "nf");
+    const existing = await db.getCuadreBySessionId(sessionId, "nf");
     if (existing) {
       // Update existing NF cuadre
       console.log("[NF POST] Updating existing NF cuadre:", existing.id);
@@ -373,7 +373,7 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
         ajustesManuales: ajustesManuales || [],
         deducciones: [],
       } as any;
-      const updated = await sheets.updateCuadre(existing.id, merged);
+      const updated = await db.updateCuadre(existing.id, merged);
       return res.json(updated);
     }
 
@@ -383,7 +383,7 @@ router.post("/api/cuadres/nf/:sessionId", async (req: Request, res: Response) =>
 
     console.log("[NF POST] Creating new NF cuadre, session:", session);
 
-    const newCuadre = await sheets.createCuadre({
+    const newCuadre = await db.createCuadre({
       sessionId,
       sessionName: session?.name || "",
       fecha,
@@ -439,7 +439,7 @@ router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
 
     console.log("[NF PUT] id:", id, "metodos:", metodos?.length, "ajustes:", ajustesManuales?.length);
 
-    const existing = await sheets.getCuadreById(id);
+    const existing = await db.getCuadreById(id);
     if (!existing) return res.status(404).json({ error: "Cuadre no encontrado" });
 
     const merged = {
@@ -484,7 +484,7 @@ router.put("/api/cuadres/nf/:id", async (req: Request, res: Response) => {
       tipo: "nf" as const,
     } as any;
 
-    const updated = await sheets.updateCuadre(id, merged);
+    const updated = await db.updateCuadre(id, merged);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err: any) {
@@ -497,7 +497,7 @@ router.post("/api/cuadres/:id/close", async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
     const { cerradoPor } = req.body;
-    const closed = await sheets.closeCuadre(id, cerradoPor);
+    const closed = await db.closeCuadre(id, cerradoPor);
     if (!closed) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(closed);
   } catch (err: any) {
@@ -507,7 +507,7 @@ router.post("/api/cuadres/:id/close", async (req: Request, res: Response) => {
 
 router.post("/api/cuadres/:id/reopen", async (req: Request, res: Response) => {
   try {
-    const reopened = await sheets.reopenCuadre(param(req, "id"));
+    const reopened = await db.reopenCuadre(param(req, "id"));
     if (!reopened) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(reopened);
   } catch (err) {
@@ -518,7 +518,7 @@ router.post("/api/cuadres/:id/reopen", async (req: Request, res: Response) => {
 // ---- Users ----
 router.get("/api/users", async (_req: Request, res: Response) => {
   try {
-    const users = await sheets.getUsers();
+    const users = await db.getUsers();
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: "Error al obtener usuarios" });
