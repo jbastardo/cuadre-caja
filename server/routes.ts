@@ -144,7 +144,22 @@ router.post("/api/admin/add-indexes", requireAuth, async (_req: Request, res: Re
 // TEMPORAL: Hash existing plaintext passwords (remove after use)
 router.post("/api/admin/hash-passwords", async (_req: Request, res: Response) => {
   try {
-    const updated = await db.hashExistingPasswords();
+    // Use pool directly from db module
+    const dbModule = await import('./db.js');
+    const pool = dbModule.pool;
+    
+    const users = await pool.query("SELECT id, password FROM usuarios");
+    let updated = 0;
+    
+    for (const row of users.rows) {
+      // Check if already hashed (bcrypt hashes start with $2b$)
+      if (!row.password.startsWith('$2b$')) {
+        const hashed = await bcrypt.hash(row.password, 10);
+        await pool.query("UPDATE usuarios SET password = $1 WHERE id = $2", [hashed, row.id]);
+        updated++;
+      }
+    }
+    
     res.json({ success: true, message: `Updated ${updated} passwords` });
   } catch (err: any) {
     console.error("Hash passwords error:", err);
