@@ -149,8 +149,18 @@ router.post("/api/auth/login", async (req: Request, res: Response) => {
     }
 
     const user = await db.getUserByEmail(parsed.data.email);
-    if (!user || user.password !== parsed.data.password) {
+    if (!user) return res.status(401).json({ error: "Email o contraseña incorrectos" });
+    
+    const passwordMatch = user.password.startsWith("$2")
+      ? await bcrypt.compare(parsed.data.password, user.password)
+      : user.password === parsed.data.password;
+    if (!passwordMatch) {
       return res.status(401).json({ error: "Email o contraseña incorrectos" });
+    }
+    
+    // Auto-upgrade plaintext passwords to bcrypt
+    if (!user.password.startsWith("$2")) {
+      await db.updateUser(user.id, { password: parsed.data.password });
     }
     
     if (!user.activo) return res.status(403).json({ error: "Su cuenta está desactivada. Contacte al administrador" });
@@ -174,7 +184,11 @@ router.post("/api/auth/change-password", async (req: Request, res: Response) => 
       return res.status(400).json({ error: "La contraseña nueva debe tener al menos 4 caracteres" });
     }
     const user = await db.getUserByEmail(email);
-    if (!user || user.password !== passwordActual) {
+    if (!user) return res.status(401).json({ error: "Contraseña actual incorrecta" });
+    const currentMatch = user.password.startsWith("$2")
+      ? await bcrypt.compare(passwordActual, user.password)
+      : user.password === passwordActual;
+    if (!currentMatch) {
       return res.status(401).json({ error: "Contraseña actual incorrecta" });
     }
     await db.updateUser(user.id, { password: passwordNueva });
