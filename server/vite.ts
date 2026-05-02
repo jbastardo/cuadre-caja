@@ -2,11 +2,11 @@ import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createServer as createViteServer } from "vite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function setupVite(app: Express) {
+  const { createServer: createViteServer } = await import("vite");
   const clientPath = path.resolve(__dirname, "../client");
   console.log("Vite client path:", clientPath);
   console.log("index.html exists:", fs.existsSync(path.join(clientPath, "index.html")));
