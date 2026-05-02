@@ -6,14 +6,14 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# Debug: verify Node.js works and list files
-RUN node -e "console.log('NODE_VERSION:', process.version)" && \
-    ls -la dist/ && \
-    node -e "require('express'); console.log('express OK')" && \
+# Verify all critical modules load at build time
+RUN node -e "require('express'); console.log('express OK')" && \
     node -e "require('bcryptjs'); console.log('bcryptjs OK')" && \
     node -e "require('pg'); console.log('pg OK')" && \
-    node -e "require('dotenv/config'); console.log('dotenv OK')" && \
-    node -e "require('helmet'); console.log('helmet OK')"
+    node -e "require('googleapis'); console.log('googleapis OK')" && \
+    node -e "require('xmlrpc'); console.log('xmlrpc OK')" && \
+    node -e "require('helmet'); console.log('helmet OK')" && \
+    node -e "require('zod'); console.log('zod OK')"
 
 EXPOSE 8080
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "echo '=== Starting Node.js ===' && node --trace-uncaught dist/index.js 2>&1"]
