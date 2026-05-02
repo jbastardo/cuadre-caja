@@ -35,32 +35,38 @@ function query(req: Request, name: string): string | undefined {
 export const router = Router();
 
 // ---- Health Check ----
-router.get("/api/health", (_req: Request, res: Response) => {
-  const hasSheetId = !!process.env.CUADRECAJA_SPREADSHEET_ID;
-  const hasOdoo = !!process.env.ODOO_URL && !!process.env.ODOO_USERNAME;
+router.get("/api/health", async (_req: Request, res: Response) => {
+  const dbUrl = !!process.env.DATABASE_URL;
+  const odooUrl = process.env.ODOO_URL || "not set";
+  const odooUser = process.env.ODOO_USERNAME || "not set";
+  const odooPass = !!process.env.ODOO_PASSWORD;
+  const nodeEnv = process.env.NODE_ENV || "not set";
 
-  let googleJsonValid = false;
-  let parseError = "none";
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
+  let dbOk = false;
+  let dbError = "";
   try {
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      googleJsonValid = !!parsed.client_email && !!parsed.private_key;
-    }
-  } catch (e: any) {
-    parseError = e.message;
+    const client = await db.pool.connect();
+    const result = await client.query("SELECT COUNT(*) as cnt FROM usuarios");
+    dbOk = true;
+    client.release();
+    const userCount = result.rows[0]?.cnt || 0;
+    return res.json({
+      status: "running",
+      nodeEnv,
+      db: { connected: dbOk, users: userCount },
+      odoo: { url: odooUrl, user: odooUser, hasPassword: odooPass },
+      env: { DATABASE_URL: dbUrl }
+    });
+  } catch (err: any) {
+    dbError = err.message;
+    return res.json({
+      status: "running",
+      nodeEnv,
+      db: { connected: false, error: dbError },
+      odoo: { url: odooUrl, user: odooUser, hasPassword: odooPass },
+      env: { DATABASE_URL: dbUrl }
+    });
   }
-
-  res.json({
-    status: "running",
-    env: {
-      sheets: hasSheetId,
-      googleAuth: googleJsonValid,
-      odoo: hasOdoo
-    },
-    parseError,
-    cacheStats: odoo.getCacheStats(),
-  });
 });
 
 // ---- Cache Management (Debug) ----
