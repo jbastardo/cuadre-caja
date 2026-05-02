@@ -11,6 +11,22 @@ import UserManagement from "@/pages/UserManagement";
 import Cuentas from "@/pages/Cuentas";
 import { Toaster } from "@/components/ui/toaster";
 
+// Global fetch interceptor: add auth headers to all /api requests
+const originalFetch = window.fetch;
+window.fetch = function(input: RequestInfo | URL, init?: RequestInit) {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+  if (url.startsWith('/api')) {
+    const user = JSON.parse(localStorage.getItem('cuadre_user') || 'null');
+    const headers: Record<string, string> = { ...(init?.headers as Record<string, string> || {}) };
+    if (user?.email) {
+      headers['x-user-email'] = user.email;
+      headers['authorization'] = `Bearer ${user.email}`;
+    }
+    init = { ...init, headers };
+  }
+  return originalFetch(input, init);
+};
+
 function AppRoutes() {
   const { user, isLoading } = useAuth();
 

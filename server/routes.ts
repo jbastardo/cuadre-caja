@@ -105,12 +105,8 @@ function sanitizeBody(body: any): any {
 
 // ---- Auth Middleware ----
 function requireAuth(req: Request, res: Response, next: Function) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: "No autorizado" });
-  }
-  // Simple token check - in production use JWT
-  const userEmail = req.headers['x-user-email'] as string;
+  const userEmail = req.headers['x-user-email'] as string
+    || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '');
   if (!userEmail) {
     return res.status(401).json({ error: "No autorizado" });
   }
