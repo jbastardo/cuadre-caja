@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from "pg";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import type {
   User,
   UserPublic,
