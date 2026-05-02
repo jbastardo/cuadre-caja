@@ -7,4 +7,4 @@ COPY . .
 RUN npm run build
 
 EXPOSE 8080
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "echo '=== CONTAINER START ===' && node -e \"console.log('Node OK, version:', process.version)\" && echo '=== Starting app ===' && node dist/index.js 2>&1"]
