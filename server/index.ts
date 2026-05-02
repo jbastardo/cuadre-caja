@@ -38,10 +38,15 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 8080;
 
 async function start() {
-  // Register API routes FIRST
+  // Start listening FIRST (for Railway health checks)
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  // Register API routes
   app.use(router);
   
   if (process.env.NODE_ENV === "production") {
@@ -50,16 +55,11 @@ async function start() {
     await setupVite(app);
   }
 
-  // Ensure DB schema is up-to-date
-  try {
-    const result = await db.initializeDb();
+  // Ensure DB schema is up-to-date (async, non-blocking)
+  db.initializeDb().then(result => {
     console.log("DB init:", result.initialized);
-  } catch (e: any) {
+  }).catch(e => {
     console.warn("DB init warning:", e?.message || e);
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
