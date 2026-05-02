@@ -3,4 +3,7 @@ dist
 .git
 .env
 *.md
-server/import-from-files.ts
+server/sheets.ts
+server/setup-db.ts
+server/start.mjs
+server/add-indexes.sql

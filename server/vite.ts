@@ -8,9 +8,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export async function setupVite(app: Express) {
   const { createServer: createViteServer } = await import("vite");
   const clientPath = path.resolve(__dirname, "../client");
-  console.log("Vite client path:", clientPath);
-  console.log("index.html exists:", fs.existsSync(path.join(clientPath, "index.html")));
-  
   const vite = await createViteServer({
     root: clientPath,
     server: { 
@@ -19,13 +16,7 @@ export async function setupVite(app: Express) {
     },
     appType: "spa",
   });
-  
-  console.log("Vite server created");
-  
-  // Register vite middleware - it will handle non-API routes
   app.use(vite.middlewares);
-  
-  console.log("Vite middleware registered");
 }
 
 export function serveStatic(app: Express) {
@@ -36,6 +27,6 @@ export function serveStatic(app: Express) {
       res.sendFile(path.join(distPath, "index.html"));
     });
   } else {
-    console.warn("Warning: dist/public not found. Run 'npm run build' first.");
+    console.error("dist/public not found - run npm run build first");
   }
 }
