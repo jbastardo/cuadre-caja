@@ -6,8 +6,5 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# Write a simple test script
-RUN echo 'console.log("=== NODE STARTED ==="); console.log("PORT:", process.env.PORT); process.env.DATABASE_URL ? console.log("DB: set") : console.log("DB: NOT SET");' > /app/test.js
-
 EXPOSE 8080
-CMD ["sh", "-c", "echo CONTAINER_START && node /app/test.js && node dist/index.js"]
+CMD ["npm", "start"]
