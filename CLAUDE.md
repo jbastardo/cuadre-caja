@@ -35,4 +35,20 @@ Follow all instructions and conventions found in these files. They define the pr
 
 ## Output Persistence
 
-IMPORTANT: Before finishing, you MUST write your complete final response to `/tmp/claude_code_output.md` using the Write tool. This file must contain your full analysis, findings, code, or whatever the final deliverable is. This is a hard requirement — do not skip it.
+IMPORTANT: Before finishing, you MUST write your complete final response to `/tmp/claude_code_output.md` using the Write tool. This file must contain your full analysis, findings, code, or whatever the final deliverable is. This is a hard requirement — do not skip this step.
+
+---
+
+## Session History
+
+### 2026-05-01 - Fix 502 error on Railway
+
+**Problem**: Railway deployment returned 502. Node.js in Docker produced ZERO console output.
+
+**Root Cause**: `vite` was imported statically in `server/vite.ts`. With esbuild `--bundle --packages=external`, this became a top-level ESM import in `dist/index.js`. Vite's `esbuild` native binary crashes in Alpine Docker during module resolution, which kills the entire app before any user code runs (ESM imports are hoisted).
+
+**Fix**:
+1. `server/vite.ts`: Changed `import { createServer } from "vite"` to `await import("vite")` (dynamic/lazy). In production, vite is never loaded.
+2. `Dockerfile`: Switched from `node dist/index.js` to `npx tsx server/index.ts` — runs TypeScript directly, eliminates bundling issues. Only builds frontend. Added HEALTHCHECK.
+3. `package.json`: Added `build:client` script, updated `build:server` to single entry point.
+4. `.dockerignore`: Added `dist/` to prevent stale artifacts.
