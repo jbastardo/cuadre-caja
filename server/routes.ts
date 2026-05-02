@@ -2,7 +2,6 @@ import { Router, type Request, type Response } from "express";
 import * as odoo from "./odoo.js";
 import * as db from "./db.js";
 import * as sheets from "./sheets.js";
-import bcrypt from "bcrypt";
 import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
 import crypto from "crypto";
 
@@ -141,32 +140,6 @@ router.post("/api/admin/add-indexes", requireAuth, async (_req: Request, res: Re
   }
 });
 
-// TEMPORAL: Hash existing plaintext passwords (remove after use)
-router.post("/api/admin/hash-passwords", async (_req: Request, res: Response) => {
-  try {
-    // Use pool directly from db module
-    const dbModule = await import('./db.js');
-    const pool = dbModule.pool;
-    
-    const users = await pool.query("SELECT id, password FROM usuarios");
-    let updated = 0;
-    
-    for (const row of users.rows) {
-      // Check if already hashed (bcrypt hashes start with $2b$)
-      if (!row.password.startsWith('$2b$')) {
-        const hashed = await bcrypt.hash(row.password, 10);
-        await pool.query("UPDATE usuarios SET password = $1 WHERE id = $2", [hashed, row.id]);
-        updated++;
-      }
-    }
-    
-    res.json({ success: true, message: `Updated ${updated} passwords` });
-  } catch (err: any) {
-    console.error("Hash passwords error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ---- Auth ----
 router.post("/api/auth/login", async (req: Request, res: Response) => {
   try {
@@ -177,27 +150,8 @@ router.post("/api/auth/login", async (req: Request, res: Response) => {
     }
 
     const user = await db.getUserByEmail(parsed.data.email);
-    if (!user) {
+    if (!user || user.password !== parsed.data.password) {
       return res.status(401).json({ error: "Email o contraseña incorrectos" });
-    }
-    
-    // TEMPORAL: Try bcrypt first, then plaintext (for migration)
-    let validPassword = false;
-    if (user.password.startsWith('$2b$')) {
-      validPassword = await bcrypt.compare(parsed.data.password, user.password);
-    } else {
-      // Plaintext comparison (old passwords)
-      validPassword = user.password === parsed.data.password;
-    }
-    
-    if (!validPassword) {
-      return res.status(401).json({ error: "Email o contraseña incorrectos" });
-    }
-    
-    // Auto-hash password on successful login (migration)
-    if (!user.password.startsWith('$2b$')) {
-      const hashedPassword = await bcrypt.hash(user.password, 10);
-      await db.updateUser(user.id, { password: user.password }); // This will hash it
     }
     
     if (!user.activo) return res.status(403).json({ error: "Su cuenta está desactivada. Contacte al administrador" });
