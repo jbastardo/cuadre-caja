@@ -4,6 +4,6 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-RUN npm run build && npm prune --production
+RUN npm run build
 EXPOSE 8080
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "echo '=== STARTING NODE ===' && node dist/index.js 2>&1"]
