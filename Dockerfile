@@ -1,24 +1,27 @@
 FROM node:20-alpine
 
+# Install curl for Railway health checks
+RUN apk add --no-cache curl
+
 WORKDIR /app
 
-# Copy package files
+# Copy package files first for better caching
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies for build)
+# Install dependencies (including dev for build)
 RUN npm install --include=dev
 
 # Copy source code
 COPY . .
 
-# Build the project (vite + esbuild)
+# Build the project
 RUN npm run build
 
 # Verify build output exists
 RUN ls -la dist/ || (echo "BUILD FAILED: dist/ not found" && exit 1)
 
-# Expose the port
-EXPOSE 3000
+# Expose port (Railway sets PORT env var)
+EXPOSE 8080
 
-# Start the server (esbuild outputs to dist/index.js)
+# Start the application
 CMD ["node", "dist/index.js"]
