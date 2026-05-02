@@ -3,6 +3,7 @@ import * as odoo from "./odoo.js";
 import * as db from "./db.js";
 import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 // Enable trust proxy for Railway
 const app = Router() as any;
