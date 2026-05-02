@@ -1,27 +1,18 @@
 FROM node:20-alpine
 
-# Install curl for Railway health checks
-RUN apk add --no-cache curl
-
 WORKDIR /app
 
-# Copy package files first for better caching
+# Copy package files
 COPY package*.json ./
 
-# Install dependencies (including dev for build)
+# Install dependencies
 RUN npm install --include=dev
 
-# Copy source code
+# Copy source
 COPY . .
 
-# Build the project
+# Build
 RUN npm run build
 
-# Verify build output exists
-RUN ls -la dist/ || (echo "BUILD FAILED: dist/ not found" && exit 1)
-
-# Expose port (Railway sets PORT env var)
-EXPOSE 8080
-
-# Start the application
+# Start
 CMD ["node", "dist/index.js"]
