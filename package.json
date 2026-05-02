@@ -36,7 +36,6 @@
     "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",
     "express": "^4.21.1",
-    "express-rate-limit": "^8.4.1",
     "googleapis": "^144.0.0",
     "helmet": "^8.1.0",
     "lucide-react": "^0.460.0",
