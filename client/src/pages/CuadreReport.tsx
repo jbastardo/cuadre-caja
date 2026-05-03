@@ -127,8 +127,8 @@ export default function CuadreReport() {
             </div>
             <div className="font-bold border-t mt-1 pt-1 flex justify-between">
               <span>TOTAL VENTAS POS:</span>
-              <span>{formatBs(cuadre.totalMetodosPOS || 
-                (cuadre.totalDirectoPOS || cuadre.totalMetodosReal) + cuadre.totalRetencionesPOS + cuadre.totalCreditoPOS + cuadre.totalSaldoFavorPOS + cuadre.totalDeducciones)}</span>
+              <span>{formatBs(cuadre.totalMetodosPOS ?? 
+                (cuadre.totalDirectoPOS ?? cuadre.totalMetodosReal ?? 0) + (cuadre.totalRetencionesPOS ?? 0) + (cuadre.totalCreditoPOS ?? 0) + (cuadre.totalSaldoFavorPOS ?? 0) + (cuadre.totalDeducciones ?? 0))}</span>
             </div>
           </div>
 
@@ -147,10 +147,10 @@ export default function CuadreReport() {
             </div>
             <div className="font-bold border-t mt-1 pt-1 flex justify-between">
               <span>TOTAL VERIFICADO:</span>
-              <span>{formatBs(cuadre.totalJustificadoReal || 
-                cuadre.totalMetodosReal + cuadre.totalRetencionesReal + cuadre.retencionesPorCobrar + 
-                cuadre.totalAbonosReal + cuadre.totalCxCPendiente + cuadre.totalSaldoFavorReal + 
-                cuadre.totalDeducciones + cuadre.totalAjustesManuales)}</span>
+              <span>{formatBs(cuadre.totalJustificadoReal ?? 
+                (cuadre.totalMetodosReal ?? 0) + (cuadre.totalRetencionesReal ?? 0) + (cuadre.retencionesPorCobrar ?? 0) + 
+                (cuadre.totalAbonosReal ?? 0) + (cuadre.totalCxCPendiente ?? 0) + (cuadre.totalSaldoFavorReal ?? 0) + 
+                (cuadre.totalDeducciones ?? 0) + (cuadre.totalAjustesManuales ?? 0))}</span>
             </div>
           </div>
         </div>
@@ -160,11 +160,11 @@ export default function CuadreReport() {
           <div className="text-lg font-bold">{formatBs(cuadre.ventaNetaZ)}</div>
           <div className="text-center mt-2">
             <div className="text-sm font-bold">Diferencia:</div>
-            <div className={`text-lg font-bold ${Math.abs(cuadre.diferencia) < 0.01 ? 'text-green-600' : cuadre.diferencia > 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatBs(cuadre.diferencia)}
+            <div className={`text-lg font-bold ${(cuadre.diferencia ?? 0) === 0 ? 'text-green-600' : (cuadre.diferencia ?? 0) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatBs(cuadre.diferencia ?? 0)}
             </div>
-            <div className={`text-xs font-bold mt-1 ${Math.abs(cuadre.diferencia) < 0.01 ? 'bg-green-100' : 'bg-red-100'} inline-block px-2 py-1 rounded`}>
-              {Math.abs(cuadre.diferencia) < 0.01 ? 'CUADRADO' : 'DESCUADRADO'}
+            <div className={`text-xs font-bold mt-1 ${Math.abs(cuadre.diferencia ?? 0) < 0.01 ? 'bg-green-100' : 'bg-red-100'} inline-block px-2 py-1 rounded`}>
+              {Math.abs(cuadre.diferencia ?? 0) < 0.01 ? 'CUADRADO' : 'DESCUADRADO'}
             </div>
           </div>
           {cuadre.difCambiaria > 0 && <div className="text-xs mt-2">Dif. Cambiaria: {formatBs(cuadre.difCambiaria)}</div>}

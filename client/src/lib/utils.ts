@@ -13,11 +13,13 @@ export function formatCurrency(amount: number, currency: "USD" | "VES" = "USD"):
 }
 
 export function formatBs(amount: number): string {
-  return `Bs ${new Intl.NumberFormat("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)}`;
+  const n = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+  return `Bs ${new Intl.NumberFormat("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
 }
 
 export function formatUSD(amount: number): string {
-  return `$ ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)}`;
+  const n = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+  return `$ ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
 }
 
 export function formatDate(dateStr: string): string {

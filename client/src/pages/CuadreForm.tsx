@@ -473,16 +473,16 @@ export default function CuadreForm() {
   const diferencia = Math.round((totalJustificado - ventaNetaZ) * 100) / 100;
 
   // Summary totals for the comprehensive view
-  const summaryPOS = Math.round((
+  // When viewing existing cuadre, use saved values (Odoo data may be unavailable for old sessions)
+  const computedSummaryPOS = Math.round((
     directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0)
     + totalRetencionesPOS_Bs
     + totalCreditoPOS_Bs
     + totalSaldoFavorPOS_Bs
     + totalDeliveryDifPOS_Bs
   ) * 100) / 100;
-  // Direct payments without delivery/dif (for accurate report)
-  const totalDirectoPOS = Math.round(directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0) * 100) / 100;
-  const summaryReal = Math.round((
+  const computedDirectoPOS = Math.round(directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0) * 100) / 100;
+  const computedSummaryReal = Math.round((
     totalDirectMetodosReal
     + retencionesReal
     + retencionesPorCobrar_Bs
@@ -493,6 +493,10 @@ export default function CuadreForm() {
     + totalDeducciones
     + totalAjustesManuales
   ) * 100) / 100;
+
+  const summaryPOS = !isNew && existingCuadre?.totalMetodosPOS ? existingCuadre.totalMetodosPOS : computedSummaryPOS;
+  const totalDirectoPOS = !isNew && existingCuadre?.totalDirectoPOS ? existingCuadre.totalDirectoPOS : computedDirectoPOS;
+  const summaryReal = !isNew && existingCuadre?.totalJustificadoReal ? existingCuadre.totalJustificadoReal : computedSummaryReal;
 
   const isLocked = existingCuadre?.cerradoPor && existingCuadre.estado !== "pendiente";
   const canClose = (user?.rol === "supervisor" || user?.rol === "admin") && !isLocked;

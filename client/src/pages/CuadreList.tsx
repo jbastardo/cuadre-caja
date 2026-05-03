@@ -218,6 +218,7 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                         {dayCuadres.slice(0, 4).map(c => {
                           const isNF = c.tipo === "nf";
                           const estadoShort = c.estado === "cuadrado" ? "✓" : c.estado === "descuadrado" ? "✗" : "△";
+                          const tipoLabel = isNF ? "NF" : "F";
                           return (
                             <div
                               key={c.id}
@@ -228,9 +229,8 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                                   c.estado === "descuadrado" ? "bg-red-100 text-red-800" :
                                                               "bg-amber-100 text-amber-800"}`}
                             >
-                              {isNF && <span className="font-bold text-[10px] bg-purple-300 text-purple-900 px-0.5 rounded">NF</span>}
                               <span className={`font-bold ${c.estado === "cuadrado" ? "text-green-600" : c.estado === "descuadrado" ? "text-red-600" : "text-amber-600"}`}>{estadoShort}</span>
-                              <span className="truncate">{c.caja}</span>
+                              <span className="truncate">{c.caja} {tipoLabel}</span>
                             </div>
                           );
                         })}
@@ -279,18 +279,15 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                     className="bg-white rounded-lg border px-4 py-3 flex items-center justify-between cursor-pointer hover:shadow-sm transition-shadow"
                     onClick={() => navigate(c.tipo === "nf" ? `/cuadre-nf?sessionId=${c.sessionId}` : `/cuadre/${c.id}`)}
                   >
-<div className="space-y-0.5">
+                  <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-sm">{c.sessionName}</span>
-                          <span className="text-xs text-muted-foreground bg-gray-100 px-1.5 py-0.5 rounded">{c.caja}</span>
-                          {c.tipo === "nf" && <span className="text-[10px] font-bold bg-purple-200 text-purple-900 px-1.5 py-0.5 rounded">NF</span>}
+                          <span className="font-semibold text-sm">{c.caja} {c.tipo === "nf" ? "NF" : "Fiscal"} ({getStatusLabel(c.estado)})</span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {c.fecha} · {c.cajero}{c.tipo === "nf" ? " · No Fiscal" : ` · Z: ${c.zNumero}`}
+                          {c.fecha} · {c.cajero}{c.tipo === "nf" ? "" : ` · Z: ${c.zNumero}`}
                           {c.cerradoPor && <span className="ml-2 text-gray-400">Cerrado por {c.cerradoPor}</span>}
                         </p>
                       </div>
-                    <Badge className={getStatusColor(c.estado)}>{getStatusLabel(c.estado)}</Badge>
                   </div>
                 ))
             )}
