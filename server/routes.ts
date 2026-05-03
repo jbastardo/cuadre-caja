@@ -5,23 +5,6 @@ import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSum
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 
-// Enable trust proxy for Railway
-const app = Router() as any;
-if (process.env.NODE_ENV === "production") {
-  // This will be set on the actual express app
-}
-
-// Pool will be initialized after module loads
-let pool: any = null;
-async function getPoolClient() {
-  if (!pool) {
-    pool = await db.getPool();
-  }
-  return pool;
-}
-
-// Rate limiting removed - will add after fixing trust proxy
-
 // Helpers para tipado y extracción de parámetros
 function param(req: Request, name: string): string {
   const v = req.params[name];
@@ -133,7 +116,7 @@ router.post("/api/admin/add-indexes", requireAuth, async (_req: Request, res: Re
     ];
     
     for (const sql of indexes) {
-      await pool.query(sql);
+      await db.pool.query(sql);
     }
     
     res.json({ success: true, message: "Indexes created" });
@@ -221,9 +204,10 @@ router.get("/api/odoo/sessions", requireAuth, async (req: Request, res: Response
       db.getCuadres({ fecha: date })
     ]);
     
+    const cuadreData = cuadres.data || cuadres;
     const cuadreMap = new Map<number, any>();
     const cuadreNFMap = new Map<number, any>();
-    for (const c of cuadres) {
+    for (const c of cuadreData) {
       if (c.tipo === "nf") {
         cuadreNFMap.set(c.sessionId, c);
       } else {
@@ -311,8 +295,8 @@ router.get("/api/cuadres", requireAuth, async (req: Request, res: Response) => {
     };
     const page = parseInt(query(req, "page") || "1");
     const limit = parseInt(query(req, "limit") || "50");
-    const data = await db.getCuadres(filters, page, limit);
-    res.json(data);
+    const result = await db.getCuadres(filters, page, limit);
+    res.json(result.data);
   } catch (err: any) {
     console.error("Error getting cuadres:", err);
     res.status(500).json({ error: "No se pudieron cargar los cuadres. Intente más tarde" });
@@ -667,7 +651,6 @@ router.get("/api/users", requireAuth, async (_req: Request, res: Response) => {
 });
 
 // ---- CxC/CxP ----
-const cuentasStore: Map<string, any> = new Map();
 const abonosStore: Map<string, any[]> = new Map();
 
 // =============================================================================
@@ -851,7 +834,7 @@ router.get("/api/debug/credit-sales/:id", requireAuth, async (req: Request, res:
 });
 
 // Debug endpoint: raw account.payment data for a specific reference
-router.get("/api/debug/pagos-ref", async (req: Request, res: Response) => {
+router.get("/api/debug/pagos-ref", requireAuth, async (req: Request, res: Response) => {
   try {
     const ref = query(req, "ref") || "";
     const date = query(req, "date") || "";

@@ -65,7 +65,8 @@ export default function CuadreNFReport() {
       // Find cuadre for this session
       const cRes = await fetch(`/api/cuadres?fecha=${date}`);
       if (!cRes.ok) return null;
-      const cuadres = await cRes.json();
+      const cData = await cRes.json();
+      const cuadres = Array.isArray(cData) ? cData : (cData.data || []);
       return cuadres.find((c: any) => c.sessionId === sessionId) || null;
     },
     enabled: !!sessionId,
