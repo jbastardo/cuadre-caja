@@ -472,48 +472,74 @@ export default function CuadreForm() {
   // Cuadre difference = totalJustificado - ventaNetaZ (comparing against Z, NOT Odoo)
   const diferencia = Math.round((totalJustificado - ventaNetaZ) * 100) / 100;
 
-  // Summary totals for the comprehensive view
-  // When viewing existing cuadre, use saved values (Odoo data may be unavailable for old sessions)
-  const computedSummaryPOS = Math.round((
-    directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0)
-    + totalRetencionesPOS_Bs
-    + totalCreditoPOS_Bs
-    + totalSaldoFavorPOS_Bs
-    + totalDeliveryDifPOS_Bs
-  ) * 100) / 100;
-  const computedDirectoPOS = Math.round(directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0) * 100) / 100;
-  const computedSummaryReal = Math.round((
-    totalDirectMetodosReal
-    + retencionesReal
-    + retencionesPorCobrar_Bs
-    + totalAbonosRecibidos_Bs
-    + totalCxCPendiente_Bs
-    + saldoFavorReal
-    + totalDeliveryDifPOS_Bs
-    + totalDeducciones
-    + totalAjustesManuales
-  ) * 100) / 100;
+  // ─── Totals: guarantee correctness for old cuadres ─────────────────────────
+  // For existing cuadres: compute from saved metodos/deducciones/ajustes only.
+  // Odoo data may be unavailable or changed for old sessions.
+  // For new cuadres: compute from live Odoo data.
+  const isExisting = !isNew && existingCuadre;
 
-  // For display: prefer saved values when viewing existing cuadre
-  const hasSaved = !isNew && existingCuadre?.totalMetodosPOS;
-  const summaryPOS = hasSaved ? existingCuadre.totalMetodosPOS : computedSummaryPOS;
-  const totalDirectoPOS = hasSaved && existingCuadre.totalDirectoPOS ? existingCuadre.totalDirectoPOS : computedDirectoPOS;
-  const summaryReal = hasSaved && existingCuadre.totalJustificadoReal ? existingCuadre.totalJustificadoReal : computedSummaryReal;
+  // Direct methods POS (Bs) - from saved metodos array
+  const displayDirectoPOS = directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0);
+  // All methods POS (Bs) - includes retenciones, crédito, saldos, delivery, etc.
+  const allMetodosPOS = metodos.reduce((s, m) => s + m.montoPOS_Bs, 0);
+  // All methods Real (Bs)
+  const allMetodosReal = metodos.reduce((s, m) => s + (m.montoReal || 0), 0);
+  // Delivery/dif POS
+  const deliveryDifPOS = deliveryDifMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0);
 
-  // Line item display values - use saved when available
-  const displayRetencionesPOS = hasSaved && existingCuadre.totalRetencionesPOS ? existingCuadre.totalRetencionesPOS : totalRetencionesPOS_Bs;
-  const displayCreditoPOS = hasSaved && existingCuadre.totalCreditoPOS ? existingCuadre.totalCreditoPOS : totalCreditoPOS_Bs;
-  const displaySaldoFavorPOS = hasSaved && existingCuadre.totalSaldoFavorPOS ? existingCuadre.totalSaldoFavorPOS : totalSaldoFavorPOS_Bs;
-  const displayRetencionesReal = hasSaved && existingCuadre.totalRetencionesReal ? existingCuadre.totalRetencionesReal : retencionesReal;
-  const displayRetencionesPorCobrar = hasSaved && existingCuadre.retencionesPorCobrar ? existingCuadre.retencionesPorCobrar : retencionesPorCobrar_Bs;
-  const displayAbonosReal = hasSaved && existingCuadre.totalAbonosReal ? existingCuadre.totalAbonosReal : totalAbonosRecibidos_Bs;
-  const displayCxCPendiente = hasSaved && existingCuadre.totalCxCPendiente ? existingCuadre.totalCxCPendiente : totalCxCPendiente_Bs;
-  const displaySaldoFavorReal = hasSaved && existingCuadre.totalSaldoFavorReal ? existingCuadre.totalSaldoFavorReal : saldoFavorReal;
-  const displayAjustesManuales = hasSaved && existingCuadre.totalAjustesManuales ? existingCuadre.totalAjustesManuales : totalAjustesManuales;
-  const displayDeducciones = hasSaved && existingCuadre.totalDeducciones ? existingCuadre.totalDeducciones : totalDeducciones;
-  const displayDirectoPOS = hasSaved && existingCuadre.totalDirectoPOS ? existingCuadre.totalDirectoPOS : totalDirectoPOS;
-  const displayTotalJustificado = hasSaved ? (existingCuadre.totalMetodosPOS ?? existingCuadre.totalJustificadoReal ?? totalJustificado) : totalJustificado;
-  const displayDiferencia = hasSaved && existingCuadre.diferencia !== undefined ? existingCuadre.diferencia : diferencia;
+  // Deducciones and ajustes from saved arrays
+  const deduccionesTotal = deducciones.reduce((s, d) => s + (d.monto || 0), 0);
+  const ajustesTotal = ajustes.reduce((s, a) => s + (a.monto || 0), 0);
+
+  // For existing cuadres: use saved special totals if available, else compute from metodos
+  const displayRetencionesPOS = isExisting
+    ? (existingCuadre.totalRetencionesPOS || 0)
+    : totalRetencionesPOS_Bs;
+  const displayCreditoPOS = isExisting
+    ? (existingCuadre.totalCreditoPOS || 0)
+    : totalCreditoPOS_Bs;
+  const displaySaldoFavorPOS = isExisting
+    ? (existingCuadre.totalSaldoFavorPOS || 0)
+    : totalSaldoFavorPOS_Bs;
+  const displayRetencionesReal = isExisting
+    ? (existingCuadre.totalRetencionesReal || 0)
+    : retencionesReal;
+  const displayRetencionesPorCobrar = isExisting
+    ? (existingCuadre.retencionesPorCobrar || 0)
+    : retencionesPorCobrar_Bs;
+  const displayAbonosReal = isExisting
+    ? (existingCuadre.totalAbonosReal || 0)
+    : totalAbonosRecibidos_Bs;
+  const displayCxCPendiente = isExisting
+    ? (existingCuadre.totalCxCPendiente || 0)
+    : totalCxCPendiente_Bs;
+  const displaySaldoFavorReal = isExisting
+    ? (existingCuadre.totalSaldoFavorReal || 0)
+    : saldoFavorReal;
+  const displayAjustesManuales = isExisting
+    ? (existingCuadre.totalAjustesManuales || ajustesTotal)
+    : ajustesTotal;
+  const displayDeducciones = isExisting
+    ? (existingCuadre.totalDeducciones || deduccionesTotal)
+    : deduccionesTotal;
+
+  // TOTAL POS: for existing cuadres, use saved total or compute from all metodos POS
+  const summaryPOS = isExisting
+    ? (existingCuadre.totalMetodosPOS || allMetodosPOS)
+    : Math.round((displayDirectoPOS + displayRetencionesPOS + displayCreditoPOS + displaySaldoFavorPOS + deliveryDifPOS) * 100) / 100;
+
+  // TOTAL VERIFICADO: for existing cuadres, use saved total or compute from all metodos Real + deducciones + ajustes
+  const summaryReal = isExisting
+    ? (existingCuadre.totalJustificadoReal || Math.round((allMetodosReal + displayDeducciones + displayAjustesManuales) * 100) / 100)
+    : Math.round((totalDirectMetodosReal + displayRetencionesReal + displayRetencionesPorCobrar + displayAbonosReal + displayCxCPendiente + displaySaldoFavorReal + deliveryDifPOS + displayDeducciones + displayAjustesManuales) * 100) / 100;
+
+  // Total Justificado and Diferencia for bottom section
+  const displayTotalJustificado = isExisting
+    ? (existingCuadre.totalMetodosPOS ?? summaryReal)
+    : totalJustificado;
+  const displayDiferencia = isExisting && existingCuadre.diferencia !== undefined
+    ? existingCuadre.diferencia
+    : diferencia;
 
   const isLocked = existingCuadre?.cerradoPor && existingCuadre.estado !== "pendiente";
   const canClose = (user?.rol === "supervisor" || user?.rol === "admin") && !isLocked;
@@ -550,21 +576,23 @@ export default function CuadreForm() {
         metodos,
         deducciones,
         ajustesManuales: ajustes,
-        totalRetencionesPOS: totalRetencionesPOS_Bs,
-        totalRetencionesReal: retencionesReal,
-        totalCreditoPOS: totalCreditoPOS_Bs,
-        totalAbonosReal: totalAbonosRecibidos_Bs,
-        totalCxCPendiente: totalCxCPendiente_Bs,
-        totalSaldoFavorPOS: totalSaldoFavorPOS_Bs,
-        retencionesPorCobrar: retencionesPorCobrar_Bs,
-        totalSaldoFavorReal: saldoFavorReal,
+        totalRetencionesPOS: isExisting ? displayRetencionesPOS : totalRetencionesPOS_Bs,
+        totalRetencionesReal: isExisting ? displayRetencionesReal : retencionesReal,
+        totalCreditoPOS: isExisting ? displayCreditoPOS : totalCreditoPOS_Bs,
+        totalAbonosReal: isExisting ? displayAbonosReal : totalAbonosRecibidos_Bs,
+        totalCxCPendiente: isExisting ? displayCxCPendiente : totalCxCPendiente_Bs,
+        totalSaldoFavorPOS: isExisting ? displaySaldoFavorPOS : totalSaldoFavorPOS_Bs,
+        retencionesPorCobrar: isExisting ? displayRetencionesPorCobrar : retencionesPorCobrar_Bs,
+        totalSaldoFavorReal: isExisting ? displaySaldoFavorReal : saldoFavorReal,
         saldoFavorObs,
-        totalAjustesManuales,
-        totalDeducciones: Math.round((totalDeliveryDifPOS_Bs + totalDeducciones) * 100) / 100,
+        totalAjustesManuales: isExisting ? displayAjustesManuales : totalAjustesManuales,
+        totalDeducciones: isExisting
+          ? Math.round((deliveryDifPOS + displayDeducciones) * 100) / 100
+          : Math.round((totalDeliveryDifPOS_Bs + totalDeducciones) * 100) / 100,
         // Calculated internally in form - needed for accurate report display
         totalMetodosPOS: summaryPOS,
         totalJustificadoReal: summaryReal,
-        totalDirectoPOS,
+        totalDirectoPOS: displayDirectoPOS,
       };
 
       if (isNew) {

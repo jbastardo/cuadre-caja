@@ -23,6 +23,39 @@ export default function CuadreReport() {
   if (isLoading) return <div className="p-8 text-center">Cargando...</div>;
   if (!cuadre) return <div className="p-8 text-center">Cuadre no encontrado</div>;
 
+  // Compute totals from saved metodos/deducciones/ajustes for reliability
+  // This ensures old cuadres display correctly even if special total fields are missing
+  const SECTION3_EXCLUDED = new Set([26, 35, 37, 38]); // retenciones, Bs methods
+  const isDeliveryOrDif = (name: string) => /delivery|diferencia/i.test(name || "");
+  const directMetodos = (cuadre.metodos || []).filter((m: any) => !SECTION3_EXCLUDED.has(m.metodoId) && !isDeliveryOrDif(m.metodoNombre));
+  const deliveryDifMetodos = (cuadre.metodos || []).filter((m: any) => isDeliveryOrDif(m.metodoNombre));
+
+  const computedDirectoPOS = Math.round(directMetodos.reduce((s: number, m: any) => s + (m.montoPOS_Bs || 0), 0) * 100) / 100;
+  const computedAllMetodosPOS = Math.round((cuadre.metodos || []).reduce((s: number, m: any) => s + (m.montoPOS_Bs || 0), 0) * 100) / 100;
+  const computedAllMetodosReal = Math.round((cuadre.metodos || []).reduce((s: number, m: any) => s + (m.montoReal || 0), 0) * 100) / 100;
+  const computedDeliveryDifPOS = Math.round(deliveryDifMetodos.reduce((s: number, m: any) => s + (m.montoPOS_Bs || 0), 0) * 100) / 100;
+  const computedDeducciones = Math.round((cuadre.deducciones || []).reduce((s: number, d: any) => s + (d.monto || 0), 0) * 100) / 100;
+  const computedAjustes = Math.round((cuadre.ajustesManuales || []).reduce((s: number, a: any) => s + (a.monto || 0), 0) * 100) / 100;
+
+  // Use saved totals if available, else compute from saved arrays
+  const rDirectoPOS = cuadre.totalDirectoPOS ?? cuadre.totalMetodosReal ?? computedDirectoPOS;
+  const rRetencionesPOS = cuadre.totalRetencionesPOS ?? 0;
+  const rCreditoPOS = cuadre.totalCreditoPOS ?? 0;
+  const rSaldoFavorPOS = cuadre.totalSaldoFavorPOS ?? 0;
+  const rDeducciones = cuadre.totalDeducciones ?? computedDeducciones;
+  const rTotalPOS = cuadre.totalMetodosPOS ?? computedAllMetodosPOS;
+
+  const rMetodosReal = cuadre.totalMetodosReal ?? computedAllMetodosReal;
+  const rRetencionesReal = cuadre.totalRetencionesReal ?? 0;
+  const rRetencionesPorCobrar = cuadre.retencionesPorCobrar ?? 0;
+  const rAbonosReal = cuadre.totalAbonosReal ?? 0;
+  const rCxCPendiente = cuadre.totalCxCPendiente ?? 0;
+  const rSaldoFavorReal = cuadre.totalSaldoFavorReal ?? 0;
+  const rAjustesManuales = cuadre.totalAjustesManuales ?? computedAjustes;
+  const rTotalVerificado = cuadre.totalJustificadoReal ??
+    Math.round((rMetodosReal + rRetencionesReal + rRetencionesPorCobrar + rAbonosReal + rCxCPendiente + rSaldoFavorReal + rDeducciones + rAjustesManuales) * 100) / 100;
+  const rDiferencia = cuadre.diferencia ?? 0;
+
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="max-w-[210mm] mx-auto p-4 flex justify-between items-center no-print">
@@ -119,16 +152,15 @@ export default function CuadreReport() {
           <div className="border p-2 mb-2 text-xs">
             <div className="font-bold border-b mb-1">SEGÚN ODOO POS (Lo que registró el sistema)</div>
             <div className="grid grid-cols-2 gap-1">
-              <div>Pagos en efectivo/tarjetas:</div><div className="text-right">{formatBs(cuadre.totalDirectoPOS || cuadre.totalMetodosReal)}</div>
-              <div>Retenciones IVA:</div><div className="text-right">{formatBs(cuadre.totalRetencionesPOS)}</div>
-              <div>Ventas a crédito:</div><div className="text-right">{formatBs(cuadre.totalCreditoPOS)}</div>
-              <div>Saldos a favor generados:</div><div className="text-right">{formatBs(cuadre.totalSaldoFavorPOS)}</div>
-              {cuadre.totalDeducciones !== 0 && <><div>Delivery/Diferencias:</div><div className="text-right">{formatBs(cuadre.totalDeducciones)}</div></>}
+              <div>Pagos en efectivo/tarjetas:</div><div className="text-right">{formatBs(rDirectoPOS)}</div>
+              <div>Retenciones IVA:</div><div className="text-right">{formatBs(rRetencionesPOS)}</div>
+              <div>Ventas a crédito:</div><div className="text-right">{formatBs(rCreditoPOS)}</div>
+              <div>Saldos a favor generados:</div><div className="text-right">{formatBs(rSaldoFavorPOS)}</div>
+              {rDeducciones !== 0 && <><div>Delivery/Diferencias:</div><div className="text-right">{formatBs(rDeducciones)}</div></>}
             </div>
             <div className="font-bold border-t mt-1 pt-1 flex justify-between">
               <span>TOTAL VENTAS POS:</span>
-              <span>{formatBs(cuadre.totalMetodosPOS ?? 
-                (cuadre.totalDirectoPOS ?? cuadre.totalMetodosReal ?? 0) + (cuadre.totalRetencionesPOS ?? 0) + (cuadre.totalCreditoPOS ?? 0) + (cuadre.totalSaldoFavorPOS ?? 0) + (cuadre.totalDeducciones ?? 0))}</span>
+              <span>{formatBs(rTotalPOS)}</span>
             </div>
           </div>
 
@@ -136,21 +168,18 @@ export default function CuadreReport() {
           <div className="border p-2 mb-2 text-xs">
             <div className="font-bold border-b mb-1">VERIFICADO REAL (Lo que realmente hubo)</div>
             <div className="grid grid-cols-2 gap-1">
-              <div>Pagos directos recibidos:</div><div className="text-right">{formatBs(cuadre.totalMetodosReal)}</div>
-              <div>Retenciones canceladas:</div><div className="text-right">{formatBs(cuadre.totalRetencionesReal)}</div>
-              {cuadre.retencionesPorCobrar > 0 && <><div>Retenciones por cobrar:</div><div className="text-right text-amber-600">{formatBs(cuadre.retencionesPorCobrar)}</div></>}
-              <div>Abonos a crédito recibidos:</div><div className="text-right">{formatBs(cuadre.totalAbonosReal)}</div>
-              <div>CxC pendientes:</div><div className="text-right">{formatBs(cuadre.totalCxCPendiente)}</div>
-              <div>Saldos a favor:</div><div className="text-right">{formatBs(cuadre.totalSaldoFavorReal)}</div>
-              {cuadre.totalDeducciones !== 0 && <><div>Delivery/Diferencias:</div><div className="text-right">{formatBs(cuadre.totalDeducciones)}</div></>}
-              {cuadre.totalAjustesManuales !== 0 && <><div>Ajustes manuales:</div><div className="text-right">{formatBs(cuadre.totalAjustesManuales)}</div></>}
+              <div>Pagos directos recibidos:</div><div className="text-right">{formatBs(rMetodosReal)}</div>
+              <div>Retenciones canceladas:</div><div className="text-right">{formatBs(rRetencionesReal)}</div>
+              {rRetencionesPorCobrar > 0 && <><div>Retenciones por cobrar:</div><div className="text-right text-amber-600">{formatBs(rRetencionesPorCobrar)}</div></>}
+              <div>Abonos a crédito recibidos:</div><div className="text-right">{formatBs(rAbonosReal)}</div>
+              <div>CxC pendientes:</div><div className="text-right">{formatBs(rCxCPendiente)}</div>
+              <div>Saldos a favor:</div><div className="text-right">{formatBs(rSaldoFavorReal)}</div>
+              {rDeducciones !== 0 && <><div>Delivery/Diferencias:</div><div className="text-right">{formatBs(rDeducciones)}</div></>}
+              {rAjustesManuales !== 0 && <><div>Ajustes manuales:</div><div className="text-right">{formatBs(rAjustesManuales)}</div></>}
             </div>
             <div className="font-bold border-t mt-1 pt-1 flex justify-between">
               <span>TOTAL VERIFICADO:</span>
-              <span>{formatBs(cuadre.totalJustificadoReal ?? 
-                (cuadre.totalMetodosReal ?? 0) + (cuadre.totalRetencionesReal ?? 0) + (cuadre.retencionesPorCobrar ?? 0) + 
-                (cuadre.totalAbonosReal ?? 0) + (cuadre.totalCxCPendiente ?? 0) + (cuadre.totalSaldoFavorReal ?? 0) + 
-                (cuadre.totalDeducciones ?? 0) + (cuadre.totalAjustesManuales ?? 0))}</span>
+              <span>{formatBs(rTotalVerificado)}</span>
             </div>
           </div>
         </div>
@@ -160,11 +189,11 @@ export default function CuadreReport() {
           <div className="text-lg font-bold">{formatBs(cuadre.ventaNetaZ)}</div>
           <div className="text-center mt-2">
             <div className="text-sm font-bold">Diferencia:</div>
-            <div className={`text-lg font-bold ${(cuadre.diferencia ?? 0) === 0 ? 'text-green-600' : (cuadre.diferencia ?? 0) > 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatBs(cuadre.diferencia ?? 0)}
+            <div className={`text-lg font-bold ${rDiferencia === 0 ? 'text-green-600' : rDiferencia > 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatBs(rDiferencia)}
             </div>
-            <div className={`text-xs font-bold mt-1 ${Math.abs(cuadre.diferencia ?? 0) < 0.01 ? 'bg-green-100' : 'bg-red-100'} inline-block px-2 py-1 rounded`}>
-              {Math.abs(cuadre.diferencia ?? 0) < 0.01 ? 'CUADRADO' : 'DESCUADRADO'}
+            <div className={`text-xs font-bold mt-1 ${Math.abs(rDiferencia) < 0.01 ? 'bg-green-100' : 'bg-red-100'} inline-block px-2 py-1 rounded`}>
+              {Math.abs(rDiferencia) < 0.01 ? 'CUADRADO' : 'DESCUADRADO'}
             </div>
           </div>
           {cuadre.difCambiaria > 0 && <div className="text-xs mt-2">Dif. Cambiaria: {formatBs(cuadre.difCambiaria)}</div>}
@@ -177,7 +206,7 @@ export default function CuadreReport() {
               {(cuadre.ajustesManuales || []).map((a: any, i: number) => (
                 <div key={i} className="flex justify-between"><span>{a.descripcion || 'Ajuste'}</span><span>{formatBs(a.monto)}</span></div>
               ))}
-              <div className="font-bold mt-1">Total: {formatBs(cuadre.totalAjustesManuales)}</div>
+              <div className="font-bold mt-1">Total: {formatBs(rAjustesManuales)}</div>
             </div>
           ) : <div className="text-xs text-gray-500">Sin ajustes manuales</div>}
         </div>
