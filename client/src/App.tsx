@@ -11,11 +11,11 @@ import UserManagement from "@/pages/UserManagement";
 import Cuentas from "@/pages/Cuentas";
 import { Toaster } from "@/components/ui/toaster";
 
-// Global fetch interceptor: add auth headers to all /api requests
+// Global fetch interceptor: add auth headers + handle 401 globally
 const originalFetch = window.fetch;
 window.fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
-  if (url.startsWith('/api')) {
+  if (url.startsWith('/api') && !url.startsWith('/api/auth/')) {
     try {
       const userStr = localStorage.getItem('cuadre_user');
       const user = userStr ? JSON.parse(userStr) : null;
@@ -27,7 +27,13 @@ window.fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<R
       }
     } catch {}
   }
-  return originalFetch(input, init);
+  return originalFetch(input, init).then(res => {
+    if (res.status === 401 && !url.startsWith('/api/auth/')) {
+      localStorage.removeItem('cuadre_user');
+      window.location.reload();
+    }
+    return res;
+  });
 };
 
 function AppRoutes() {

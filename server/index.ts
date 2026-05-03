@@ -14,6 +14,11 @@ app.use(helmet({
 
 app.use(express.json());
 
+app.use((req: any, res: any, next: any) => {
+  console.log(`${req.method} ${req.url} email=${req.headers['x-user-email'] || 'none'}`);
+  next();
+});
+
 const PORT = Number(process.env.PORT) || 8080;
 
 app.use(router);
