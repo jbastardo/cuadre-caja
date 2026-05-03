@@ -294,7 +294,7 @@ router.get("/api/cuadres", requireAuth, async (req: Request, res: Response) => {
       cerrado: query(req, "cerrado")
     };
     const page = parseInt(query(req, "page") || "1");
-    const limit = parseInt(query(req, "limit") || "50");
+    const limit = parseInt(query(req, "limit") || "99999");
     const result = await db.getCuadres(filters, page, limit);
     res.json(result.data);
   } catch (err: any) {
