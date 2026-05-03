@@ -46,12 +46,21 @@ export default function CuadreList() {
     staleTime: 2 * 60 * 1000,
   });
 
-  // Group cuadres by fecha
+  // Group cuadres by fecha, deduplicated by caja (keep worst status per caja)
   const byDate = useMemo(() => {
     const map: Record<string, Cuadre[]> = {};
     for (const c of cuadres) {
       if (!map[c.fecha]) map[c.fecha] = [];
-      map[c.fecha].push(c);
+      const existing = map[c.fecha].find(x => x.caja === c.caja && x.tipo === c.tipo);
+      if (existing) {
+        // Keep the one with worse status
+        const statusOrder = { descuadrado: 0, pendiente: 1, cuadrado: 2, no_realizado: 3 };
+        if ((statusOrder as any)[c.estado] < (statusOrder as any)[existing.estado]) {
+          Object.assign(existing, c);
+        }
+      } else {
+        map[c.fecha].push(c);
+      }
     }
     return map;
   }, [cuadres]);
@@ -89,19 +98,33 @@ export default function CuadreList() {
     });
   }
 
-  // Summary for selected date or whole month
+  // Summary for selected date or whole month (deduplicated by caja)
   const listCuadres = selectedDate
     ? (byDate[selectedDate] || [])
-    : cuadres.filter(c => c.fecha.startsWith(`${year}-${String(month+1).padStart(2,"0")}`));
+    : (() => {
+        const filtered = cuadres.filter(c => c.fecha.startsWith(`${year}-${String(month+1).padStart(2,"0")}`));
+        const map: Record<string, Cuadre> = {};
+        for (const c of filtered) {
+          const key = `${c.caja}-${c.tipo}`;
+          const existing = map[key];
+          if (!existing) { map[key] = c; }
+          else {
+            const statusOrder = { descuadrado: 0, pendiente: 1, cuadrado: 2, no_realizado: 3 };
+            if ((statusOrder as any)[c.estado] < (statusOrder as any)[existing.estado]) map[key] = c;
+          }
+        }
+        return Object.values(map);
+      })();
 
-  // Stats for the month
+  // Stats for the month (count unique cajas, not total cuadres)
   const monthStr = `${year}-${String(month+1).padStart(2,"0")}`;
   const monthCuadres = cuadres.filter(c => c.fecha.startsWith(monthStr));
+  const uniqueCajas = new Set(monthCuadres.map(c => `${c.caja}-${c.tipo}`));
   const stats = {
     cuadrado:    monthCuadres.filter(c => c.estado === "cuadrado").length,
     descuadrado: monthCuadres.filter(c => c.estado === "descuadrado").length,
     pendiente:   monthCuadres.filter(c => c.estado === "pendiente").length,
-    total:       monthCuadres.length,
+    total:       uniqueCajas.size,
   };
 
   // Get dominant status for a day (worst first)
@@ -281,13 +304,17 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                   >
                   <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-sm">{c.caja} {c.tipo === "nf" ? "NF" : "Fiscal"} ({getStatusLabel(c.estado)})</span>
+                          <span className="font-semibold text-sm">{c.caja}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${c.tipo === "nf" ? "bg-purple-200 text-purple-900" : "bg-blue-100 text-blue-900"}`}>
+                            {c.tipo === "nf" ? "NF" : "Fiscal"}
+                          </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {c.fecha} · {c.cajero}{c.tipo === "nf" ? "" : ` · Z: ${c.zNumero}`}
+                          {c.fecha} · {c.cajero}{c.tipo !== "nf" && c.zNumero ? ` · Z: ${c.zNumero}` : ""}
                           {c.cerradoPor && <span className="ml-2 text-gray-400">Cerrado por {c.cerradoPor}</span>}
                         </p>
                       </div>
+                    <Badge className={getStatusColor(c.estado)}>{getStatusLabel(c.estado)}</Badge>
                   </div>
                 ))
             )}
