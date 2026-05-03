@@ -494,9 +494,26 @@ export default function CuadreForm() {
     + totalAjustesManuales
   ) * 100) / 100;
 
-  const summaryPOS = !isNew && existingCuadre?.totalMetodosPOS ? existingCuadre.totalMetodosPOS : computedSummaryPOS;
-  const totalDirectoPOS = !isNew && existingCuadre?.totalDirectoPOS ? existingCuadre.totalDirectoPOS : computedDirectoPOS;
-  const summaryReal = !isNew && existingCuadre?.totalJustificadoReal ? existingCuadre.totalJustificadoReal : computedSummaryReal;
+  // For display: prefer saved values when viewing existing cuadre
+  const hasSaved = !isNew && existingCuadre?.totalMetodosPOS;
+  const summaryPOS = hasSaved ? existingCuadre.totalMetodosPOS : computedSummaryPOS;
+  const totalDirectoPOS = hasSaved && existingCuadre.totalDirectoPOS ? existingCuadre.totalDirectoPOS : computedDirectoPOS;
+  const summaryReal = hasSaved && existingCuadre.totalJustificadoReal ? existingCuadre.totalJustificadoReal : computedSummaryReal;
+
+  // Line item display values - use saved when available
+  const displayRetencionesPOS = hasSaved && existingCuadre.totalRetencionesPOS ? existingCuadre.totalRetencionesPOS : totalRetencionesPOS_Bs;
+  const displayCreditoPOS = hasSaved && existingCuadre.totalCreditoPOS ? existingCuadre.totalCreditoPOS : totalCreditoPOS_Bs;
+  const displaySaldoFavorPOS = hasSaved && existingCuadre.totalSaldoFavorPOS ? existingCuadre.totalSaldoFavorPOS : totalSaldoFavorPOS_Bs;
+  const displayRetencionesReal = hasSaved && existingCuadre.totalRetencionesReal ? existingCuadre.totalRetencionesReal : retencionesReal;
+  const displayRetencionesPorCobrar = hasSaved && existingCuadre.retencionesPorCobrar ? existingCuadre.retencionesPorCobrar : retencionesPorCobrar_Bs;
+  const displayAbonosReal = hasSaved && existingCuadre.totalAbonosReal ? existingCuadre.totalAbonosReal : totalAbonosRecibidos_Bs;
+  const displayCxCPendiente = hasSaved && existingCuadre.totalCxCPendiente ? existingCuadre.totalCxCPendiente : totalCxCPendiente_Bs;
+  const displaySaldoFavorReal = hasSaved && existingCuadre.totalSaldoFavorReal ? existingCuadre.totalSaldoFavorReal : saldoFavorReal;
+  const displayAjustesManuales = hasSaved && existingCuadre.totalAjustesManuales ? existingCuadre.totalAjustesManuales : totalAjustesManuales;
+  const displayDeducciones = hasSaved && existingCuadre.totalDeducciones ? existingCuadre.totalDeducciones : totalDeducciones;
+  const displayDirectoPOS = hasSaved && existingCuadre.totalDirectoPOS ? existingCuadre.totalDirectoPOS : totalDirectoPOS;
+  const displayTotalJustificado = hasSaved ? (existingCuadre.totalMetodosPOS ?? existingCuadre.totalJustificadoReal ?? totalJustificado) : totalJustificado;
+  const displayDiferencia = hasSaved && existingCuadre.diferencia !== undefined ? existingCuadre.diferencia : diferencia;
 
   const isLocked = existingCuadre?.cerradoPor && existingCuadre.estado !== "pendiente";
   const canClose = (user?.rol === "supervisor" || user?.rol === "admin") && !isLocked;
@@ -1584,19 +1601,19 @@ export default function CuadreForm() {
                 <h3 className="font-semibold text-sm border-b pb-1">SEGÚN ODOO POS</h3>
                 <div className="flex justify-between text-sm">
                   <span>Pagos directos:</span>
-                  <span>{formatBs(directMetodos.reduce((s, m) => s + m.montoPOS_Bs, 0))}</span>
+                  <span>{formatBs(displayDirectoPOS)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Retenciones IVA:</span>
-                  <span>{formatBs(totalRetencionesPOS_Bs)}</span>
+                  <span>{formatBs(displayRetencionesPOS)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Ventas a crédito:</span>
-                  <span>{formatBs(totalCreditoPOS_Bs)}</span>
+                  <span>{formatBs(displayCreditoPOS)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Saldos a favor:</span>
-                  <span>{formatBs(totalSaldoFavorPOS_Bs)}</span>
+                  <span>{formatBs(displaySaldoFavorPOS)}</span>
                 </div>
                 {totalDeliveryDifPOS_Bs !== 0 && (
                   <div className="flex justify-between text-sm">
@@ -1619,35 +1636,35 @@ export default function CuadreForm() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Retenciones registradas:</span>
-                  <span>{formatBs(retencionesReal)}</span>
+                  <span>{formatBs(displayRetencionesReal)}</span>
                 </div>
-                              {retencionesPorCobrar_Bs > 0 && (
+                              {displayRetencionesPorCobrar > 0 && (
               <div className="flex justify-between text-sm">
                 <span>Retenciones por cobrar:</span>
-                <span className="text-amber-600">{formatBs(retencionesPorCobrar_Bs)}</span>
+                <span className="text-amber-600">{formatBs(displayRetencionesPorCobrar)}</span>
               </div>
               )}
                 <div className="flex justify-between text-sm">
                   <span>Abonos crédito recibidos:</span>
-                  <span className="text-green-700">{formatBs(totalAbonosRecibidos_Bs)}</span>
+                  <span className="text-green-700">{formatBs(displayAbonosReal)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>CxC pendientes:</span>
-                  <span className="text-amber-700">{formatBs(totalCxCPendiente_Bs)}</span>
+                  <span className="text-amber-700">{formatBs(displayCxCPendiente)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Saldos a favor:</span>
-                  <span>{formatBs(saldoFavorReal)}</span>
+                  <span>{formatBs(displaySaldoFavorReal)}</span>
                 </div>
-                {(totalDeliveryDifPOS_Bs !== 0 || totalDeducciones !== 0) && (
+                {(totalDeliveryDifPOS_Bs !== 0 || displayDeducciones !== 0) && (
                   <div className="flex justify-between text-sm">
                     <span>Deducciones (Delivery/Dif.):</span>
-                    <span>{formatBs(totalDeliveryDifPOS_Bs + totalDeducciones)}</span>
+                    <span>{formatBs(totalDeliveryDifPOS_Bs + displayDeducciones)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
                   <span>Ajustes manuales:</span>
-                  <span>{formatBs(totalAjustesManuales)}</span>
+                  <span>{formatBs(displayAjustesManuales)}</span>
                 </div>
                 <div className="flex justify-between text-sm font-bold border-t pt-1">
                   <span>TOTAL VERIFICADO:</span>
@@ -1661,7 +1678,7 @@ export default function CuadreForm() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                 <div>
                   <span className="text-muted-foreground">Total Métodos + Deducciones (Bs):</span>
-                  <p className="font-semibold">{formatBs(totalJustificado)}</p>
+                  <p className="font-semibold">{formatBs(displayTotalJustificado)}</p>
                 </div>
                 <div className="bg-blue-50 rounded p-2">
                   <span className="text-blue-700 text-xs">Venta Neta Z (Bs) — referencia fiscal:</span>
@@ -1669,28 +1686,28 @@ export default function CuadreForm() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Diferencia:</span>
-                  <p className={`font-bold text-lg ${Math.abs(diferencia) < 0.01 && ventaNetaZ > 0 ? "text-green-600" : ventaNetaZ > 0 ? "text-red-600" : ""}`}>
-                    {formatBs(diferencia)}
+                  <p className={`font-bold text-lg ${Math.abs(displayDiferencia) < 0.01 && ventaNetaZ > 0 ? "text-green-600" : ventaNetaZ > 0 ? "text-red-600" : ""}`}>
+                    {formatBs(displayDiferencia)}
                   </p>
                   {ventaNetaZ > 0 && (
-                    <Badge className={`mt-1 ${Math.abs(diferencia) < CUADRE_TOLERANCE_BS ? getStatusColor("cuadrado") : existingCuadre?.cerradoPor ? getStatusColor("descuadrado") : getStatusColor("pendiente")}`}>
-                      {Math.abs(diferencia) < CUADRE_TOLERANCE_BS ? "CUADRADO" : existingCuadre?.cerradoPor ? "DESCUADRADO" : "PENDIENTE"}
+                    <Badge className={`mt-1 ${Math.abs(displayDiferencia) < CUADRE_TOLERANCE_BS ? getStatusColor("cuadrado") : existingCuadre?.cerradoPor ? getStatusColor("descuadrado") : getStatusColor("pendiente")}`}>
+                      {Math.abs(displayDiferencia) < CUADRE_TOLERANCE_BS ? "CUADRADO" : existingCuadre?.cerradoPor ? "DESCUADRADO" : "PENDIENTE"}
                     </Badge>
                   )}
                 </div>
               </div>
               {/* Leyenda explicativa sobre la diferencia */}
-              {ventaNetaZ > 0 && Math.abs(diferencia) >= 0.01 && (
+              {ventaNetaZ > 0 && Math.abs(displayDiferencia) >= 0.01 && (
                 <div className="mt-3 bg-gray-50 rounded p-3 border border-gray-200 text-xs text-gray-700 space-y-1">
                   <p className="font-semibold text-gray-900">¿Qué significa esta diferencia?</p>
-                  {diferencia > 0 ? (
+                  {displayDiferencia > 0 ? (
                     <>
-                      <p><span className="font-medium text-red-700">Sobra dinero ({formatBs(diferencia)}):</span> Se justificó más de lo reportado en Z.</p>
+                      <p><span className="font-medium text-red-700">Sobra dinero ({formatBs(displayDiferencia)}):</span> Se justificó más de lo reportado en Z.</p>
                       <p>Posibles causas: pago duplicado, cobro no facturado, monto de método verificado mayor al real, o abono registrado que no corresponde al día.</p>
                     </>
                   ) : (
                     <>
-                      <p><span className="font-medium text-red-700">Falta dinero ({formatBs(Math.abs(diferencia))}):</span> No se logró justificar el total de la Venta Neta Z.</p>
+                      <p><span className="font-medium text-red-700">Falta dinero ({formatBs(Math.abs(displayDiferencia))}):</span> No se logró justificar el total de la Venta Neta Z.</p>
                       <p>Posibles causas: pago no registrado, método de pago con monto menor al real, retención o crédito sin verificar, o deducción faltante.</p>
                     </>
                   )}
@@ -1758,7 +1775,7 @@ export default function CuadreForm() {
                   </div>
                 ))}
                 <div className="text-right text-sm font-medium pt-2">
-                  Total ajustes: <strong>{formatBs(totalAjustesManuales)}</strong>
+                  Total ajustes: <strong>{formatBs(displayAjustesManuales)}</strong>
                 </div>
               </div>
             )}
