@@ -576,7 +576,7 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   const deducciones = cuadre.deducciones || [];
   const ajustesManuales = cuadre.ajustesManuales || [];
 
-  const totalMetodosReal = metodos.reduce((sum, m) => sum + (m.montoPOS_Bs || m.montoReal || 0), 0);
+  const totalMetodosReal = metodos.reduce((sum, m) => sum + (m.montoReal || 0), 0);
   const totalDeducciones = deducciones.reduce((sum, d) => sum + (d.monto || 0), 0);
   const totalAjustesManuales = ajustesManuales.reduce((sum, a) => sum + (a.monto || 0), 0);
 
