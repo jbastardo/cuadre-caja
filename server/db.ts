@@ -330,9 +330,10 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     );
 
     const metodos: MetodoVerificado[] = [];
+    let mIdx = 0;
     for (const m of data.metodos) {
-      const mid = `MV-${Date.now()}-${m.metodoId}`;
-      const montoPosBs = m.montoReal_Bs || m.montoPOS_Bs || 0;
+      const mid = `MV-${Date.now()}-${mIdx++}-${m.metodoId}`;
+      const montoPosBs = (m as any).montoReal_Bs || m.montoPOS_Bs || 0;
       const diff = Math.round(((m.montoReal || 0) - (m.montoPOS_USD || 0)) * 100) / 100;
       await client.query(
         "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
@@ -342,8 +343,9 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     }
 
     const deducciones: Deduccion[] = [];
+    let dIdx = 0;
     for (const d of data.deducciones || []) {
-      const did = `DD-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const did = `DD-${Date.now()}-${dIdx++}-${Math.random().toString(36).slice(2, 6)}`;
       await client.query(
         "INSERT INTO deducciones (id, cuadre_id, tipo, descripcion, monto, comprobante) VALUES ($1,$2,$3,$4,$5,$6)",
         [did, id, d.tipo, d.descripcion, d.monto, d.comprobante || ""]
@@ -352,8 +354,9 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     }
 
     const ajustesManuales: AjusteManual[] = [];
+    let aIdx = 0;
     for (const a of data.ajustesManuales || []) {
-      const aid = `AJ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const aid = `AJ-${Date.now()}-${aIdx++}-${Math.random().toString(36).slice(2, 6)}`;
       await client.query(
         "INSERT INTO ajustes_manuales (id, cuadre_id, tipo, descripcion, monto, referencia) VALUES ($1,$2,$3,$4,$5,$6)",
         [aid, id, a.tipo, a.descripcion, a.monto, a.referencia || ""]
@@ -459,9 +462,10 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
     await client.query("DELETE FROM ajustes_manuales WHERE cuadre_id = $1", [id]);
 
     const metodos: MetodoVerificado[] = [];
+    let mIdx = 0;
     for (const m of data.metodos) {
-      const mid = `MV-${Date.now()}-${m.metodoId}`;
-      const montoPosBs = m.montoReal_Bs || m.montoPOS_Bs || 0;
+      const mid = `MV-${Date.now()}-${mIdx++}-${m.metodoId}`;
+      const montoPosBs = (m as any).montoReal_Bs || m.montoPOS_Bs || 0;
       const diff = Math.round(((m.montoReal || 0) - (m.montoPOS_USD || 0)) * 100) / 100;
       await client.query(
         "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
@@ -471,8 +475,9 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
     }
 
     const deducciones: Deduccion[] = [];
+    let dIdx = 0;
     for (const d of data.deducciones || []) {
-      const did = `DD-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const did = `DD-${Date.now()}-${dIdx++}-${Math.random().toString(36).slice(2, 6)}`;
       await client.query(
         "INSERT INTO deducciones (id, cuadre_id, tipo, descripcion, monto, comprobante) VALUES ($1,$2,$3,$4,$5,$6)",
         [did, id, d.tipo, d.descripcion, d.monto, d.comprobante || ""]
@@ -481,8 +486,9 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
     }
 
     const ajustesManuales: AjusteManual[] = [];
+    let aIdx = 0;
     for (const a of data.ajustesManuales || []) {
-      const aid = `AJ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const aid = `AJ-${Date.now()}-${aIdx++}-${Math.random().toString(36).slice(2, 6)}`;
       await client.query(
         "INSERT INTO ajustes_manuales (id, cuadre_id, tipo, descripcion, monto, referencia) VALUES ($1,$2,$3,$4,$5,$6)",
         [aid, id, a.tipo, a.descripcion, a.monto, a.referencia || ""]
@@ -543,7 +549,7 @@ export async function closeCuadre(id: string, cerradoPor: string): Promise<Cuadr
 
 export async function reopenCuadre(id: string): Promise<Cuadre | null> {
   const { rows } = await pool.query(
-    "UPDATE cuadres SET estado='pendiente', cerrado_por='', cerrado_en='' WHERE id=$1 RETURNING *",
+    "UPDATE cuadres SET estado='pendiente', cerrado_por='', cerrado_en=NULL WHERE id=$1 RETURNING *",
     [id]
   );
   return rows.length > 0 ? rowToCuadre(rows[0]) : null;

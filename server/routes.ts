@@ -71,16 +71,21 @@ function sanitizeString(str: string): string {
 
 function sanitizeBody(body: any): any {
   if (typeof body !== 'object' || body === null) return body;
-  
-  const sanitized = { ...body };
-  for (const key of Object.keys(sanitized)) {
-    if (typeof sanitized[key] === 'string') {
-      sanitized[key] = sanitizeString(sanitized[key]);
-    } else if (Array.isArray(sanitized[key])) {
-      sanitized[key] = sanitized[key].map((item: any) => 
-        typeof item === 'object' ? sanitizeBody(item) : 
-        typeof item === 'string' ? sanitizeString(item) : item
-      );
+  if (Array.isArray(body)) {
+    return body.map((item: any) =>
+      typeof item === 'object' && item !== null ? sanitizeBody(item) :
+      typeof item === 'string' ? sanitizeString(item) : item
+    );
+  }
+  const sanitized: any = {};
+  for (const key of Object.keys(body)) {
+    const val = body[key];
+    if (typeof val === 'string') {
+      sanitized[key] = sanitizeString(val);
+    } else if (typeof val === 'object' && val !== null) {
+      sanitized[key] = sanitizeBody(val);
+    } else {
+      sanitized[key] = val;
     }
   }
   return sanitized;
