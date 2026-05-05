@@ -302,65 +302,30 @@ export default function CuadreForm() {
 
   // Initialize from fiscal summary or existing cuadre
   useEffect(() => {
-    if (existingCuadre && !isNew && fiscalSummary) {
-      // Merge live fiscal data with saved user inputs
-      const savedInputs = new Map(
-        existingCuadre.metodos.map((m) => [m.metodoId, { montoReal: m.montoReal, observacion: m.observacion }])
-      );
+    if (existingCuadre && !isNew) {
+      // For existing cuadres: always use saved metodos as the source of truth for
+      // montoReal and observacion. The fiscalSummary (live Odoo data) may have
+      // different methods or ordering, which would cause saved montoReal values to
+      // be lost. Optionally refresh POS amounts from fiscalSummary if a matching
+      // method is found, but never discard saved montoReal values.
+      const livePOS = fiscalSummary
+        ? new Map(fiscalSummary.payments.map((p) => [p.methodId, { totalUSD: p.totalUSD, totalBs: p.totalBs }]))
+        : null;
+
       setMetodos(
-        fiscalSummary.payments.map((p) => ({
-          metodoId: p.methodId,
-          metodoNombre: p.methodName,
-          montoPOS_USD: p.totalUSD,
-          montoPOS_Bs: p.totalBs,
-          montoReal: savedInputs.get(p.methodId)?.montoReal || 0,
-          observacion: savedInputs.get(p.methodId)?.observacion || "",
-        }))
-      );
-      setDeducciones(
-        existingCuadre.deducciones.map((d) => ({
-          tipo: d.tipo,
-          descripcion: d.descripcion,
-          monto: d.monto,
-          comprobante: d.comprobante,
-        }))
-      );
-      setAjustes(
-        (existingCuadre.ajustesManuales || []).map((a) => ({
-          tipo: a.tipo,
-          descripcion: a.descripcion,
-          monto: a.monto,
-          referencia: a.referencia,
-        }))
-      );
-      setObservaciones(existingCuadre.observaciones);
-      setSaldoFavorReal(existingCuadre.totalSaldoFavorReal || 0);
-      setSaldoFavorObs(existingCuadre.saldoFavorObs || "");
-      setRetencionesReal(existingCuadre.totalRetencionesReal || 0);
-      setZData({
-        zNumero: existingCuadre.zNumero,
-        ventaBrutaZ: existingCuadre.ventaBrutaZ,
-        notasCreditoZ: existingCuadre.notasCreditoZ,
-        baseImponibleZ: existingCuadre.baseImponibleZ,
-        exentoZ: existingCuadre.exentoZ,
-        ivaZ: existingCuadre.ivaZ,
-        igtfZ: existingCuadre.igtfZ,
-        primeraFacturaZ: existingCuadre.primeraFacturaZ,
-        ultimaFacturaZ: existingCuadre.ultimaFacturaZ,
-        primeraNCZ: existingCuadre.primeraNCZ || "",
-        ultimaNCZ: existingCuadre.ultimaNCZ || "",
-      });
-    } else if (existingCuadre && !isNew) {
-      // Fallback if no fiscal data yet
-      setMetodos(
-        existingCuadre.metodos.map((m) => ({
-          metodoId: m.metodoId,
-          metodoNombre: m.metodoNombre,
-          montoPOS_USD: m.montoPOS_USD,
-          montoPOS_Bs: m.montoPOS_Bs,
-          montoReal: m.montoReal,
-          observacion: m.observacion,
-        }))
+        existingCuadre.metodos.map((m) => {
+          const live = livePOS?.get(m.metodoId);
+          return {
+            metodoId: m.metodoId,
+            metodoNombre: m.metodoNombre,
+            // Use live POS amounts if available, otherwise fall back to saved values
+            montoPOS_USD: live ? live.totalUSD : m.montoPOS_USD,
+            montoPOS_Bs: live ? live.totalBs : m.montoPOS_Bs,
+            // Always use saved montoReal and observacion — these are the user's inputs
+            montoReal: m.montoReal,
+            observacion: m.observacion,
+          };
+        })
       );
       setDeducciones(
         existingCuadre.deducciones.map((d) => ({
@@ -396,6 +361,7 @@ export default function CuadreForm() {
         ultimaNCZ: existingCuadre.ultimaNCZ || "",
       });
     } else if (fiscalSummary && isNew) {
+      // For new cuadres: use live Odoo data to populate the methods list
       setMetodos(
         fiscalSummary.payments.map((p) => ({
           metodoId: p.methodId,
