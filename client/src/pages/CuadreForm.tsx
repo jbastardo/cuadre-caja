@@ -529,9 +529,7 @@ export default function CuadreForm() {
   const displayTotalJustificado = isExisting
     ? (existingCuadre.totalMetodosPOS ?? summaryReal)
     : totalJustificado;
-  const displayDiferencia = isExisting && existingCuadre.diferencia !== undefined
-    ? existingCuadre.diferencia
-    : diferencia;
+  const displayDiferencia = diferencia;
 
   const isLocked = existingCuadre?.cerradoPor && existingCuadre.estado !== "pendiente";
   const canClose = (user?.rol === "supervisor" || user?.rol === "admin") && !isLocked;
