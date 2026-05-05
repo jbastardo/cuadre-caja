@@ -475,47 +475,56 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
       ]
     );
 
-    await client.query("DELETE FROM metodos_verificados WHERE cuadre_id = $1", [id]);
-    await client.query("DELETE FROM deducciones WHERE cuadre_id = $1", [id]);
-    await client.query("DELETE FROM ajustes_manuales WHERE cuadre_id = $1", [id]);
-
+    // Only delete and recreate metodos_verificados if new data is explicitly provided.
+    // An empty or missing array means "no change" — preserve existing records.
     const metodos: MetodoVerificado[] = [];
-    let mIdx = 0;
-    for (const m of data.metodos) {
-      const mid = `MV-${Date.now()}-${mIdx++}-${m.metodoId}`;
-      const montoPosBs = toNum((m as any).montoReal_Bs) || toNum(m.montoPOS_Bs);
-      const montoUSD = toNum(m.montoPOS_USD);
-      const montoReal = toNum(m.montoReal);
-      const diff = Math.round((montoReal - montoUSD) * 100) / 100;
-      await client.query(
-        "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-        [mid, id, m.metodoId, m.metodoNombre, montoUSD, montoPosBs, montoReal, diff, m.observacion || ""]
-      );
-      metodos.push({ id: mid, cuadreId: id, metodoId: m.metodoId, metodoNombre: m.metodoNombre, montoPOS_USD: montoUSD, montoPOS_Bs: montoPosBs, montoReal, diferencia: diff, observacion: m.observacion || "" });
+    if (data.metodos && data.metodos.length > 0) {
+      await client.query("DELETE FROM metodos_verificados WHERE cuadre_id = $1", [id]);
+      let mIdx = 0;
+      for (const m of data.metodos) {
+        const mid = `MV-${Date.now()}-${mIdx++}-${m.metodoId}`;
+        const montoPosBs = toNum((m as any).montoReal_Bs) || toNum(m.montoPOS_Bs);
+        const montoUSD = toNum(m.montoPOS_USD);
+        const montoReal = toNum(m.montoReal);
+        const diff = Math.round((montoReal - montoUSD) * 100) / 100;
+        await client.query(
+          "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+          [mid, id, m.metodoId, m.metodoNombre, montoUSD, montoPosBs, montoReal, diff, m.observacion || ""]
+        );
+        metodos.push({ id: mid, cuadreId: id, metodoId: m.metodoId, metodoNombre: m.metodoNombre, montoPOS_USD: montoUSD, montoPOS_Bs: montoPosBs, montoReal, diferencia: diff, observacion: m.observacion || "" });
+      }
     }
 
+    // Only delete and recreate deducciones if new data is explicitly provided.
     const deducciones: Deduccion[] = [];
-    let dIdx = 0;
-    for (const d of data.deducciones || []) {
-      const did = `DD-${Date.now()}-${dIdx++}-${Math.random().toString(36).slice(2, 6)}`;
-      const monto = toNum(d.monto);
-      await client.query(
-        "INSERT INTO deducciones (id, cuadre_id, tipo, descripcion, monto, comprobante) VALUES ($1,$2,$3,$4,$5,$6)",
-        [did, id, d.tipo, d.descripcion, monto, d.comprobante || ""]
-      );
-      deducciones.push({ id: did, cuadreId: id, tipo: d.tipo, descripcion: d.descripcion, monto, comprobante: d.comprobante || "" });
+    if (data.deducciones && data.deducciones.length > 0) {
+      await client.query("DELETE FROM deducciones WHERE cuadre_id = $1", [id]);
+      let dIdx = 0;
+      for (const d of data.deducciones) {
+        const did = `DD-${Date.now()}-${dIdx++}-${Math.random().toString(36).slice(2, 6)}`;
+        const monto = toNum(d.monto);
+        await client.query(
+          "INSERT INTO deducciones (id, cuadre_id, tipo, descripcion, monto, comprobante) VALUES ($1,$2,$3,$4,$5,$6)",
+          [did, id, d.tipo, d.descripcion, monto, d.comprobante || ""]
+        );
+        deducciones.push({ id: did, cuadreId: id, tipo: d.tipo, descripcion: d.descripcion, monto, comprobante: d.comprobante || "" });
+      }
     }
 
+    // Only delete and recreate ajustes_manuales if new data is explicitly provided.
     const ajustesManuales: AjusteManual[] = [];
-    let aIdx = 0;
-    for (const a of data.ajustesManuales || []) {
-      const aid = `AJ-${Date.now()}-${aIdx++}-${Math.random().toString(36).slice(2, 6)}`;
-      const monto = toNum(a.monto);
-      await client.query(
-        "INSERT INTO ajustes_manuales (id, cuadre_id, tipo, descripcion, monto, referencia) VALUES ($1,$2,$3,$4,$5,$6)",
-        [aid, id, a.tipo, a.descripcion, monto, a.referencia || ""]
-      );
-      ajustesManuales.push({ id: aid, cuadreId: id, tipo: a.tipo, descripcion: a.descripcion, monto, referencia: a.referencia || "" });
+    if (data.ajustesManuales && data.ajustesManuales.length > 0) {
+      await client.query("DELETE FROM ajustes_manuales WHERE cuadre_id = $1", [id]);
+      let aIdx = 0;
+      for (const a of data.ajustesManuales) {
+        const aid = `AJ-${Date.now()}-${aIdx++}-${Math.random().toString(36).slice(2, 6)}`;
+        const monto = toNum(a.monto);
+        await client.query(
+          "INSERT INTO ajustes_manuales (id, cuadre_id, tipo, descripcion, monto, referencia) VALUES ($1,$2,$3,$4,$5,$6)",
+          [aid, id, a.tipo, a.descripcion, monto, a.referencia || ""]
+        );
+        ajustesManuales.push({ id: aid, cuadreId: id, tipo: a.tipo, descripcion: a.descripcion, monto, referencia: a.referencia || "" });
+      }
     }
 
     await client.query("COMMIT");
