@@ -290,6 +290,38 @@ router.get("/api/odoo/session/:id/non-fiscal", requireAuth, async (req: Request,
 });
 
 // ---- Cuadres CRUD ----
+
+// Helpers: coerce numeric strings to numbers (HTML inputs return strings,
+// loaded data may have string values, etc.)
+function coerceNum(v: any): number {
+  if (v === null || v === undefined || v === "") return 0;
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+
+function coerceCuadreBody(body: any) {
+  const numFields = [
+    'tasaDia', 'ventaBrutaZ', 'notasCreditoZ', 'ventaNetaZ', 'baseImponibleZ',
+    'exentoZ', 'ivaZ', 'igtfZ', 'totalOdooUSD', 'totalOdooBs', 'difCambiaria',
+    'totalRetencionesPOS', 'totalRetencionesReal', 'retencionesPorCobrar',
+    'totalCreditoPOS', 'totalAbonosReal', 'totalCxCPendiente',
+    'totalSaldoFavorPOS', 'totalSaldoFavorReal', 'totalAjustesManuales',
+    'totalMetodosPOS', 'totalJustificadoReal', 'totalDirectoPOS'
+  ];
+  numFields.forEach(f => { if (body[f] !== undefined) body[f] = coerceNum(body[f]); });
+  if (body.metodos) body.metodos.forEach((m: any) => {
+    ['metodoId', 'montoPOS_USD', 'montoPOS_Bs', 'montoReal', 'montoReal_Bs'].forEach(f => {
+      if (m[f] !== undefined) m[f] = coerceNum(m[f]);
+    });
+  });
+  if (body.deducciones) body.deducciones.forEach((d: any) => {
+    if (d.monto !== undefined) d.monto = coerceNum(d.monto);
+  });
+  if (body.ajustesManuales) body.ajustesManuales.forEach((a: any) => {
+    if (a.monto !== undefined) a.monto = coerceNum(a.monto);
+  });
+}
+
 router.get("/api/cuadres", requireAuth, async (req: Request, res: Response) => {
   try {
     const filters = {
@@ -348,31 +380,10 @@ router.get("/api/cuadres/:id", requireAuth, async (req: Request, res: Response) 
 });
 
 router.post("/api/cuadres", requireAuth, async (req: Request, res: Response) => {
-  // Fast fix: coerce numeric strings to numbers
-  const body = req.body;
-  const numFields = [
-    'tasaDia', 'ventaBrutaZ', 'notasCreditoZ', 'ventaNetaZ', 'baseImponibleZ',
-    'exentoZ', 'ivaZ', 'igtfZ', 'totalOdooUSD', 'totalOdooBs', 'difCambiaria',
-    'totalRetencionesPOS', 'totalRetencionesReal', 'retencionesPorCobrar',
-    'totalCreditoPOS', 'totalAbonosReal', 'totalCxCPendiente',
-    'totalSaldoFavorPOS', 'totalSaldoFavorReal', 'totalAjustesManuales',
-    'totalMetodosPOS', 'totalJustificadoReal', 'totalDirectoPOS'
-  ];
-  numFields.forEach(f => { if (body[f] !== undefined && typeof body[f] === 'string') body[f] = Number(body[f]); });
-  if (body.metodos) body.metodos.forEach((m: any) => {
-    ['metodoId', 'montoPOS_USD', 'montoPOS_Bs', 'montoReal'].forEach(f => {
-      if (m[f] !== undefined && typeof m[f] === 'string') m[f] = Number(m[f]);
-    });
-  });
-  if (body.deducciones) body.deducciones.forEach((d: any) => {
-    if (d.monto !== undefined && typeof d.monto === 'string') d.monto = Number(d.monto);
-  });
-  if (body.ajustesManuales) body.ajustesManuales.forEach((a: any) => {
-    if (a.monto !== undefined && typeof a.monto === 'string') a.monto = Number(a.monto);
-  });
+  coerceCuadreBody(req.body);
 
   try {
-    const parsed = createCuadreSchema.safeParse(body);
+    const parsed = createCuadreSchema.safeParse(req.body);
     if (!parsed.success) {
       console.error("Validation error details:", parsed.error.issues);
       return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
@@ -383,37 +394,17 @@ router.post("/api/cuadres", requireAuth, async (req: Request, res: Response) => 
 
     const newCuadre = await db.createCuadre(parsed.data);
     res.status(201).json(newCuadre);
-  } catch (err) {
-    res.status(500).json({ error: "Error al crear cuadre" });
+  } catch (err: any) {
+    console.error("[POST /api/cuadres] Error:", err);
+    res.status(500).json({ error: "Error al crear cuadre", details: err?.message });
   }
 });
 
 router.put("/api/cuadres/:id", requireAuth, async (req: Request, res: Response) => {
-  // Fast fix: coerce numeric strings to numbers
-  const body = req.body;
-  const numFields = [
-    'tasaDia', 'ventaBrutaZ', 'notasCreditoZ', 'ventaNetaZ', 'baseImponibleZ',
-    'exentoZ', 'ivaZ', 'igtfZ', 'totalOdooUSD', 'totalOdooBs', 'difCambiaria',
-    'totalRetencionesPOS', 'totalRetencionesReal', 'retencionesPorCobrar',
-    'totalCreditoPOS', 'totalAbonosReal', 'totalCxCPendiente',
-    'totalSaldoFavorPOS', 'totalSaldoFavorReal', 'totalAjustesManuales',
-    'totalMetodosPOS', 'totalJustificadoReal', 'totalDirectoPOS'
-  ];
-  numFields.forEach(f => { if (body[f] !== undefined && typeof body[f] === 'string') body[f] = Number(body[f]); });
-  if (body.metodos) body.metodos.forEach((m: any) => {
-    ['metodoId', 'montoPOS_USD', 'montoPOS_Bs', 'montoReal'].forEach(f => {
-      if (m[f] !== undefined && typeof m[f] === 'string') m[f] = Number(m[f]);
-    });
-  });
-  if (body.deducciones) body.deducciones.forEach((d: any) => {
-    if (d.monto !== undefined && typeof d.monto === 'string') d.monto = Number(d.monto);
-  });
-  if (body.ajustesManuales) body.ajustesManuales.forEach((a: any) => {
-    if (a.monto !== undefined && typeof a.monto === 'string') a.monto = Number(a.monto);
-  });
+  coerceCuadreBody(req.body);
 
   try {
-    const parsed = createCuadreSchema.safeParse(body);
+    const parsed = createCuadreSchema.safeParse(req.body);
     if (!parsed.success) {
       console.error("Validation error details:", parsed.error.issues);
       return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
@@ -424,13 +415,11 @@ router.put("/api/cuadres/:id", requireAuth, async (req: Request, res: Response) 
     if (!existing) return res.status(404).json({ error: "Cuadre no encontrado" });
     const data = { ...parsed.data, observacionesNF: existing.observacionesNF || "", tipo: existing.tipo || "fiscal" };
 
-    console.log("Saving cuadre - observaciones:", data.observaciones?.substring(0, 30), "observacionesNF:", data.observacionesNF?.substring(0, 30), "notasCreditoZ:", data.notasCreditoZ, "primeraNCZ:", data.primeraNCZ, "ultimaNCZ:", data.ultimaNCZ);
-
     const updated = await db.updateCuadre(param(req, "id"), data);
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err: any) {
-    console.error("Update error:", err.message || err);
+    console.error("[PUT /api/cuadres/:id] Error:", err.message || err);
     res.status(500).json({ error: "Error al actualizar", details: err.message });
   }
 });
@@ -480,6 +469,7 @@ router.post("/api/cuadres/:id/recalculate", requireAuth, async (req: Request, re
 router.post("/api/cuadres/nf/:sessionId", requireAuth, async (req: Request, res: Response) => {
   try {
     const sessionId = Number(param(req, "sessionId"));
+    coerceCuadreBody(req.body);
     const { metodos, observacionesNF, ajustesManuales } = req.body;
 
     console.log("[NF POST] sessionId:", sessionId, "metodos:", metodos?.length, "observacionesNF:", observacionesNF, "ajustes:", ajustesManuales?.length);
@@ -565,6 +555,7 @@ router.post("/api/cuadres/nf/:sessionId", requireAuth, async (req: Request, res:
 router.put("/api/cuadres/nf/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const id = param(req, "id");
+    coerceCuadreBody(req.body);
     const { metodos, observacionesNF, ajustesManuales } = req.body;
 
     console.log("[NF PUT] id:", id, "metodos:", metodos?.length, "ajustes:", ajustesManuales?.length);

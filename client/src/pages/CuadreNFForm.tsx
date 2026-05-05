@@ -339,26 +339,38 @@ export default function CuadreNFForm() {
   });
 
   const handleSave = () => {
+    const num = (v: any) => {
+      if (v === null || v === undefined || v === "") return 0;
+      const n = typeof v === "number" ? v : parseFloat(v);
+      return isNaN(n) ? 0 : n;
+    };
     const metodosData = directPayments.map((p) => {
-      const amountBs = realAmounts[p.methodId] || 0;
+      const amountBs = num(realAmounts[p.methodId]);
       const isBs = isMethodBs(p.methodId);
       // Convert to USD for storage
       const amountUSD = isBs && tasa ? amountBs / tasa : amountBs;
       return {
         metodoId: p.methodId,
         metodoNombre: p.methodName,
-        montoPOS_USD: p.totalUSD,
+        montoPOS_USD: num(p.totalUSD),
+        montoPOS_Bs: 0, // NF doesn't have POS Bs amounts
         montoReal_Bs: isBs ? amountBs : 0,
-        montoReal: amountUSD,
+        montoReal: num(amountUSD),
         observacion: metodosObservaciones[p.methodId] || "",
       };
     });
+    const ajustesData = ajustesManuales.map((a: any) => ({
+      tipo: a.tipo,
+      descripcion: a.descripcion,
+      monto: num(a.monto),
+      referencia: a.referencia || "",
+    }));
     saveMutation.mutate({
       sessionId,
       fecha,
       metodos: metodosData,
       observacionesNF,
-      ajustesManuales,
+      ajustesManuales: ajustesData,
     });
   };
 

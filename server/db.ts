@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from "pg";
+import pg, { Pool, PoolClient } from "pg";
 import bcrypt from "bcryptjs";
 import type {
   User,
@@ -11,6 +11,19 @@ import type {
   CreateCuadre,
 } from "../shared/schema.js";
 import { CUADRE_TOLERANCE_BS } from "../shared/schema.js";
+
+// CRITICAL: pg returns NUMERIC as string by default, which breaks arithmetic
+// (e.g., sum + "100.00" = "0100.00" string concat → NaN). Force float parsing.
+pg.types.setTypeParser(1700, (val: string) => val === null ? null : parseFloat(val));
+// Also parse INT8 (bigint) as number to avoid BigInt issues
+pg.types.setTypeParser(20, (val: string) => val === null ? null : parseInt(val, 10));
+
+// Safe number coercion: handles strings, undefined, NaN
+function toNum(v: any): number {
+  if (v === null || v === undefined || v === "") return 0;
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
 
 const SALT_ROUNDS = 10;
 
@@ -249,28 +262,29 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
   diferencia: number;
   estado: "cuadrado" | "pendiente";
 }> {
-  const totalMetodosReal = (data.metodos || []).reduce((sum, m) => sum + (m.montoReal || 0), 0);
-  const totalDeducciones = (data.deducciones || []).reduce((sum, d) => sum + (d.monto || 0), 0);
-  const totalAjustesManuales = (data.ajustesManuales || []).reduce((sum, a) => sum + (a.monto || 0), 0);
+  const totalMetodosReal = (data.metodos || []).reduce((sum, m) => sum + toNum(m.montoReal), 0);
+  const totalDeducciones = (data.deducciones || []).reduce((sum, d) => sum + toNum(d.monto), 0);
+  const totalAjustesManuales = (data.ajustesManuales || []).reduce((sum, a) => sum + toNum(a.monto), 0);
 
   const deliveryDifTotal = (data.metodos || [])
     .filter((m) => (m.metodoNombre || "").toLowerCase().includes("delivery") || (m.metodoNombre || "").toLowerCase().includes("diferencia"))
-    .reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
+    .reduce((s, m) => s + toNum(m.montoPOS_Bs), 0);
 
+  const ventaNetaZ = toNum(data.ventaNetaZ);
   const totalJustificado =
     totalMetodosReal +
-    (data.totalRetencionesReal || 0) +
-    (data.retencionesPorCobrar || 0) +
-    (data.totalAbonosReal || 0) +
-    (data.totalCxCPendiente || 0) +
-    (data.totalSaldoFavorReal || 0) +
+    toNum(data.totalRetencionesReal) +
+    toNum(data.retencionesPorCobrar) +
+    toNum(data.totalAbonosReal) +
+    toNum(data.totalCxCPendiente) +
+    toNum(data.totalSaldoFavorReal) +
     deliveryDifTotal +
     totalDeducciones +
     totalAjustesManuales;
 
-  const diferencia = Math.round((totalJustificado - data.ventaNetaZ) * 100) / 100;
+  const diferencia = Math.round((totalJustificado - ventaNetaZ) * 100) / 100;
   const estado: "cuadrado" | "pendiente" =
-    data.ventaNetaZ === 0
+    ventaNetaZ === 0
       ? "cuadrado"
       : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
       ? "cuadrado"
@@ -307,10 +321,10 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47)`,
       [
         id, data.fecha, data.caja, data.maquinaFiscal, data.sessionId, data.sessionName, data.cajero,
-        data.zNumero, data.ventaBrutaZ, data.notasCreditoZ, data.ventaNetaZ,
-        data.baseImponibleZ, data.exentoZ, data.ivaZ, data.igtfZ,
+        data.zNumero, toNum(data.ventaBrutaZ), toNum(data.notasCreditoZ), toNum(data.ventaNetaZ),
+        toNum(data.baseImponibleZ), toNum(data.exentoZ), toNum(data.ivaZ), toNum(data.igtfZ),
         data.primeraFacturaZ, data.ultimaFacturaZ, data.primeraNCZ || "", data.ultimaNCZ || "",
-        data.tasaDia, data.totalOdooUSD, data.totalOdooBs, data.difCambiaria,
+        toNum(data.tasaDia), toNum(data.totalOdooUSD), toNum(data.totalOdooBs), toNum(data.difCambiaria),
         Math.round(totalMetodosReal * 100) / 100,
         Math.round((totalDeducciones + deliveryDifTotal) * 100) / 100,
         Math.round(totalJustificado * 100) / 100,
@@ -319,12 +333,12 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
         data.observaciones || "",
         data.observacionesNF || "",
         data.tipo || "fiscal",
-        data.totalRetencionesPOS || 0, data.totalRetencionesReal || 0, data.retencionesPorCobrar || 0,
-        data.totalCreditoPOS || 0, data.totalAbonosReal || 0, data.totalCxCPendiente || 0,
-        data.totalSaldoFavorPOS || 0, data.totalSaldoFavorReal || 0,
+        toNum(data.totalRetencionesPOS), toNum(data.totalRetencionesReal), toNum(data.retencionesPorCobrar),
+        toNum(data.totalCreditoPOS), toNum(data.totalAbonosReal), toNum(data.totalCxCPendiente),
+        toNum(data.totalSaldoFavorPOS), toNum(data.totalSaldoFavorReal),
         Math.round(totalAjustesManuales * 100) / 100,
         data.saldoFavorObs || "",
-        data.totalMetodosPOS || 0, data.totalJustificadoReal || 0, data.totalDirectoPOS || 0,
+        toNum(data.totalMetodosPOS), toNum(data.totalJustificadoReal), toNum(data.totalDirectoPOS),
         "", now, null,
       ]
     );
@@ -333,35 +347,39 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
     let mIdx = 0;
     for (const m of data.metodos) {
       const mid = `MV-${Date.now()}-${mIdx++}-${m.metodoId}`;
-      const montoPosBs = (m as any).montoReal_Bs || m.montoPOS_Bs || 0;
-      const diff = Math.round(((m.montoReal || 0) - (m.montoPOS_USD || 0)) * 100) / 100;
+      const montoPosBs = toNum((m as any).montoReal_Bs) || toNum(m.montoPOS_Bs);
+      const montoUSD = toNum(m.montoPOS_USD);
+      const montoReal = toNum(m.montoReal);
+      const diff = Math.round((montoReal - montoUSD) * 100) / 100;
       await client.query(
         "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-        [mid, id, m.metodoId, m.metodoNombre, m.montoPOS_USD || 0, montoPosBs, m.montoReal || 0, diff, m.observacion || ""]
+        [mid, id, m.metodoId, m.metodoNombre, montoUSD, montoPosBs, montoReal, diff, m.observacion || ""]
       );
-      metodos.push({ id: mid, cuadreId: id, metodoId: m.metodoId, metodoNombre: m.metodoNombre, montoPOS_USD: m.montoPOS_USD || 0, montoPOS_Bs: montoPosBs, montoReal: m.montoReal || 0, diferencia: diff, observacion: m.observacion || "" });
+      metodos.push({ id: mid, cuadreId: id, metodoId: m.metodoId, metodoNombre: m.metodoNombre, montoPOS_USD: montoUSD, montoPOS_Bs: montoPosBs, montoReal, diferencia: diff, observacion: m.observacion || "" });
     }
 
     const deducciones: Deduccion[] = [];
     let dIdx = 0;
     for (const d of data.deducciones || []) {
       const did = `DD-${Date.now()}-${dIdx++}-${Math.random().toString(36).slice(2, 6)}`;
+      const monto = toNum(d.monto);
       await client.query(
         "INSERT INTO deducciones (id, cuadre_id, tipo, descripcion, monto, comprobante) VALUES ($1,$2,$3,$4,$5,$6)",
-        [did, id, d.tipo, d.descripcion, d.monto, d.comprobante || ""]
+        [did, id, d.tipo, d.descripcion, monto, d.comprobante || ""]
       );
-      deducciones.push({ id: did, cuadreId: id, tipo: d.tipo, descripcion: d.descripcion, monto: d.monto, comprobante: d.comprobante || "" });
+      deducciones.push({ id: did, cuadreId: id, tipo: d.tipo, descripcion: d.descripcion, monto, comprobante: d.comprobante || "" });
     }
 
     const ajustesManuales: AjusteManual[] = [];
     let aIdx = 0;
     for (const a of data.ajustesManuales || []) {
       const aid = `AJ-${Date.now()}-${aIdx++}-${Math.random().toString(36).slice(2, 6)}`;
+      const monto = toNum(a.monto);
       await client.query(
         "INSERT INTO ajustes_manuales (id, cuadre_id, tipo, descripcion, monto, referencia) VALUES ($1,$2,$3,$4,$5,$6)",
-        [aid, id, a.tipo, a.descripcion, a.monto, a.referencia || ""]
+        [aid, id, a.tipo, a.descripcion, monto, a.referencia || ""]
       );
-      ajustesManuales.push({ id: aid, cuadreId: id, tipo: a.tipo, descripcion: a.descripcion, monto: a.monto, referencia: a.referencia || "" });
+      ajustesManuales.push({ id: aid, cuadreId: id, tipo: a.tipo, descripcion: a.descripcion, monto, referencia: a.referencia || "" });
     }
 
     await client.query("COMMIT");
@@ -438,21 +456,21 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
       WHERE id=$44`,
       [
         data.fecha, data.caja, data.maquinaFiscal, data.sessionId, data.sessionName, data.cajero,
-        data.zNumero, data.ventaBrutaZ, data.notasCreditoZ, data.ventaNetaZ,
-        data.baseImponibleZ, data.exentoZ, data.ivaZ, data.igtfZ,
+        data.zNumero, toNum(data.ventaBrutaZ), toNum(data.notasCreditoZ), toNum(data.ventaNetaZ),
+        toNum(data.baseImponibleZ), toNum(data.exentoZ), toNum(data.ivaZ), toNum(data.igtfZ),
         data.primeraFacturaZ, data.ultimaFacturaZ, data.primeraNCZ || "", data.ultimaNCZ || "",
-        data.tasaDia, data.totalOdooUSD, data.totalOdooBs, data.difCambiaria,
+        toNum(data.tasaDia), toNum(data.totalOdooUSD), toNum(data.totalOdooBs), toNum(data.difCambiaria),
         Math.round(totalMetodosReal * 100) / 100,
         Math.round((totalDeducciones + deliveryDifTotal) * 100) / 100,
         Math.round(totalJustificado * 100) / 100,
         diferencia, estado,
         data.observaciones || "", data.observacionesNF || "", data.tipo || existing.tipo || "fiscal",
-        data.totalRetencionesPOS || 0, data.totalRetencionesReal || 0, data.retencionesPorCobrar || 0,
-        data.totalCreditoPOS || 0, data.totalAbonosReal || 0, data.totalCxCPendiente || 0,
-        data.totalSaldoFavorPOS || 0, data.totalSaldoFavorReal || 0,
+        toNum(data.totalRetencionesPOS), toNum(data.totalRetencionesReal), toNum(data.retencionesPorCobrar),
+        toNum(data.totalCreditoPOS), toNum(data.totalAbonosReal), toNum(data.totalCxCPendiente),
+        toNum(data.totalSaldoFavorPOS), toNum(data.totalSaldoFavorReal),
         Math.round(totalAjustesManuales * 100) / 100,
         data.saldoFavorObs || "",
-        data.totalMetodosPOS || 0, data.totalJustificadoReal || 0, data.totalDirectoPOS || 0,
+        toNum(data.totalMetodosPOS), toNum(data.totalJustificadoReal), toNum(data.totalDirectoPOS),
         id,
       ]
     );
@@ -465,35 +483,39 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
     let mIdx = 0;
     for (const m of data.metodos) {
       const mid = `MV-${Date.now()}-${mIdx++}-${m.metodoId}`;
-      const montoPosBs = (m as any).montoReal_Bs || m.montoPOS_Bs || 0;
-      const diff = Math.round(((m.montoReal || 0) - (m.montoPOS_USD || 0)) * 100) / 100;
+      const montoPosBs = toNum((m as any).montoReal_Bs) || toNum(m.montoPOS_Bs);
+      const montoUSD = toNum(m.montoPOS_USD);
+      const montoReal = toNum(m.montoReal);
+      const diff = Math.round((montoReal - montoUSD) * 100) / 100;
       await client.query(
         "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-        [mid, id, m.metodoId, m.metodoNombre, m.montoPOS_USD || 0, montoPosBs, m.montoReal || 0, diff, m.observacion || ""]
+        [mid, id, m.metodoId, m.metodoNombre, montoUSD, montoPosBs, montoReal, diff, m.observacion || ""]
       );
-      metodos.push({ id: mid, cuadreId: id, metodoId: m.metodoId, metodoNombre: m.metodoNombre, montoPOS_USD: m.montoPOS_USD || 0, montoPOS_Bs: montoPosBs, montoReal: m.montoReal || 0, diferencia: diff, observacion: m.observacion || "" });
+      metodos.push({ id: mid, cuadreId: id, metodoId: m.metodoId, metodoNombre: m.metodoNombre, montoPOS_USD: montoUSD, montoPOS_Bs: montoPosBs, montoReal, diferencia: diff, observacion: m.observacion || "" });
     }
 
     const deducciones: Deduccion[] = [];
     let dIdx = 0;
     for (const d of data.deducciones || []) {
       const did = `DD-${Date.now()}-${dIdx++}-${Math.random().toString(36).slice(2, 6)}`;
+      const monto = toNum(d.monto);
       await client.query(
         "INSERT INTO deducciones (id, cuadre_id, tipo, descripcion, monto, comprobante) VALUES ($1,$2,$3,$4,$5,$6)",
-        [did, id, d.tipo, d.descripcion, d.monto, d.comprobante || ""]
+        [did, id, d.tipo, d.descripcion, monto, d.comprobante || ""]
       );
-      deducciones.push({ id: did, cuadreId: id, tipo: d.tipo, descripcion: d.descripcion, monto: d.monto, comprobante: d.comprobante || "" });
+      deducciones.push({ id: did, cuadreId: id, tipo: d.tipo, descripcion: d.descripcion, monto, comprobante: d.comprobante || "" });
     }
 
     const ajustesManuales: AjusteManual[] = [];
     let aIdx = 0;
     for (const a of data.ajustesManuales || []) {
       const aid = `AJ-${Date.now()}-${aIdx++}-${Math.random().toString(36).slice(2, 6)}`;
+      const monto = toNum(a.monto);
       await client.query(
         "INSERT INTO ajustes_manuales (id, cuadre_id, tipo, descripcion, monto, referencia) VALUES ($1,$2,$3,$4,$5,$6)",
-        [aid, id, a.tipo, a.descripcion, a.monto, a.referencia || ""]
+        [aid, id, a.tipo, a.descripcion, monto, a.referencia || ""]
       );
-      ajustesManuales.push({ id: aid, cuadreId: id, tipo: a.tipo, descripcion: a.descripcion, monto: a.monto, referencia: a.referencia || "" });
+      ajustesManuales.push({ id: aid, cuadreId: id, tipo: a.tipo, descripcion: a.descripcion, monto, referencia: a.referencia || "" });
     }
 
     await client.query("COMMIT");
@@ -576,21 +598,21 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   const deducciones = cuadre.deducciones || [];
   const ajustesManuales = cuadre.ajustesManuales || [];
 
-  const totalMetodosReal = metodos.reduce((sum, m) => sum + (m.montoReal || 0), 0);
-  const totalDeducciones = deducciones.reduce((sum, d) => sum + (d.monto || 0), 0);
-  const totalAjustesManuales = ajustesManuales.reduce((sum, a) => sum + (a.monto || 0), 0);
+  const totalMetodosReal = metodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
+  const totalDeducciones = deducciones.reduce((sum, d) => sum + toNum(d.monto), 0);
+  const totalAjustesManuales = ajustesManuales.reduce((sum, a) => sum + toNum(a.monto), 0);
 
   const deliveryDifTotal = metodos
     .filter((m) => (m.metodoNombre || "").toLowerCase().includes("delivery") || (m.metodoNombre || "").toLowerCase().includes("diferencia"))
-    .reduce((sum, m) => sum + (m.montoPOS_Bs || 0), 0);
+    .reduce((sum, m) => sum + toNum(m.montoPOS_Bs), 0);
 
   const totalJustificado =
     totalMetodosReal +
-    (cuadre.totalRetencionesReal || 0) +
-    (cuadre.retencionesPorCobrar || 0) +
-    (cuadre.totalAbonosReal || 0) +
-    (cuadre.totalCxCPendiente || 0) +
-    (cuadre.totalSaldoFavorReal || 0) +
+    toNum(cuadre.totalRetencionesReal) +
+    toNum(cuadre.retencionesPorCobrar) +
+    toNum(cuadre.totalAbonosReal) +
+    toNum(cuadre.totalCxCPendiente) +
+    toNum(cuadre.totalSaldoFavorReal) +
     deliveryDifTotal +
     totalDeducciones +
     totalAjustesManuales;
