@@ -473,6 +473,10 @@ router.post("/api/cuadres/nf/:sessionId", requireAuth, async (req: Request, res:
     const { metodos, observacionesNF, ajustesManuales } = req.body;
 
     console.log("[NF POST] sessionId:", sessionId, "metodos:", metodos?.length, "observacionesNF:", observacionesNF, "ajustes:", ajustesManuales?.length);
+    console.log("[NF POST] Body keys:", Object.keys(req.body));
+    if (metodos) metodos.forEach((m: any, i: number) => {
+      console.log(`[NF POST] metodo[${i}]:`, { metodoId: m.metodoId, montoPOS_USD: m.montoPOS_USD, montoReal: m.montoReal });
+    });
 
     // Check if NF cuadre already exists for this session
     const existing = await db.getCuadreBySessionId(sessionId, "nf");
@@ -547,7 +551,8 @@ router.post("/api/cuadres/nf/:sessionId", requireAuth, async (req: Request, res:
     } as any);
     res.status(201).json(newCuadre);
   } catch (err: any) {
-    console.error("[NF POST] Error:", err.message);
+    console.error("[NF POST] Error:", err?.message || err, "Stack:", err?.stack);
+    console.error("[NF POST] Full error object:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
     res.status(500).json({ error: "Error al guardar cuadre NF", details: err?.message });
   }
 });
@@ -559,6 +564,10 @@ router.put("/api/cuadres/nf/:id", requireAuth, async (req: Request, res: Respons
     const { metodos, observacionesNF, ajustesManuales } = req.body;
 
     console.log("[NF PUT] id:", id, "metodos:", metodos?.length, "ajustes:", ajustesManuales?.length);
+    console.log("[NF PUT] Body keys:", Object.keys(req.body));
+    if (metodos) metodos.forEach((m: any, i: number) => {
+      console.log(`[NF PUT] metodo[${i}]:`, { metodoId: m.metodoId, montoPOS_USD: m.montoPOS_USD, montoReal: m.montoReal });
+    });
 
     const existing = await db.getCuadreById(id);
     if (!existing) return res.status(404).json({ error: "Cuadre no encontrado" });
@@ -609,7 +618,8 @@ router.put("/api/cuadres/nf/:id", requireAuth, async (req: Request, res: Respons
     if (!updated) return res.status(404).json({ error: "Cuadre no encontrado" });
     res.json(updated);
   } catch (err: any) {
-    console.error("[NF PUT] Error:", err.message);
+    console.error("[NF PUT] Error:", err?.message || err, "Stack:", err?.stack);
+    console.error("[NF PUT] Full error object:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
     res.status(500).json({ error: "Error al actualizar cuadre NF", details: err?.message });
   }
 });
