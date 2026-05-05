@@ -606,7 +606,7 @@ export default function CuadreForm() {
     },
     onSuccess: (data) => {
       toast({ title: "Cuadre guardado" });
-      queryClient.invalidateQueries({ queryKey: ["cuadres"] });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       if (isNew) navigate(`/cuadre/${data.id}`);
     },
@@ -626,7 +626,7 @@ export default function CuadreForm() {
     onSuccess: () => {
       toast({ title: "Cuadre cerrado" });
       queryClient.invalidateQueries({ queryKey: ["cuadre", cuadreId] });
-      queryClient.invalidateQueries({ queryKey: ["cuadres"] });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -641,6 +641,7 @@ export default function CuadreForm() {
     onSuccess: () => {
       toast({ title: "Cuadre reabierto" });
       queryClient.invalidateQueries({ queryKey: ["cuadre", cuadreId] });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -653,7 +654,7 @@ export default function CuadreForm() {
     },
     onSuccess: () => {
       toast({ title: "Cuadre eliminado" });
-      queryClient.invalidateQueries({ queryKey: ["cuadres"] });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
       navigate("/");
     },
     onError: (err: Error) => {

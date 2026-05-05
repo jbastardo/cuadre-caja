@@ -289,6 +289,8 @@ export default function CuadreNFForm() {
       const newId = saved?.id || existingCuadreId;
       queryClient.invalidateQueries({ queryKey: ["cuadres-lookup", sessionId] });
       queryClient.invalidateQueries({ queryKey: ["cuadre", newId] });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
       toast({ title: "Guardado", description: "Cuadre NF guardado exitosamente." });
     },
     onError: (error: Error) => {
@@ -313,6 +315,7 @@ export default function CuadreNFForm() {
       toast({ title: "Cuadre cerrado" });
       queryClient.invalidateQueries({ queryKey: ["cuadre", existingCuadreId] });
       queryClient.invalidateQueries({ queryKey: ["cuadres-lookup", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
     },
   });
 
@@ -324,6 +327,7 @@ export default function CuadreNFForm() {
     onSuccess: () => {
       toast({ title: "Cuadre reabierto" });
       queryClient.invalidateQueries({ queryKey: ["cuadre", existingCuadreId] });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
     },
   });
 
@@ -334,6 +338,7 @@ export default function CuadreNFForm() {
     onSuccess: () => {
       toast({ title: "Cuadre eliminado" });
       queryClient.invalidateQueries({ queryKey: ["cuadres-lookup", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
       navigate("/");
     },
   });
