@@ -111,14 +111,16 @@ export default function CuadreReport() {
   const creditSales: CreditSaleRow[] = cuadre.creditSales || [];
   const retentions: RetentionRow[]   = cuadre.retenciones  || [];
 
+  // Totales calculados desde los arrays de métodos guardados en DB
   const totalDirectosPOS  = directos.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
   const totalDirectosReal = directos.reduce((s, m) => s + (m.montoReal    || 0), 0);
   const totalDeliveryPOS  = deliveryMtds.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
   const totalCasheaPOS    = casheaMtds.reduce((s, m) => s + (m.montoPOS_Bs  || 0), 0);
   const totalCasheaReal   = casheaMtds.reduce((s, m) => s + (m.montoReal    || 0), 0);
 
+  // Campos especiales guardados en DB por el formulario
   const totalRetPOS       = cuadre.totalRetencionesPOS  || 0;
-  const totalRetReal      = cuadre.totalRetencionesReal || 0;
+  const totalRetReal      = cuadre.totalRetencionesReal || 0;   // campo manual del usuario
   const retPorCobrar      = cuadre.retencionesPorCobrar || 0;
   const totalCreditoPOS   = cuadre.totalCreditoPOS      || 0;
   const totalAbonos       = cuadre.totalAbonosReal      || 0;
@@ -127,12 +129,37 @@ export default function CuadreReport() {
   const totalSFavorReal   = cuadre.totalSaldoFavorReal  || 0;
   const totalAjustes      = cuadre.totalAjustesManuales || 0;
   const totalPOS          = cuadre.totalMetodosPOS      || 0;
-  const totalReal         = cuadre.totalJustificadoReal || 0;
   const ventaNetaZ        = cuadre.ventaNetaZ           || 0;
-  const diferencia        = cuadre.diferencia           || 0;
   const difCambiaria      = cuadre.difCambiaria         || 0;
 
-  const esCuadrado = Math.abs(diferencia) < 5 || cuadre.estado === "cuadrado";
+  // ── CÁLCULO AUTORITATIVO DEL TOTAL REAL Y DIFERENCIA ──────────────────────
+  // Se recalcula aquí con la MISMA fórmula que usa el formulario (summaryReal).
+  // NO se usa cuadre.diferencia ni cuadre.totalJustificadoReal de la DB porque
+  // pueden estar desactualizados (guardados antes del fix del doble conteo).
+  //
+  // Fórmula idéntica a CuadreForm.tsx summaryReal:
+  //   totalDirectosReal (métodos directos, sin IDs especiales)
+  //   + totalRetReal    (retenciones reales — campo manual)
+  //   + retPorCobrar
+  //   + totalAbonos
+  //   + totalCxCPendiente
+  //   + totalSFavorReal
+  //   + totalDeliveryPOS (delivery/diferencia usa montoPOS_Bs como en el form)
+  //   + totalAjustes
+  const totalReal = Math.round((
+    totalDirectosReal  +
+    totalRetReal       +
+    retPorCobrar       +
+    totalAbonos        +
+    totalCxCPendiente  +
+    totalSFavorReal    +
+    totalDeliveryPOS   +
+    totalAjustes
+  ) * 100) / 100;
+
+  // Diferencia recalculada localmente — nunca leer cuadre.diferencia de DB
+  const diferencia  = Math.round((totalReal - ventaNetaZ) * 100) / 100;
+  const esCuadrado  = Math.abs(diferencia) < 5 || cuadre.estado === "cuadrado";
 
   const fechaFormateada = cuadre.fecha
     ? new Date(cuadre.fecha + "T12:00:00").toLocaleDateString("es-VE", {
