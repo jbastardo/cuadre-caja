@@ -253,6 +253,19 @@ export async function getCuadreBySessionId(sessionId: number, tipo?: string): Pr
   return rows.length > 0 ? rowToCuadre(rows[0]) : null;
 }
 
+// Método IDs que tienen campos dedicados en el cuadre y NO deben sumarse en totalMetodosReal.
+// Deben coincidir exactamente con SECTION3_EXCLUDED_IDS del frontend (CuadreForm.tsx).
+const SPECIAL_METHOD_IDS = new Set([
+  26,       // Retención IVA  → campo totalRetencionesReal
+  14, 33,   // Venta a crédito (pay_later) → campo totalCreditoPOS / totalAbonosReal
+  25,       // Saldo a favor  → campo totalSaldoFavorReal
+]);
+
+function isDeliveryOrDifName(name: string): boolean {
+  const n = (name || "").toLowerCase();
+  return n.includes("delivery") || n.includes("diferencia");
+}
+
 async function computeCuadreTotals(data: CreateCuadre): Promise<{
   totalMetodosReal: number;
   totalDeducciones: number;
@@ -262,12 +275,19 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
   diferencia: number;
   estado: "cuadrado" | "pendiente";
 }> {
-  const totalMetodosReal = (data.metodos || []).reduce((sum, m) => sum + toNum(m.montoReal), 0);
+  // Only sum DIRECT methods — special methods (retención, crédito, saldo a favor)
+  // are already accounted for via their dedicated fields and must NOT be double-counted.
+  // This matches the frontend logic in CuadreForm.tsx (SECTION3_EXCLUDED_IDS).
+  const directMetodos = (data.metodos || []).filter(
+    (m) => !SPECIAL_METHOD_IDS.has(m.metodoId) && !isDeliveryOrDifName(m.metodoNombre || "")
+  );
+  const totalMetodosReal = directMetodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
+
   const totalDeducciones = (data.deducciones || []).reduce((sum, d) => sum + toNum(d.monto), 0);
   const totalAjustesManuales = (data.ajustesManuales || []).reduce((sum, a) => sum + toNum(a.monto), 0);
 
   const deliveryDifTotal = (data.metodos || [])
-    .filter((m) => (m.metodoNombre || "").toLowerCase().includes("delivery") || (m.metodoNombre || "").toLowerCase().includes("diferencia"))
+    .filter((m) => isDeliveryOrDifName(m.metodoNombre || ""))
     .reduce((s, m) => s + toNum(m.montoPOS_Bs), 0);
 
   const ventaNetaZ = toNum(data.ventaNetaZ);
@@ -607,12 +627,17 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   const deducciones = cuadre.deducciones || [];
   const ajustesManuales = cuadre.ajustesManuales || [];
 
-  const totalMetodosReal = metodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
+  // Same exclusion logic as computeCuadreTotals: skip special methods already
+  // counted via their dedicated fields to avoid double-counting.
+  const directMetodos = metodos.filter(
+    (m) => !SPECIAL_METHOD_IDS.has(m.metodoId) && !isDeliveryOrDifName(m.metodoNombre || "")
+  );
+  const totalMetodosReal = directMetodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
   const totalDeducciones = deducciones.reduce((sum, d) => sum + toNum(d.monto), 0);
   const totalAjustesManuales = ajustesManuales.reduce((sum, a) => sum + toNum(a.monto), 0);
 
   const deliveryDifTotal = metodos
-    .filter((m) => (m.metodoNombre || "").toLowerCase().includes("delivery") || (m.metodoNombre || "").toLowerCase().includes("diferencia"))
+    .filter((m) => isDeliveryOrDifName(m.metodoNombre || ""))
     .reduce((sum, m) => sum + toNum(m.montoPOS_Bs), 0);
 
   const totalJustificado =
