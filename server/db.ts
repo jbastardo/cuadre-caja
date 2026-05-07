@@ -253,22 +253,27 @@ export async function getCuadreBySessionId(sessionId: number, tipo?: string): Pr
   return rows.length > 0 ? rowToCuadre(rows[0]) : null;
 }
 
-// Método IDs que tienen campos dedicados en el cuadre y NO deben sumarse en totalMetodosReal.
-// Deben coincidir exactamente con la lógica de exclusión del frontend (CuadreForm.tsx).
+// Método IDs excluidos de totalMetodosReal porque tienen campo dedicado en el cuadre.
+// IMPORTANTE: ID 38 ("Venta a crédito" en Odoo) es en realidad P.Movil BNC (type=bank).
+// Es un ingreso directo y DEBE incluirse en totalMetodosReal. No va aquí.
 const SPECIAL_METHOD_IDS = new Set([
   26,       // Retención IVA   → campo totalRetencionesReal
-  14, 33,   // Venta a crédito → campo totalCreditoPOS / totalAbonosReal
+  14, 33,   // Venta a crédito pay_later → campo totalCreditoPOS / totalAbonosReal
   25,       // Saldo a favor   → campo totalSaldoFavorReal
-  42,       // PXC Cashea      → método de cobro diferido al operador
+  42,       // PXC Cashea      → cobro diferido al operador
 ]);
+
+// IDs con nombre incorrecto en Odoo — no se puede confiar en su metodoNombre para clasificar
+const NOMBRE_OVERRIDE_IDS = new Set([38, 42]);
 
 function isDeliveryOrDifName(name: string): boolean {
   const n = (name || "").toLowerCase();
   return n.includes("delivery") || n.includes("diferencia");
 }
 
-// También excluir por nombre (igual que isVentaCredito en el frontend)
-function isCreditoByName(name: string): boolean {
+// Excluir por nombre "crédito" SOLO si el ID no tiene override (evita falso positivo en ID 38)
+function isCreditoByName(metodoId: number, name: string): boolean {
+  if (NOMBRE_OVERRIDE_IDS.has(metodoId)) return false; // nombre no es fiable para este ID
   const n = (name || "").toLowerCase();
   return n.includes("crédito") || n.includes("credito");
 }
@@ -288,7 +293,7 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
   const directMetodos = (data.metodos || []).filter(
     (m) => !SPECIAL_METHOD_IDS.has(m.metodoId)
         && !isDeliveryOrDifName(m.metodoNombre || "")
-        && !isCreditoByName(m.metodoNombre || "")
+        && !isCreditoByName(m.metodoId, m.metodoNombre || "")
   );
   const totalMetodosReal = directMetodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
 
@@ -640,7 +645,7 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   const directMetodos = metodos.filter(
     (m) => !SPECIAL_METHOD_IDS.has(m.metodoId)
         && !isDeliveryOrDifName(m.metodoNombre || "")
-        && !isCreditoByName(m.metodoNombre || "")
+        && !isCreditoByName(m.metodoId, m.metodoNombre || "")
   );
   const totalMetodosReal = directMetodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
   const totalDeducciones = deducciones.reduce((sum, d) => sum + toNum(d.monto), 0);

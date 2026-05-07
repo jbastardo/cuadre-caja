@@ -6,10 +6,25 @@ import { ArrowLeft, Printer } from "lucide-react";
 import type { CreditSaleRow, RetentionRow } from "@shared/schema";
 
 // ─── Clasificación de métodos ────────────────────────────────────────────────
-const RETENCION_IVA_ID   = 26;
-const SALDO_FAVOR_ID     = 25;
-const CASHEA_ID          = 42;
-const CREDITO_IDS        = new Set([14, 33]);
+const RETENCION_IVA_ID = 26;
+const SALDO_FAVOR_ID   = 25;
+const CASHEA_ID        = 42;
+
+// Solo IDs pay_later reales. ID 38 se llama "Venta a crédito" en Odoo pero es
+// P.Movil BNC (type=bank) — es un ingreso directo, NO va a la sección de CxC.
+const CREDITO_IDS = new Set([14, 33]);
+
+// Métodos cuyo nombre en Odoo es incorrecto y debe ignorarse para la clasificación
+const NOMBRE_OVERRIDE_IDS = new Set([38, 42]); // 38=P.Movil BNC, 42=PXC Cashea
+
+/** Overrides de nombre igual que el formulario */
+const METHOD_NAME_OVERRIDES: Record<number, string> = {
+  38: "P.Movil BNC",
+  42: "PXC Cashea",
+};
+function getMethodName(m: any): string {
+  return METHOD_NAME_OVERRIDES[m.metodoId] || m.metodoNombre || "";
+}
 
 /** Nombre contiene "delivery" o "diferencia" (case-insensitive) */
 function isDeliveryOrDif(name: string) {
@@ -17,8 +32,10 @@ function isDeliveryOrDif(name: string) {
   return n.includes("delivery") || n.includes("diferencia");
 }
 
-/** Nombre contiene "crédito" o "credito" (captura variantes de nombre en Odoo) */
+/** Método pay_later de crédito real — solo por ID, nunca por nombre.
+ *  ID 38 queda EXCLUIDO aunque Odoo lo nombre "Venta a crédito". */
 function isVentaCredito(m: any) {
+  if (NOMBRE_OVERRIDE_IDS.has(m.metodoId)) return false; // nombre no es fiable para estos IDs
   if (CREDITO_IDS.has(m.metodoId)) return true;
   const n = (m.metodoNombre || "").toLowerCase();
   return n.includes("crédito") || n.includes("credito");
@@ -27,10 +44,10 @@ function isVentaCredito(m: any) {
 /** Métodos excluidos de Sección II — aparecen en sus propias secciones */
 function isExcluded(m: any) {
   return (
-    m.metodoId === RETENCION_IVA_ID   ||
-    m.metodoId === SALDO_FAVOR_ID     ||
-    m.metodoId === CASHEA_ID          ||
-    isVentaCredito(m)                 ||
+    m.metodoId === RETENCION_IVA_ID ||
+    m.metodoId === SALDO_FAVOR_ID   ||
+    m.metodoId === CASHEA_ID        ||
+    isVentaCredito(m)               ||
     isDeliveryOrDif(m.metodoNombre)
   );
 }
@@ -324,7 +341,7 @@ export default function CuadreReport() {
                 ? Math.round((m.montoReal - m.montoPOS_Bs) * 100) / 100 : 0;
               return (
                 <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
-                  <td style={{ padding: "2px 4px" }}>{m.metodoNombre}</td>
+                  <td style={{ padding: "2px 4px" }}>{getMethodName(m)}</td>
                   <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>{formatUSD(m.montoPOS_USD || 0)}</td>
                   <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>{formatBs(m.montoPOS_Bs || 0)}</td>
                   <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 600 }}>
@@ -565,37 +582,56 @@ export default function CuadreReport() {
         <SectionTitle>V. Diferencias y Saldos a Favor</SectionTitle>
 
         {/* Cuadro comparativo POS vs Real */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 6 }}>
-          <div style={{ border: "1px solid #c3d9f7", borderRadius: 4, padding: 6 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>SEGÚN SISTEMA (POS)</div>
-            <Row label="Pagos directos:"      value={formatBs(totalDirectosPOS)} />
-            <Row label="Retenciones IVA:"     value={formatBs(totalRetPOS)} />
-            <Row label="Ventas a crédito:"    value={formatBs(totalCreditoPOS)} />
-            <Row label="Saldo a favor:"       value={formatBs(totalSFavorPOS)} />
-            {totalDeliveryPOS > 0 && <Row label="Delivery / Dif.:" value={formatBs(totalDeliveryPOS)} />}
-            {totalCasheaPOS > 0   && <Row label="PXC Cashea:"      value={formatBs(totalCasheaPOS)} />}
-            <div style={{ borderTop: "1px solid #999", marginTop: 3, paddingTop: 3 }}>
-              <Row label="TOTAL POS:" value={formatBs(totalPOS)} bold />
-            </div>
-          </div>
+        {(() => {
+          // TOTAL POS: suma de todos los items POS que se muestran en este bloque.
+          // Se calcula en vivo para que coincida exactamente con las líneas visibles.
+          const totalPOSCalculado = Math.round((
+            totalDirectosPOS  +
+            totalRetPOS       +
+            totalCreditoPOS   +
+            totalSFavorPOS    +
+            totalDeliveryPOS  +
+            totalCasheaPOS
+          ) * 100) / 100;
 
-          <div style={{ border: "1px solid #c3d9f7", borderRadius: 4, padding: 6 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>VERIFICADO REAL</div>
-            <Row label="Pagos directos:"          value={formatBs(totalDirectosReal)} />
-            <Row label="Retenciones canceladas:"  value={formatBs(totalRetReal)} />
-            {retPorCobrar > 0 && <Row label="Ret. por cobrar:" value={formatBs(retPorCobrar)} valueColor="#b45309" />}
-            <Row label="Abonos CxC recibidos:"    value={formatBs(totalAbonos)} />
-            <Row label="CxC pendiente:"           value={formatBs(totalCxCPendiente)}
-              valueColor={totalCxCPendiente > 0 ? "#dc2626" : undefined} />
-            <Row label="Saldo a favor:"           value={formatBs(totalSFavorReal)} />
-            {totalDeliveryPOS > 0 && <Row label="Delivery / Dif.:" value={formatBs(totalDeliveryPOS)} />}
-            {totalCasheaReal  > 0 && <Row label="PXC Cashea:"      value={formatBs(totalCasheaReal)} />}
-            {totalAjustes !== 0   && <Row label="Ajustes manuales:" value={formatBs(totalAjustes)} />}
-            <div style={{ borderTop: "1px solid #999", marginTop: 3, paddingTop: 3 }}>
-              <Row label="TOTAL REAL:" value={formatBs(totalReal)} bold />
+          return (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 6 }}>
+              {/* SEGÚN SISTEMA (POS) */}
+              <div style={{ border: "1px solid #c3d9f7", borderRadius: 4, padding: 6 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>SEGÚN SISTEMA (POS)</div>
+                <Row label="Pagos directos:"   value={formatBs(totalDirectosPOS)} />
+                <Row label="Retenciones IVA:"  value={formatBs(totalRetPOS)} />
+                <Row label="Ventas a crédito:" value={formatBs(totalCreditoPOS)} />
+                <Row label="Saldo a favor:"    value={formatBs(totalSFavorPOS)} />
+                {totalDeliveryPOS > 0 && <Row label="Delivery / Dif.:" value={formatBs(totalDeliveryPOS)} />}
+                {totalCasheaPOS   > 0 && <Row label="PXC Cashea:"      value={formatBs(totalCasheaPOS)} />}
+                <div style={{ borderTop: "1px solid #999", marginTop: 3, paddingTop: 3 }}>
+                  <Row label="TOTAL POS:" value={formatBs(totalPOSCalculado)} bold />
+                </div>
+              </div>
+
+              {/* VERIFICADO REAL */}
+              <div style={{ border: "1px solid #c3d9f7", borderRadius: 4, padding: 6 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>VERIFICADO REAL</div>
+                <Row label="Pagos directos:"         value={formatBs(totalDirectosReal)} />
+                <Row label="Retenciones canceladas:" value={formatBs(totalRetReal)} />
+                {retPorCobrar > 0 && (
+                  <Row label="Ret. por cobrar:" value={formatBs(retPorCobrar)} valueColor="#b45309" />
+                )}
+                <Row label="Abonos CxC recibidos:" value={formatBs(totalAbonos)} />
+                <Row label="CxC pendiente:"        value={formatBs(totalCxCPendiente)}
+                  valueColor={totalCxCPendiente > 0 ? "#dc2626" : undefined} />
+                <Row label="Saldo a favor:"        value={formatBs(totalSFavorReal)} />
+                {totalDeliveryPOS > 0 && <Row label="Delivery / Dif.:" value={formatBs(totalDeliveryPOS)} />}
+                {totalCasheaReal  > 0 && <Row label="PXC Cashea:"      value={formatBs(totalCasheaReal)} />}
+                {totalAjustes    !== 0 && <Row label="Ajustes manuales:" value={formatBs(totalAjustes)} />}
+                <div style={{ borderTop: "1px solid #999", marginTop: 3, paddingTop: 3 }}>
+                  <Row label="TOTAL REAL:" value={formatBs(totalReal)} bold />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Ajustes manuales detalle */}
         {(cuadre.ajustesManuales || []).length > 0 && (
