@@ -5,87 +5,81 @@ import { formatBs, formatUSD, getStatusLabel, formatDateTime } from "@/lib/utils
 import { ArrowLeft, Printer } from "lucide-react";
 import type { CreditSaleRow, RetentionRow } from "@shared/schema";
 
-// Payment method IDs to exclude from Sección II (direct payments)
-const RETENCION_IVA_METHOD_ID = 26;
-// pay_later credit methods (Venta a crédito)
-const CREDITO_METHOD_IDS = new Set([14, 33]);
-const SALDO_FAVOR_METHOD_ID = 25;
-// Cashea companion method — shown separately in Sección III
-const CASHEA_METHOD_ID = 42;
-const DELIVERY_KEYWORDS = ["delivery", "diferencia"];
+// ─── Clasificación de métodos ────────────────────────────────────────────────
+const RETENCION_IVA_ID   = 26;
+const SALDO_FAVOR_ID     = 25;
+const CASHEA_ID          = 42;
+const CREDITO_IDS        = new Set([14, 33]);
 
+/** Nombre contiene "delivery" o "diferencia" (case-insensitive) */
 function isDeliveryOrDif(name: string) {
-  const lower = name.toLowerCase();
-  return DELIVERY_KEYWORDS.some((k) => lower.includes(k));
+  const n = (name || "").toLowerCase();
+  return n.includes("delivery") || n.includes("diferencia");
 }
 
-/** Methods excluded from Sección II — each has its own dedicated block */
+/** Nombre contiene "crédito" o "credito" (captura variantes de nombre en Odoo) */
+function isVentaCredito(m: any) {
+  if (CREDITO_IDS.has(m.metodoId)) return true;
+  const n = (m.metodoNombre || "").toLowerCase();
+  return n.includes("crédito") || n.includes("credito");
+}
+
+/** Métodos excluidos de Sección II — aparecen en sus propias secciones */
 function isExcluded(m: any) {
   return (
-    m.metodoId === RETENCION_IVA_METHOD_ID ||
-    CREDITO_METHOD_IDS.has(m.metodoId) ||
-    m.metodoId === SALDO_FAVOR_METHOD_ID ||
-    m.metodoId === CASHEA_METHOD_ID ||
-    isDeliveryOrDif(m.metodoNombre || "")
+    m.metodoId === RETENCION_IVA_ID   ||
+    m.metodoId === SALDO_FAVOR_ID     ||
+    m.metodoId === CASHEA_ID          ||
+    isVentaCredito(m)                 ||
+    isDeliveryOrDif(m.metodoNombre)
   );
 }
 
-/** Thin horizontal rule for print */
+// ─── Componentes de presentación ────────────────────────────────────────────
 function HR() {
-  return <div style={{ borderTop: "1px solid #ccc", margin: "6px 0" }} />;
+  return <div style={{ borderTop: "1px solid #ccc", margin: "5px 0" }} />;
 }
 
-/** Section header */
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        background: "#0A4083",
-        color: "#fff",
-        fontWeight: 700,
-        fontSize: 10,
-        letterSpacing: "0.05em",
-        textTransform: "uppercase",
-        padding: "3px 6px",
-        marginBottom: 4,
-      }}
-    >
+    <div style={{
+      background: "#0A4083", color: "#fff", fontWeight: 700, fontSize: 10,
+      letterSpacing: "0.05em", textTransform: "uppercase",
+      padding: "3px 6px", marginBottom: 4,
+    }}>
       {children}
     </div>
   );
 }
 
-/** Two-column key/value row */
-function Row({
-  label,
-  value,
-  bold,
-  indent,
-  valueColor,
-}: {
-  label: string;
-  value: string;
-  bold?: boolean;
-  indent?: boolean;
-  valueColor?: string;
+function SubHead({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      fontSize: 9, fontWeight: 700, color: "#444",
+      borderBottom: "1px solid #ddd", paddingBottom: 2, marginBottom: 3,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function Row({ label, value, bold, indent, valueColor }: {
+  label: string; value: string;
+  bold?: boolean; indent?: boolean; valueColor?: string;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        fontSize: 10,
-        fontWeight: bold ? 700 : 400,
-        paddingLeft: indent ? 10 : 0,
-        marginBottom: 1,
-      }}
-    >
+    <div style={{
+      display: "flex", justifyContent: "space-between",
+      fontSize: 10, fontWeight: bold ? 700 : 400,
+      paddingLeft: indent ? 10 : 0, marginBottom: 1,
+    }}>
       <span>{label}</span>
       <span style={{ color: valueColor }}>{value}</span>
     </div>
   );
 }
 
+// ─── Componente principal ────────────────────────────────────────────────────
 export default function CuadreReport() {
   const [, params] = useRoute("/cuadre/:id/report");
   const [, setLocation] = useLocation();
@@ -96,78 +90,66 @@ export default function CuadreReport() {
     enabled: !!id,
     staleTime: 0,
     queryFn: async () => {
-      const response = await fetch(`/api/cuadres/${id}`);
-      if (!response.ok) throw new Error("Error al cargar cuadre");
-      return response.json();
+      const r = await fetch(`/api/cuadres/${id}`);
+      if (!r.ok) throw new Error("Error al cargar cuadre");
+      return r.json();
     },
   });
 
   if (isLoading) return <div className="p-8 text-center">Cargando...</div>;
-  if (!cuadre) return <div className="p-8 text-center">Cuadre no encontrado</div>;
+  if (!cuadre)   return <div className="p-8 text-center">Cuadre no encontrado</div>;
 
-  // ── Derived data ──────────────────────────────────────────────────────────
+  // ── Datos derivados ──────────────────────────────────────────────────────
   const tasa = cuadre.tasaDia || 0;
-
   const metodos: any[] = cuadre.metodos || [];
-  const directos = metodos.filter((m) => !isExcluded(m));
-  const deliveryMethods = metodos.filter((m) => isDeliveryOrDif(m.metodoNombre || ""));
-  // Cashea (PXC) — companion method shown in Sección III along with credit methods
-  const casheaMethods = metodos.filter((m) => m.metodoId === CASHEA_METHOD_ID);
-  const totalCasheaPOS = casheaMethods.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
-  const totalCasheaReal = casheaMethods.reduce((s, m) => s + (m.montoReal || 0), 0);
+
+  const directos       = metodos.filter(m => !isExcluded(m));
+  const deliveryMtds   = metodos.filter(m => isDeliveryOrDif(m.metodoNombre));
+  const creditoMtds    = metodos.filter(m => isVentaCredito(m));
+  const casheaMtds     = metodos.filter(m => m.metodoId === CASHEA_ID);
 
   const creditSales: CreditSaleRow[] = cuadre.creditSales || [];
-  const retentions: RetentionRow[] = cuadre.retenciones || [];
+  const retentions: RetentionRow[]   = cuadre.retenciones  || [];
 
-  // Totales directos (verificados real)
-  const totalDirectosReal = directos.reduce((s, m) => s + (m.montoReal || 0), 0);
-  const totalDirectosPOS = directos.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
+  const totalDirectosPOS  = directos.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
+  const totalDirectosReal = directos.reduce((s, m) => s + (m.montoReal    || 0), 0);
+  const totalDeliveryPOS  = deliveryMtds.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
+  const totalCasheaPOS    = casheaMtds.reduce((s, m) => s + (m.montoPOS_Bs  || 0), 0);
+  const totalCasheaReal   = casheaMtds.reduce((s, m) => s + (m.montoReal    || 0), 0);
 
-  // Delivery/Diferencia POS (en Bs)
-  const totalDeliveryPOS = deliveryMethods.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
+  const totalRetPOS       = cuadre.totalRetencionesPOS  || 0;
+  const totalRetReal      = cuadre.totalRetencionesReal || 0;
+  const retPorCobrar      = cuadre.retencionesPorCobrar || 0;
+  const totalCreditoPOS   = cuadre.totalCreditoPOS      || 0;
+  const totalAbonos       = cuadre.totalAbonosReal      || 0;
+  const totalCxCPendiente = cuadre.totalCxCPendiente    || 0;
+  const totalSFavorPOS    = cuadre.totalSaldoFavorPOS   || 0;
+  const totalSFavorReal   = cuadre.totalSaldoFavorReal  || 0;
+  const totalAjustes      = cuadre.totalAjustesManuales || 0;
+  const totalPOS          = cuadre.totalMetodosPOS      || 0;
+  const totalReal         = cuadre.totalJustificadoReal || 0;
+  const ventaNetaZ        = cuadre.ventaNetaZ           || 0;
+  const diferencia        = cuadre.diferencia           || 0;
+  const difCambiaria      = cuadre.difCambiaria         || 0;
 
-  // Retenciones
-  const totalRetPOS = cuadre.totalRetencionesPOS || 0;
-  const totalRetReal = cuadre.totalRetencionesReal || 0;
-  const retPorCobrar = cuadre.retencionesPorCobrar || 0;
-
-  // CxC
-  const totalCreditoPOS = cuadre.totalCreditoPOS || 0;
-  const totalAbonos = cuadre.totalAbonosReal || 0;
-  const totalCxCPendiente = cuadre.totalCxCPendiente || 0;
-
-  // Saldo a favor
-  const totalSaldoFavorPOS = cuadre.totalSaldoFavorPOS || 0;
-  const totalSaldoFavorReal = cuadre.totalSaldoFavorReal || 0;
-
-  // Ajustes
-  const totalAjustes = cuadre.totalAjustesManuales || 0;
-
-  // Totales POS vs Real
-  const totalPOS = cuadre.totalMetodosPOS || 0;
-  const totalReal = cuadre.totalJustificadoReal || 0;
-
-  // Diferencias
-  const ventaNetaZ = cuadre.ventaNetaZ || 0;
-  const diferencia = cuadre.diferencia || 0;
-  const difCambiaria = cuadre.difCambiaria || 0;
-
-  // Estado
   const esCuadrado = Math.abs(diferencia) < 5 || cuadre.estado === "cuadrado";
 
-  // Formato fecha
   const fechaFormateada = cuadre.fecha
     ? new Date(cuadre.fecha + "T12:00:00").toLocaleDateString("es-VE", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
       })
     : cuadre.fecha;
 
+  // helper: calcula cantidad Z entre primera/última
+  function cantZ(primera: string, ultima: string) {
+    const a = parseInt((primera || "").replace(/\D/g, ""), 10);
+    const b = parseInt((ultima  || "").replace(/\D/g, ""), 10);
+    return (!isNaN(a) && !isNaN(b) && b >= a) ? `${b - a + 1}` : "—";
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Toolbar — only visible on screen */}
+      {/* Toolbar */}
       <div className="max-w-[216mm] mx-auto p-4 flex justify-between items-center no-print">
         <Button variant="ghost" size="sm" onClick={() => setLocation(`/cuadre/${id}`)}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Volver
@@ -177,47 +159,29 @@ export default function CuadreReport() {
         </Button>
       </div>
 
-      {/* ── REPORT BODY ─────────────────────────────────────────────────── */}
+      {/* ══════════════════════ CUERPO DEL REPORTE ══════════════════════════ */}
       <div
         id="report-content"
         className="max-w-[216mm] mx-auto bg-white print:p-0"
-        style={{ padding: "16px 20px", fontFamily: "Arial, sans-serif" }}
+        style={{ padding: "14px 18px", fontFamily: "Arial, sans-serif" }}
       >
         {/* ── ENCABEZADO ─────────────────────────────────────────────────── */}
-        <div
-          style={{
-            textAlign: "center",
-            borderBottom: "2px solid #0A4083",
-            paddingBottom: 8,
-            marginBottom: 10,
-          }}
-        >
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#0A4083" }}>
+        <div style={{ textAlign: "center", borderBottom: "2px solid #0A4083", paddingBottom: 6, marginBottom: 8 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#0A4083" }}>
             CUADRE DE CAJA — REPORTE FINANCIERO
           </div>
-          <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>
+          <div style={{ fontSize: 10, color: "#555", marginTop: 1 }}>
             Global It System, C.A. — ONPROTEC
           </div>
         </div>
 
         {/* ── INFO GENERAL ───────────────────────────────────────────────── */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "0 20px",
-            fontSize: 10,
-            marginBottom: 8,
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px 20px", fontSize: 10, marginBottom: 6 }}>
           <div><strong>Fecha:</strong> {fechaFormateada}</div>
           <div><strong>Sesión:</strong> {cuadre.sessionName}</div>
           <div><strong>Caja:</strong> {cuadre.caja}</div>
           <div><strong>Cajero:</strong> {cuadre.cajero}</div>
-          <div>
-            <strong>Máquina Fiscal:</strong>{" "}
-            {cuadre.serialMachine || cuadre.maquinaFiscal || "—"}
-          </div>
+          <div><strong>Máquina Fiscal:</strong> {cuadre.serialMachine || cuadre.maquinaFiscal || "—"}</div>
           <div>
             <strong>Estado:</strong>{" "}
             <span style={{ fontWeight: 700, color: esCuadrado ? "#16a34a" : "#dc2626" }}>
@@ -226,8 +190,7 @@ export default function CuadreReport() {
           </div>
           {cuadre.cerradoPor && (
             <div style={{ gridColumn: "1 / -1" }}>
-              <strong>Cerrado por:</strong> {cuadre.cerradoPor} el{" "}
-              {formatDateTime(cuadre.cerradoEn || "")}
+              <strong>Cerrado por:</strong> {cuadre.cerradoPor} el {formatDateTime(cuadre.cerradoEn || "")}
             </div>
           )}
         </div>
@@ -235,87 +198,93 @@ export default function CuadreReport() {
         <HR />
 
         {/* ══════════════════════════════════════════════════════════════════
-            SECCIÓN I — REPORTE Z (FUENTE FISCAL OFICIAL)
+            SECCIÓN I — REPORTE Z
         ═══════════════════════════════════════════════════════════════════*/}
         <SectionTitle>I. Reporte Z — Fuente Fiscal Oficial</SectionTitle>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "0 20px",
-            marginBottom: 6,
-          }}
-        >
-          {/* Columna izquierda: montos Z */}
+        {/* Fila superior: montos + tasa (lado a lado) */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px", marginBottom: 4 }}>
+
+          {/* Col izq: montos Z */}
           <div>
             <Row label="Número Z:" value={cuadre.zNumero || "—"} />
-            <Row label="Venta Bruta (Z):" value={formatBs(cuadre.ventaBrutaZ)} />
-            <Row label="(–) Notas de Crédito (Z):" value={formatBs(cuadre.notasCreditoZ)} indent />
+            <Row label="Venta Bruta:" value={formatBs(cuadre.ventaBrutaZ)} />
+            <Row label="(–) Notas de Crédito:" value={formatBs(cuadre.notasCreditoZ)} indent />
             <div style={{ borderTop: "1px solid #999", marginTop: 2, paddingTop: 2 }}>
-              <Row label="Venta Neta (Z):" value={formatBs(ventaNetaZ)} bold />
+              <Row label="Venta Neta:" value={formatBs(ventaNetaZ)} bold />
             </div>
-            <div style={{ marginTop: 4 }}>
-              <Row label="Base Imponible (Z):" value={formatBs(cuadre.baseImponibleZ)} />
-              <Row label="Exento (Z):" value={formatBs(cuadre.exentoZ)} />
-              <Row label="IVA (Z):" value={formatBs(cuadre.ivaZ)} />
-              <Row label="IGTF Percibido (Z):" value={formatBs(cuadre.igtfZ)} />
+            <div style={{ marginTop: 3 }}>
+              <Row label="Base Imponible:" value={formatBs(cuadre.baseImponibleZ)} />
+              <Row label="Exento:"          value={formatBs(cuadre.exentoZ)} />
+              <Row label="IVA:"             value={formatBs(cuadre.ivaZ)} />
+              <Row label="IGTF Percibido:"  value={formatBs(cuadre.igtfZ)} />
             </div>
           </div>
 
-          {/* Columna derecha: tasa + facturas */}
-          <div>
-            <div
-              style={{
-                background: "#f0f6ff",
-                border: "1px solid #c3d9f7",
-                borderRadius: 4,
-                padding: "6px 8px",
-                marginBottom: 6,
-              }}
-            >
-              <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>
-                TASA BCV DEL DÍA
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#0A4083" }}>
-                Bs {tasa.toFixed(2)} / $
-              </div>
-              <div style={{ fontSize: 9, color: "#555", marginTop: 2 }}>
-                Venta Neta Odoo:{" "}
-                {formatUSD(cuadre.totalOdooUSD || 0)} × {tasa.toFixed(2)} ={" "}
-                {formatBs(cuadre.totalOdooBs || 0)}
-              </div>
-              {Math.abs(difCambiaria) > 0.01 && (
-                <div style={{ fontSize: 9, color: "#b45309", marginTop: 2 }}>
-                  Dif. cambiaria: <strong>{formatBs(difCambiaria)}</strong> (ajuste contable)
-                </div>
-              )}
+          {/* Col der: caja de tasa */}
+          <div style={{
+            background: "#f0f6ff", border: "1px solid #c3d9f7",
+            borderRadius: 4, padding: "6px 8px",
+          }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 2 }}>
+              TASA BCV DEL DÍA
             </div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: "#0A4083", lineHeight: 1 }}>
+              Bs {tasa.toFixed(2)} / $
+            </div>
+            <div style={{ fontSize: 9, color: "#555", marginTop: 3 }}>
+              Venta Neta Odoo: {formatUSD(cuadre.totalOdooUSD || 0)} × {tasa.toFixed(2)} = {formatBs(cuadre.totalOdooBs || 0)}
+            </div>
+            {Math.abs(difCambiaria) > 0.01 && (
+              <div style={{ fontSize: 9, color: "#b45309", marginTop: 2 }}>
+                Dif. cambiaria: <strong>{formatBs(difCambiaria)}</strong> (ajuste contable)
+              </div>
+            )}
+          </div>
+        </div>
 
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2, marginTop: 2 }}>
-              Facturas
+        {/* Fila inferior: facturas y NC en 4 columnas compactas */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
+          gap: "0 8px", background: "#f9f9f9",
+          border: "1px solid #e5e5e5", borderRadius: 3,
+          padding: "4px 8px", fontSize: 10, marginBottom: 4,
+        }}>
+          <div>
+            <div style={{ fontSize: 8, color: "#888", fontWeight: 700, marginBottom: 1 }}>PRIMERA FACTURA</div>
+            <div style={{ fontWeight: 600 }}>{cuadre.primeraFacturaZ || "—"}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 8, color: "#888", fontWeight: 700, marginBottom: 1 }}>ÚLTIMA FACTURA</div>
+            <div style={{ fontWeight: 600 }}>{cuadre.ultimaFacturaZ || "—"}</div>
+            <div style={{ fontSize: 8, color: "#888" }}>
+              Cant: {cantZ(cuadre.primeraFacturaZ, cuadre.ultimaFacturaZ)}
             </div>
-            <Row label="Primera:" value={cuadre.primeraFacturaZ || "—"} indent />
-            <Row label="Última:" value={cuadre.ultimaFacturaZ || "—"} indent />
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2, marginTop: 4 }}>
-              Notas de Crédito
+          </div>
+          <div>
+            <div style={{ fontSize: 8, color: "#888", fontWeight: 700, marginBottom: 1 }}>PRIMERA NC</div>
+            <div style={{ fontWeight: 600 }}>{cuadre.primeraNCZ || "—"}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 8, color: "#888", fontWeight: 700, marginBottom: 1 }}>ÚLTIMA NC</div>
+            <div style={{ fontWeight: 600 }}>{cuadre.ultimaNCZ || "—"}</div>
+            <div style={{ fontSize: 8, color: "#888" }}>
+              Cant: {cantZ(cuadre.primeraNCZ, cuadre.ultimaNCZ)}
             </div>
-            <Row label="Primera NC:" value={cuadre.primeraNCZ || "—"} indent />
-            <Row label="Última NC:" value={cuadre.ultimaNCZ || "—"} indent />
           </div>
         </div>
 
         <HR />
 
         {/* ══════════════════════════════════════════════════════════════════
-            SECCIÓN II — INGRESOS (MÉTODOS DE PAGO DIRECTOS)
+            SECCIÓN II — INGRESOS DIRECTOS
         ═══════════════════════════════════════════════════════════════════*/}
         <SectionTitle>II. Ingresos — Métodos de Pago Directos</SectionTitle>
 
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, marginBottom: 4 }}>
           <thead>
             <tr style={{ background: "#f5f5f5" }}>
-              <th style={{ textAlign: "left", padding: "3px 4px", fontWeight: 700 }}>Método</th>
+              <th style={{ textAlign: "left",  padding: "3px 4px", fontWeight: 700 }}>Método</th>
               <th style={{ textAlign: "right", padding: "3px 4px", fontWeight: 700 }}>POS (USD)</th>
               <th style={{ textAlign: "right", padding: "3px 4px", fontWeight: 700 }}>POS (Bs)</th>
               <th style={{ textAlign: "right", padding: "3px 4px", fontWeight: 700 }}>Verificado (Bs)</th>
@@ -324,29 +293,18 @@ export default function CuadreReport() {
           </thead>
           <tbody>
             {directos.map((m, i) => {
-              const diff =
-                m.montoReal && m.montoPOS_Bs
-                  ? Math.round((m.montoReal - m.montoPOS_Bs) * 100) / 100
-                  : 0;
+              const diff = m.montoReal && m.montoPOS_Bs
+                ? Math.round((m.montoReal - m.montoPOS_Bs) * 100) / 100 : 0;
               return (
                 <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
                   <td style={{ padding: "2px 4px" }}>{m.metodoNombre}</td>
-                  <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>
-                    {formatUSD(m.montoPOS_USD || 0)}
-                  </td>
-                  <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>
-                    {formatBs(m.montoPOS_Bs || 0)}
-                  </td>
+                  <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>{formatUSD(m.montoPOS_USD || 0)}</td>
+                  <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>{formatBs(m.montoPOS_Bs || 0)}</td>
                   <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 600 }}>
                     {m.montoReal ? formatBs(m.montoReal) : "—"}
                   </td>
-                  <td
-                    style={{
-                      textAlign: "right",
-                      padding: "2px 4px",
-                      color: diff === 0 ? "#555" : diff > 0 ? "#16a34a" : "#dc2626",
-                    }}
-                  >
+                  <td style={{ textAlign: "right", padding: "2px 4px",
+                    color: diff === 0 ? "#555" : diff > 0 ? "#16a34a" : "#dc2626" }}>
                     {m.montoReal ? formatBs(diff) : "—"}
                   </td>
                 </tr>
@@ -359,21 +317,10 @@ export default function CuadreReport() {
               <td style={{ textAlign: "right", padding: "3px 4px", fontWeight: 700 }}>
                 {tasa > 0 ? formatUSD(Math.round((totalDirectosPOS / tasa) * 100) / 100) : "—"}
               </td>
-              <td style={{ textAlign: "right", padding: "3px 4px", fontWeight: 700 }}>
-                {formatBs(totalDirectosPOS)}
-              </td>
-              <td style={{ textAlign: "right", padding: "3px 4px", fontWeight: 700 }}>
-                {formatBs(totalDirectosReal)}
-              </td>
-              <td
-                style={{
-                  textAlign: "right",
-                  padding: "3px 4px",
-                  fontWeight: 700,
-                  color:
-                    Math.abs(totalDirectosReal - totalDirectosPOS) < 5 ? "#16a34a" : "#dc2626",
-                }}
-              >
+              <td style={{ textAlign: "right", padding: "3px 4px", fontWeight: 700 }}>{formatBs(totalDirectosPOS)}</td>
+              <td style={{ textAlign: "right", padding: "3px 4px", fontWeight: 700 }}>{formatBs(totalDirectosReal)}</td>
+              <td style={{ textAlign: "right", padding: "3px 4px", fontWeight: 700,
+                color: Math.abs(totalDirectosReal - totalDirectosPOS) < 5 ? "#16a34a" : "#dc2626" }}>
                 {formatBs(Math.round((totalDirectosReal - totalDirectosPOS) * 100) / 100)}
               </td>
             </tr>
@@ -381,12 +328,12 @@ export default function CuadreReport() {
         </table>
 
         {/* Delivery / Diferencia */}
-        {deliveryMethods.length > 0 && (
+        {deliveryMtds.length > 0 && (
           <div style={{ marginBottom: 4 }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2 }}>
               Delivery / Diferencias (contabilizado desde POS):
             </div>
-            {deliveryMethods.map((m, i) => (
+            {deliveryMtds.map((m, i) => (
               <Row key={i} label={`  ${m.metodoNombre}:`} value={formatBs(m.montoPOS_Bs || 0)} indent />
             ))}
             <Row label="  Total Delivery/Dif.:" value={formatBs(totalDeliveryPOS)} bold indent />
@@ -400,22 +347,20 @@ export default function CuadreReport() {
         ═══════════════════════════════════════════════════════════════════*/}
         <SectionTitle>III. Cuentas por Cobrar — Crédito y Cashea</SectionTitle>
 
-        {/* Bloque: Venta a Crédito (métodos pay_later) */}
+        {/* Bloque A: Venta a Crédito */}
         <div style={{ marginBottom: 6 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 3, borderBottom: "1px solid #ddd", paddingBottom: 2 }}>
-            VENTA A CRÉDITO (Métodos diferidos)
-          </div>
-          {metodos.filter((m) => CREDITO_METHOD_IDS.has(m.metodoId)).length > 0 ? (
+          <SubHead>VENTA A CRÉDITO (Métodos diferidos)</SubHead>
+          {creditoMtds.length > 0 ? (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, marginBottom: 3 }}>
               <thead>
                 <tr style={{ background: "#f5f5f5" }}>
-                  <th style={{ textAlign: "left", padding: "2px 4px" }}>Método</th>
+                  <th style={{ textAlign: "left",  padding: "2px 4px" }}>Método</th>
                   <th style={{ textAlign: "right", padding: "2px 4px" }}>POS (USD)</th>
                   <th style={{ textAlign: "right", padding: "2px 4px" }}>POS (Bs)</th>
                 </tr>
               </thead>
               <tbody>
-                {metodos.filter((m) => CREDITO_METHOD_IDS.has(m.metodoId)).map((m, i) => (
+                {creditoMtds.map((m, i) => (
                   <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
                     <td style={{ padding: "2px 4px" }}>{m.metodoNombre}</td>
                     <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>{formatUSD(m.montoPOS_USD || 0)}</td>
@@ -429,9 +374,7 @@ export default function CuadreReport() {
                   <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
                     {tasa > 0 ? formatUSD(Math.round((totalCreditoPOS / tasa) * 100) / 100) : "—"}
                   </td>
-                  <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
-                    {formatBs(totalCreditoPOS)}
-                  </td>
+                  <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>{formatBs(totalCreditoPOS)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -439,31 +382,25 @@ export default function CuadreReport() {
             <div style={{ fontSize: 9, color: "#aaa", marginBottom: 4 }}>Sin ventas a crédito en esta sesión</div>
           )}
           <Row label="Abonos recibidos verificados (Bs):" value={formatBs(totalAbonos)} indent />
-          <Row
-            label="CxC pendiente de cobro (Bs):"
-            value={formatBs(totalCxCPendiente)}
-            bold
-            valueColor={totalCxCPendiente > 0 ? "#dc2626" : "#16a34a"}
-          />
+          <Row label="CxC pendiente de cobro (Bs):" value={formatBs(totalCxCPendiente)} bold
+            valueColor={totalCxCPendiente > 0 ? "#dc2626" : "#16a34a"} />
         </div>
 
-        {/* Bloque: PXC Cashea */}
-        {casheaMethods.length > 0 && (
+        {/* Bloque B: PXC Cashea */}
+        {casheaMtds.length > 0 && (
           <div style={{ marginBottom: 6 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 3, borderBottom: "1px solid #ddd", paddingBottom: 2 }}>
-              PXC CASHEA (Por cobrar al operador)
-            </div>
+            <SubHead>PXC CASHEA (Por cobrar al operador)</SubHead>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, marginBottom: 3 }}>
               <thead>
                 <tr style={{ background: "#f5f5f5" }}>
-                  <th style={{ textAlign: "left", padding: "2px 4px" }}>Método</th>
+                  <th style={{ textAlign: "left",  padding: "2px 4px" }}>Método</th>
                   <th style={{ textAlign: "right", padding: "2px 4px" }}>POS (USD)</th>
                   <th style={{ textAlign: "right", padding: "2px 4px" }}>POS (Bs)</th>
                   <th style={{ textAlign: "right", padding: "2px 4px" }}>Verificado (Bs)</th>
                 </tr>
               </thead>
               <tbody>
-                {casheaMethods.map((m, i) => (
+                {casheaMtds.map((m, i) => (
                   <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
                     <td style={{ padding: "2px 4px" }}>PXC Cashea</td>
                     <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>{formatUSD(m.montoPOS_USD || 0)}</td>
@@ -480,9 +417,7 @@ export default function CuadreReport() {
                   <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
                     {tasa > 0 ? formatUSD(Math.round((totalCasheaPOS / tasa) * 100) / 100) : "—"}
                   </td>
-                  <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
-                    {formatBs(totalCasheaPOS)}
-                  </td>
+                  <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>{formatBs(totalCasheaPOS)}</td>
                   <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
                     {totalCasheaReal > 0 ? formatBs(totalCasheaReal) : "—"}
                   </td>
@@ -492,22 +427,19 @@ export default function CuadreReport() {
           </div>
         )}
 
-        {/* Detalle CxC por cliente */}
+        {/* Bloque C: Detalle por cliente */}
         <div style={{ marginBottom: 4 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 3, borderBottom: "1px solid #ddd", paddingBottom: 2 }}>
-            DETALLE POR CLIENTE
-          </div>
-
+          <SubHead>DETALLE POR CLIENTE</SubHead>
           {creditSales.length > 0 ? (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, marginBottom: 4 }}>
               <thead>
                 <tr style={{ background: "#f5f5f5" }}>
-                  <th style={{ textAlign: "left", padding: "2px 4px" }}>Factura</th>
-                  <th style={{ textAlign: "left", padding: "2px 4px" }}>Cliente</th>
-                  <th style={{ textAlign: "right", padding: "2px 4px" }}>Total Fact.</th>
-                  <th style={{ textAlign: "right", padding: "2px 4px" }}>Crédito POS</th>
-                  <th style={{ textAlign: "right", padding: "2px 4px" }}>Abono</th>
-                  <th style={{ textAlign: "right", padding: "2px 4px" }}>Saldo</th>
+                  <th style={{ textAlign: "left",   padding: "2px 4px" }}>Factura</th>
+                  <th style={{ textAlign: "left",   padding: "2px 4px" }}>Cliente</th>
+                  <th style={{ textAlign: "right",  padding: "2px 4px" }}>Total Fact.</th>
+                  <th style={{ textAlign: "right",  padding: "2px 4px" }}>Crédito POS</th>
+                  <th style={{ textAlign: "right",  padding: "2px 4px" }}>Abono</th>
+                  <th style={{ textAlign: "right",  padding: "2px 4px" }}>Saldo</th>
                   <th style={{ textAlign: "center", padding: "2px 4px" }}>Estado</th>
                 </tr>
               </thead>
@@ -516,31 +448,16 @@ export default function CuadreReport() {
                   <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
                     <td style={{ padding: "2px 4px", fontWeight: 600 }}>{c.invoiceNumber}</td>
                     <td style={{ padding: "2px 4px" }}>{c.partner}</td>
-                    <td style={{ textAlign: "right", padding: "2px 4px" }}>
-                      {formatUSD(c.invoiceTotal || 0)}
-                    </td>
-                    <td style={{ textAlign: "right", padding: "2px 4px" }}>
-                      {formatUSD(c.creditAmountPOS || 0)}
-                    </td>
-                    <td style={{ textAlign: "right", padding: "2px 4px" }}>
-                      {formatUSD(c.abonoAmount || 0)}
-                    </td>
-                    <td
-                      style={{
-                        textAlign: "right",
-                        padding: "2px 4px",
-                        fontWeight: 600,
-                        color: (c.residual || 0) > 0 ? "#dc2626" : "#16a34a",
-                      }}
-                    >
+                    <td style={{ textAlign: "right", padding: "2px 4px" }}>{formatUSD(c.invoiceTotal || 0)}</td>
+                    <td style={{ textAlign: "right", padding: "2px 4px" }}>{formatUSD(c.creditAmountPOS || 0)}</td>
+                    <td style={{ textAlign: "right", padding: "2px 4px" }}>{formatUSD(c.abonoAmount || 0)}</td>
+                    <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 600,
+                      color: (c.residual || 0) > 0 ? "#dc2626" : "#16a34a" }}>
                       {formatUSD(c.residual || 0)}
                     </td>
                     <td style={{ textAlign: "center", padding: "2px 4px" }}>
-                      {c.paymentState === "paid"
-                        ? "Pagado"
-                        : c.paymentState === "partial"
-                        ? "Parcial"
-                        : "Pendiente"}
+                      {c.paymentState === "paid" ? "Pagado"
+                        : c.paymentState === "partial" ? "Parcial" : "Pendiente"}
                     </td>
                   </tr>
                 ))}
@@ -549,25 +466,14 @@ export default function CuadreReport() {
           ) : (
             <div style={{ fontSize: 9, color: "#aaa", marginBottom: 4 }}>Sin detalle de facturas a crédito</div>
           )}
-        </div>{/* end DETALLE POR CLIENTE */}
+        </div>
 
-        {(totalSaldoFavorPOS > 0 || totalSaldoFavorReal > 0) && (
+        {/* Saldos a favor */}
+        {(totalSFavorPOS > 0 || totalSFavorReal > 0) && (
           <div style={{ marginBottom: 4 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2 }}>
-              Saldos a favor generados:
-            </div>
-            <Row
-              label="  Saldo a favor según POS (Bs):"
-              value={formatBs(totalSaldoFavorPOS)}
-              indent
-            />
-            <Row
-              label="  Saldo a favor verificado (Bs):"
-              value={formatBs(totalSaldoFavorReal)}
-              bold
-              indent
-              valueColor="#16a34a"
-            />
+            <SubHead>SALDOS A FAVOR GENERADOS</SubHead>
+            <Row label="  Saldo a favor según POS (Bs):"   value={formatBs(totalSFavorPOS)}  indent />
+            <Row label="  Saldo a favor verificado (Bs):"  value={formatBs(totalSFavorReal)} bold indent valueColor="#16a34a" />
             {cuadre.saldoFavorObs && (
               <div style={{ fontSize: 9, color: "#666", paddingLeft: 10, fontStyle: "italic" }}>
                 Obs: {cuadre.saldoFavorObs}
@@ -579,24 +485,15 @@ export default function CuadreReport() {
         <HR />
 
         {/* ══════════════════════════════════════════════════════════════════
-            SECCIÓN IV — RETENCIONES IVA APLICADAS
+            SECCIÓN IV — RETENCIONES IVA
         ═══════════════════════════════════════════════════════════════════*/}
         <SectionTitle>IV. Retenciones IVA Aplicadas</SectionTitle>
 
         <div style={{ marginBottom: 4 }}>
-          <Row label="Retenciones según POS (Bs):" value={formatBs(totalRetPOS)} />
-          <Row
-            label="Retenciones canceladas/registradas RIVAC (Bs):"
-            value={formatBs(totalRetReal)}
-            indent
-          />
+          <Row label="Retenciones según POS (Bs):"                      value={formatBs(totalRetPOS)} />
+          <Row label="Retenciones canceladas / registradas RIVAC (Bs):" value={formatBs(totalRetReal)} indent />
           {retPorCobrar > 0 && (
-            <Row
-              label="Retenciones pendientes de cobro (Bs):"
-              value={formatBs(retPorCobrar)}
-              bold
-              valueColor="#b45309"
-            />
+            <Row label="Retenciones pendientes de cobro (Bs):" value={formatBs(retPorCobrar)} bold valueColor="#b45309" />
           )}
         </div>
 
@@ -604,10 +501,10 @@ export default function CuadreReport() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, marginBottom: 4 }}>
             <thead>
               <tr style={{ background: "#f5f5f5" }}>
-                <th style={{ textAlign: "left", padding: "2px 4px" }}>Factura</th>
-                <th style={{ textAlign: "left", padding: "2px 4px" }}>Cliente</th>
-                <th style={{ textAlign: "right", padding: "2px 4px" }}>Ret. POS (Bs)</th>
-                <th style={{ textAlign: "right", padding: "2px 4px" }}>Ret. RIVAC (Bs)</th>
+                <th style={{ textAlign: "left",   padding: "2px 4px" }}>Factura</th>
+                <th style={{ textAlign: "left",   padding: "2px 4px" }}>Cliente</th>
+                <th style={{ textAlign: "right",  padding: "2px 4px" }}>Ret. POS (Bs)</th>
+                <th style={{ textAlign: "right",  padding: "2px 4px" }}>Ret. RIVAC (Bs)</th>
                 <th style={{ textAlign: "center", padding: "2px 4px" }}>Estado</th>
               </tr>
             </thead>
@@ -621,17 +518,10 @@ export default function CuadreReport() {
                   </td>
                   <td style={{ textAlign: "right", padding: "2px 4px" }}>
                     {r.status === "registered"
-                      ? formatBs(Math.round(r.retentionAmount * tasa * 100) / 100)
-                      : "—"}
+                      ? formatBs(Math.round(r.retentionAmount * tasa * 100) / 100) : "—"}
                   </td>
-                  <td
-                    style={{
-                      textAlign: "center",
-                      padding: "2px 4px",
-                      color: r.status === "registered" ? "#16a34a" : "#b45309",
-                      fontWeight: 600,
-                    }}
-                  >
+                  <td style={{ textAlign: "center", padding: "2px 4px", fontWeight: 600,
+                    color: r.status === "registered" ? "#16a34a" : "#b45309" }}>
                     {r.status === "registered" ? "Registrada" : "Pendiente"}
                   </td>
                 </tr>
@@ -643,51 +533,37 @@ export default function CuadreReport() {
         <HR />
 
         {/* ══════════════════════════════════════════════════════════════════
-            SECCIÓN V — DIFERENCIAS Y SALDOS FINANCIEROS
+            SECCIÓN V — DIFERENCIAS Y RESULTADO
         ═══════════════════════════════════════════════════════════════════*/}
         <SectionTitle>V. Diferencias y Saldos a Favor</SectionTitle>
 
+        {/* Cuadro comparativo POS vs Real */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 6 }}>
-          {/* POS */}
           <div style={{ border: "1px solid #c3d9f7", borderRadius: 4, padding: 6 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>
-              SEGÚN SISTEMA (POS)
-            </div>
-            <Row label="Pagos directos:" value={formatBs(totalDirectosPOS)} />
-            <Row label="Retenciones IVA:" value={formatBs(totalRetPOS)} />
-            <Row label="Ventas a crédito:" value={formatBs(totalCreditoPOS)} />
-            <Row label="Saldo a favor:" value={formatBs(totalSaldoFavorPOS)} />
-            {totalDeliveryPOS > 0 && (
-              <Row label="Delivery / Diferencias:" value={formatBs(totalDeliveryPOS)} />
-            )}
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>SEGÚN SISTEMA (POS)</div>
+            <Row label="Pagos directos:"      value={formatBs(totalDirectosPOS)} />
+            <Row label="Retenciones IVA:"     value={formatBs(totalRetPOS)} />
+            <Row label="Ventas a crédito:"    value={formatBs(totalCreditoPOS)} />
+            <Row label="Saldo a favor:"       value={formatBs(totalSFavorPOS)} />
+            {totalDeliveryPOS > 0 && <Row label="Delivery / Dif.:" value={formatBs(totalDeliveryPOS)} />}
+            {totalCasheaPOS > 0   && <Row label="PXC Cashea:"      value={formatBs(totalCasheaPOS)} />}
             <div style={{ borderTop: "1px solid #999", marginTop: 3, paddingTop: 3 }}>
               <Row label="TOTAL POS:" value={formatBs(totalPOS)} bold />
             </div>
           </div>
 
-          {/* Real */}
           <div style={{ border: "1px solid #c3d9f7", borderRadius: 4, padding: 6 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>
-              VERIFICADO REAL
-            </div>
-            <Row label="Pagos directos:" value={formatBs(totalDirectosReal)} />
-            <Row label="Retenciones canceladas:" value={formatBs(totalRetReal)} />
-            {retPorCobrar > 0 && (
-              <Row label="Ret. por cobrar:" value={formatBs(retPorCobrar)} valueColor="#b45309" />
-            )}
-            <Row label="Abonos CxC recibidos:" value={formatBs(totalAbonos)} />
-            <Row
-              label="CxC pendiente:"
-              value={formatBs(totalCxCPendiente)}
-              valueColor={totalCxCPendiente > 0 ? "#dc2626" : undefined}
-            />
-            <Row label="Saldo a favor:" value={formatBs(totalSaldoFavorReal)} />
-            {totalDeliveryPOS > 0 && (
-              <Row label="Delivery / Diferencias:" value={formatBs(totalDeliveryPOS)} />
-            )}
-            {totalAjustes !== 0 && (
-              <Row label="Ajustes manuales:" value={formatBs(totalAjustes)} />
-            )}
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>VERIFICADO REAL</div>
+            <Row label="Pagos directos:"          value={formatBs(totalDirectosReal)} />
+            <Row label="Retenciones canceladas:"  value={formatBs(totalRetReal)} />
+            {retPorCobrar > 0 && <Row label="Ret. por cobrar:" value={formatBs(retPorCobrar)} valueColor="#b45309" />}
+            <Row label="Abonos CxC recibidos:"    value={formatBs(totalAbonos)} />
+            <Row label="CxC pendiente:"           value={formatBs(totalCxCPendiente)}
+              valueColor={totalCxCPendiente > 0 ? "#dc2626" : undefined} />
+            <Row label="Saldo a favor:"           value={formatBs(totalSFavorReal)} />
+            {totalDeliveryPOS > 0 && <Row label="Delivery / Dif.:" value={formatBs(totalDeliveryPOS)} />}
+            {totalCasheaReal  > 0 && <Row label="PXC Cashea:"      value={formatBs(totalCasheaReal)} />}
+            {totalAjustes !== 0   && <Row label="Ajustes manuales:" value={formatBs(totalAjustes)} />}
             <div style={{ borderTop: "1px solid #999", marginTop: 3, paddingTop: 3 }}>
               <Row label="TOTAL REAL:" value={formatBs(totalReal)} bold />
             </div>
@@ -697,38 +573,24 @@ export default function CuadreReport() {
         {/* Ajustes manuales detalle */}
         {(cuadre.ajustesManuales || []).length > 0 && (
           <div style={{ marginBottom: 4 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2 }}>
-              Ajustes manuales:
-            </div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2 }}>Ajustes manuales:</div>
             {(cuadre.ajustesManuales || []).map((a: any, i: number) => (
               <Row key={i} label={`  ${a.descripcion || "Ajuste"}:`} value={formatBs(a.monto)} indent />
             ))}
           </div>
         )}
 
-        {/* Resultado del Cuadre */}
-        <div
-          style={{
-            border: `2px solid ${esCuadrado ? "#16a34a" : "#dc2626"}`,
-            borderRadius: 6,
-            padding: 8,
-            background: esCuadrado ? "#f0fdf4" : "#fef2f2",
-            marginBottom: 6,
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
-              gap: 8,
-              textAlign: "center",
-            }}
-          >
+        {/* Resultado */}
+        <div style={{
+          border: `2px solid ${esCuadrado ? "#16a34a" : "#dc2626"}`,
+          borderRadius: 6, padding: 8,
+          background: esCuadrado ? "#f0fdf4" : "#fef2f2",
+          marginBottom: 6,
+        }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, textAlign: "center" }}>
             <div>
               <div style={{ fontSize: 9, color: "#555" }}>Venta Neta Z (Bs)</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#0A4083" }}>
-                {formatBs(ventaNetaZ)}
-              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#0A4083" }}>{formatBs(ventaNetaZ)}</div>
             </div>
             <div>
               <div style={{ fontSize: 9, color: "#555" }}>Total Verificado (Bs)</div>
@@ -736,35 +598,21 @@ export default function CuadreReport() {
             </div>
             <div>
               <div style={{ fontSize: 9, color: "#555" }}>Diferencia</div>
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 700,
-                  color: esCuadrado ? "#16a34a" : "#dc2626",
-                }}
-              >
+              <div style={{ fontSize: 14, fontWeight: 700, color: esCuadrado ? "#16a34a" : "#dc2626" }}>
                 {formatBs(diferencia)}
               </div>
             </div>
           </div>
-
           <div style={{ textAlign: "center", marginTop: 6 }}>
-            <span
-              style={{
-                display: "inline-block",
-                background: esCuadrado ? "#16a34a" : "#dc2626",
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 13,
-                padding: "4px 20px",
-                borderRadius: 4,
-                letterSpacing: "0.1em",
-              }}
-            >
+            <span style={{
+              display: "inline-block",
+              background: esCuadrado ? "#16a34a" : "#dc2626",
+              color: "#fff", fontWeight: 700, fontSize: 13,
+              padding: "4px 20px", borderRadius: 4, letterSpacing: "0.1em",
+            }}>
               {esCuadrado ? "✓ CUADRADO" : "✗ DESCUADRADO"}
             </span>
           </div>
-
           {Math.abs(difCambiaria) >= 0.01 && (
             <div style={{ fontSize: 9, color: "#b45309", textAlign: "center", marginTop: 4 }}>
               Diferencia cambiaria (ajuste contable): {formatBs(difCambiaria)} —{" "}
@@ -778,42 +626,34 @@ export default function CuadreReport() {
         {/* Observaciones */}
         {cuadre.observaciones && (
           <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2 }}>
-              OBSERVACIONES
-            </div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2 }}>OBSERVACIONES</div>
             <div style={{ fontSize: 10, color: "#333" }}>{cuadre.observaciones}</div>
           </div>
         )}
 
         {/* Firmas */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 30,
-            marginTop: 20,
-            paddingTop: 8,
-            borderTop: "1px solid #ccc",
-          }}
-        >
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr", gap: 30,
+          marginTop: 18, paddingTop: 8, borderTop: "1px solid #ccc",
+        }}>
           <div style={{ textAlign: "center" }}>
-            <div style={{ borderBottom: "1px solid #333", marginBottom: 4, height: 36 }} />
+            <div style={{ borderBottom: "1px solid #333", marginBottom: 4, height: 34 }} />
             <div style={{ fontSize: 9, fontWeight: 700 }}>Cajero: {cuadre.cajero}</div>
           </div>
           <div style={{ textAlign: "center" }}>
-            <div style={{ borderBottom: "1px solid #333", marginBottom: 4, height: 36 }} />
+            <div style={{ borderBottom: "1px solid #333", marginBottom: 4, height: 34 }} />
             <div style={{ fontSize: 9, fontWeight: 700 }}>Supervisor</div>
           </div>
         </div>
 
-        {/* Pie de página */}
-        <div style={{ textAlign: "center", fontSize: 8, color: "#aaa", marginTop: 10 }}>
+        {/* Pie */}
+        <div style={{ textAlign: "center", fontSize: 8, color: "#aaa", marginTop: 8 }}>
           Generado: {new Date().toLocaleString("es-VE", { timeZone: "America/Caracas" })} —
           Cuadre de Caja | Global It System, C.A.
         </div>
       </div>
 
-      {/* Print styles */}
+      {/* Print styles — hoja carta */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
