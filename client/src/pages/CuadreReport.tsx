@@ -5,10 +5,13 @@ import { formatBs, formatUSD, getStatusLabel, formatDateTime } from "@/lib/utils
 import { ArrowLeft, Printer } from "lucide-react";
 import type { CreditSaleRow, RetentionRow } from "@shared/schema";
 
-// Payment method IDs to exclude from direct-payments table
+// Payment method IDs to exclude from Sección II (direct payments)
 const RETENCION_IVA_METHOD_ID = 26;
+// pay_later credit methods (Venta a crédito)
 const CREDITO_METHOD_IDS = new Set([14, 33]);
 const SALDO_FAVOR_METHOD_ID = 25;
+// Cashea companion method — shown separately in Sección III
+const CASHEA_METHOD_ID = 42;
 const DELIVERY_KEYWORDS = ["delivery", "diferencia"];
 
 function isDeliveryOrDif(name: string) {
@@ -16,11 +19,13 @@ function isDeliveryOrDif(name: string) {
   return DELIVERY_KEYWORDS.some((k) => lower.includes(k));
 }
 
+/** Methods excluded from Sección II — each has its own dedicated block */
 function isExcluded(m: any) {
   return (
     m.metodoId === RETENCION_IVA_METHOD_ID ||
     CREDITO_METHOD_IDS.has(m.metodoId) ||
     m.metodoId === SALDO_FAVOR_METHOD_ID ||
+    m.metodoId === CASHEA_METHOD_ID ||
     isDeliveryOrDif(m.metodoNombre || "")
   );
 }
@@ -106,6 +111,10 @@ export default function CuadreReport() {
   const metodos: any[] = cuadre.metodos || [];
   const directos = metodos.filter((m) => !isExcluded(m));
   const deliveryMethods = metodos.filter((m) => isDeliveryOrDif(m.metodoNombre || ""));
+  // Cashea (PXC) — companion method shown in Sección III along with credit methods
+  const casheaMethods = metodos.filter((m) => m.metodoId === CASHEA_METHOD_ID);
+  const totalCasheaPOS = casheaMethods.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
+  const totalCasheaReal = casheaMethods.reduce((s, m) => s + (m.montoReal || 0), 0);
 
   const creditSales: CreditSaleRow[] = cuadre.creditSales || [];
   const retentions: RetentionRow[] = cuadre.retenciones || [];
@@ -159,7 +168,7 @@ export default function CuadreReport() {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Toolbar — only visible on screen */}
-      <div className="max-w-[210mm] mx-auto p-4 flex justify-between items-center no-print">
+      <div className="max-w-[216mm] mx-auto p-4 flex justify-between items-center no-print">
         <Button variant="ghost" size="sm" onClick={() => setLocation(`/cuadre/${id}`)}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Volver
         </Button>
@@ -171,7 +180,7 @@ export default function CuadreReport() {
       {/* ── REPORT BODY ─────────────────────────────────────────────────── */}
       <div
         id="report-content"
-        className="max-w-[210mm] mx-auto bg-white print:p-0"
+        className="max-w-[216mm] mx-auto bg-white print:p-0"
         style={{ padding: "16px 20px", fontFamily: "Arial, sans-serif" }}
       >
         {/* ── ENCABEZADO ─────────────────────────────────────────────────── */}
@@ -283,14 +292,16 @@ export default function CuadreReport() {
               )}
             </div>
 
-            <Row label="Primera Factura (Z):" value={cuadre.primeraFacturaZ || "—"} />
-            <Row label="Última Factura (Z):" value={cuadre.ultimaFacturaZ || "—"} />
-            {(cuadre.primeraNCZ || cuadre.ultimaNCZ) && (
-              <>
-                <Row label="Primera NC (Z):" value={cuadre.primeraNCZ || "—"} />
-                <Row label="Última NC (Z):" value={cuadre.ultimaNCZ || "—"} />
-              </>
-            )}
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2, marginTop: 2 }}>
+              Facturas
+            </div>
+            <Row label="Primera:" value={cuadre.primeraFacturaZ || "—"} indent />
+            <Row label="Última:" value={cuadre.ultimaFacturaZ || "—"} indent />
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 2, marginTop: 4 }}>
+              Notas de Crédito
+            </div>
+            <Row label="Primera NC:" value={cuadre.primeraNCZ || "—"} indent />
+            <Row label="Última NC:" value={cuadre.ultimaNCZ || "—"} indent />
           </div>
         </div>
 
@@ -385,12 +396,48 @@ export default function CuadreReport() {
         <HR />
 
         {/* ══════════════════════════════════════════════════════════════════
-            SECCIÓN III — CUENTAS POR COBRAR (CxC)
+            SECCIÓN III — CxC, VENTA A CRÉDITO Y CASHEA
         ═══════════════════════════════════════════════════════════════════*/}
-        <SectionTitle>III. Cuentas por Cobrar (CxC)</SectionTitle>
+        <SectionTitle>III. Cuentas por Cobrar — Crédito y Cashea</SectionTitle>
 
-        <div style={{ marginBottom: 4 }}>
-          <Row label="Crédito otorgado según POS (Bs):" value={formatBs(totalCreditoPOS)} />
+        {/* Bloque: Venta a Crédito (métodos pay_later) */}
+        <div style={{ marginBottom: 6 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 3, borderBottom: "1px solid #ddd", paddingBottom: 2 }}>
+            VENTA A CRÉDITO (Métodos diferidos)
+          </div>
+          {metodos.filter((m) => CREDITO_METHOD_IDS.has(m.metodoId)).length > 0 ? (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, marginBottom: 3 }}>
+              <thead>
+                <tr style={{ background: "#f5f5f5" }}>
+                  <th style={{ textAlign: "left", padding: "2px 4px" }}>Método</th>
+                  <th style={{ textAlign: "right", padding: "2px 4px" }}>POS (USD)</th>
+                  <th style={{ textAlign: "right", padding: "2px 4px" }}>POS (Bs)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metodos.filter((m) => CREDITO_METHOD_IDS.has(m.metodoId)).map((m, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "2px 4px" }}>{m.metodoNombre}</td>
+                    <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>{formatUSD(m.montoPOS_USD || 0)}</td>
+                    <td style={{ textAlign: "right", padding: "2px 4px" }}>{formatBs(m.montoPOS_Bs || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "2px solid #0A4083", background: "#f0f6ff" }}>
+                  <td style={{ padding: "2px 4px", fontWeight: 700 }}>TOTAL CRÉDITO POS</td>
+                  <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
+                    {tasa > 0 ? formatUSD(Math.round((totalCreditoPOS / tasa) * 100) / 100) : "—"}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
+                    {formatBs(totalCreditoPOS)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : (
+            <div style={{ fontSize: 9, color: "#aaa", marginBottom: 4 }}>Sin ventas a crédito en esta sesión</div>
+          )}
           <Row label="Abonos recibidos verificados (Bs):" value={formatBs(totalAbonos)} indent />
           <Row
             label="CxC pendiente de cobro (Bs):"
@@ -400,55 +447,109 @@ export default function CuadreReport() {
           />
         </div>
 
-        {creditSales.length > 0 && (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, marginBottom: 4 }}>
-            <thead>
-              <tr style={{ background: "#f5f5f5" }}>
-                <th style={{ textAlign: "left", padding: "2px 4px" }}>Factura</th>
-                <th style={{ textAlign: "left", padding: "2px 4px" }}>Cliente</th>
-                <th style={{ textAlign: "right", padding: "2px 4px" }}>Total Fact.</th>
-                <th style={{ textAlign: "right", padding: "2px 4px" }}>Crédito POS</th>
-                <th style={{ textAlign: "right", padding: "2px 4px" }}>Abono</th>
-                <th style={{ textAlign: "right", padding: "2px 4px" }}>Saldo</th>
-                <th style={{ textAlign: "center", padding: "2px 4px" }}>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {creditSales.map((c, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
-                  <td style={{ padding: "2px 4px", fontWeight: 600 }}>{c.invoiceNumber}</td>
-                  <td style={{ padding: "2px 4px" }}>{c.partner}</td>
-                  <td style={{ textAlign: "right", padding: "2px 4px" }}>
-                    {formatUSD(c.invoiceTotal || 0)}
+        {/* Bloque: PXC Cashea */}
+        {casheaMethods.length > 0 && (
+          <div style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 3, borderBottom: "1px solid #ddd", paddingBottom: 2 }}>
+              PXC CASHEA (Por cobrar al operador)
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, marginBottom: 3 }}>
+              <thead>
+                <tr style={{ background: "#f5f5f5" }}>
+                  <th style={{ textAlign: "left", padding: "2px 4px" }}>Método</th>
+                  <th style={{ textAlign: "right", padding: "2px 4px" }}>POS (USD)</th>
+                  <th style={{ textAlign: "right", padding: "2px 4px" }}>POS (Bs)</th>
+                  <th style={{ textAlign: "right", padding: "2px 4px" }}>Verificado (Bs)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {casheaMethods.map((m, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "2px 4px" }}>PXC Cashea</td>
+                    <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>{formatUSD(m.montoPOS_USD || 0)}</td>
+                    <td style={{ textAlign: "right", padding: "2px 4px", color: "#555" }}>{formatBs(m.montoPOS_Bs || 0)}</td>
+                    <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 600 }}>
+                      {m.montoReal ? formatBs(m.montoReal) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "2px solid #0A4083", background: "#f0f6ff" }}>
+                  <td style={{ padding: "2px 4px", fontWeight: 700 }}>TOTAL CASHEA</td>
+                  <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
+                    {tasa > 0 ? formatUSD(Math.round((totalCasheaPOS / tasa) * 100) / 100) : "—"}
                   </td>
-                  <td style={{ textAlign: "right", padding: "2px 4px" }}>
-                    {formatUSD(c.creditAmountPOS || 0)}
+                  <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
+                    {formatBs(totalCasheaPOS)}
                   </td>
-                  <td style={{ textAlign: "right", padding: "2px 4px" }}>
-                    {formatUSD(c.abonoAmount || 0)}
-                  </td>
-                  <td
-                    style={{
-                      textAlign: "right",
-                      padding: "2px 4px",
-                      fontWeight: 600,
-                      color: (c.residual || 0) > 0 ? "#dc2626" : "#16a34a",
-                    }}
-                  >
-                    {formatUSD(c.residual || 0)}
-                  </td>
-                  <td style={{ textAlign: "center", padding: "2px 4px" }}>
-                    {c.paymentState === "paid"
-                      ? "Pagado"
-                      : c.paymentState === "partial"
-                      ? "Parcial"
-                      : "Pendiente"}
+                  <td style={{ textAlign: "right", padding: "2px 4px", fontWeight: 700 }}>
+                    {totalCasheaReal > 0 ? formatBs(totalCasheaReal) : "—"}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </tfoot>
+            </table>
+          </div>
         )}
+
+        {/* Detalle CxC por cliente */}
+        <div style={{ marginBottom: 4 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "#555", marginBottom: 3, borderBottom: "1px solid #ddd", paddingBottom: 2 }}>
+            DETALLE POR CLIENTE
+          </div>
+
+          {creditSales.length > 0 ? (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, marginBottom: 4 }}>
+              <thead>
+                <tr style={{ background: "#f5f5f5" }}>
+                  <th style={{ textAlign: "left", padding: "2px 4px" }}>Factura</th>
+                  <th style={{ textAlign: "left", padding: "2px 4px" }}>Cliente</th>
+                  <th style={{ textAlign: "right", padding: "2px 4px" }}>Total Fact.</th>
+                  <th style={{ textAlign: "right", padding: "2px 4px" }}>Crédito POS</th>
+                  <th style={{ textAlign: "right", padding: "2px 4px" }}>Abono</th>
+                  <th style={{ textAlign: "right", padding: "2px 4px" }}>Saldo</th>
+                  <th style={{ textAlign: "center", padding: "2px 4px" }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {creditSales.map((c, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "2px 4px", fontWeight: 600 }}>{c.invoiceNumber}</td>
+                    <td style={{ padding: "2px 4px" }}>{c.partner}</td>
+                    <td style={{ textAlign: "right", padding: "2px 4px" }}>
+                      {formatUSD(c.invoiceTotal || 0)}
+                    </td>
+                    <td style={{ textAlign: "right", padding: "2px 4px" }}>
+                      {formatUSD(c.creditAmountPOS || 0)}
+                    </td>
+                    <td style={{ textAlign: "right", padding: "2px 4px" }}>
+                      {formatUSD(c.abonoAmount || 0)}
+                    </td>
+                    <td
+                      style={{
+                        textAlign: "right",
+                        padding: "2px 4px",
+                        fontWeight: 600,
+                        color: (c.residual || 0) > 0 ? "#dc2626" : "#16a34a",
+                      }}
+                    >
+                      {formatUSD(c.residual || 0)}
+                    </td>
+                    <td style={{ textAlign: "center", padding: "2px 4px" }}>
+                      {c.paymentState === "paid"
+                        ? "Pagado"
+                        : c.paymentState === "partial"
+                        ? "Parcial"
+                        : "Pendiente"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ fontSize: 9, color: "#aaa", marginBottom: 4 }}>Sin detalle de facturas a crédito</div>
+          )}
+        </div>{/* end DETALLE POR CLIENTE */}
 
         {(totalSaldoFavorPOS > 0 || totalSaldoFavorReal > 0) && (
           <div style={{ marginBottom: 4 }}>
@@ -717,8 +818,8 @@ export default function CuadreReport() {
         @media print {
           .no-print { display: none !important; }
           body { background: white !important; }
-          #report-content { box-shadow: none !important; }
-          @page { margin: 10mm; size: A4; }
+          #report-content { box-shadow: none !important; max-width: 100% !important; }
+          @page { margin: 12mm 15mm; size: letter; }
         }
       `}</style>
     </div>
