@@ -396,11 +396,14 @@ export default function CuadreForm() {
     }
   }, [fiscalSummary, isNew]);
 
-  // Auto-update retencionesReal when RIVAC data loads (for new cuadres)
+  // Auto-update retencionesReal when RIVAC data loads (for new cuadres ONLY).
+  // For existing cuadres, retencionesReal is already loaded from DB by Effect 1
+  // and must NOT be overwritten by live RIVAC data (user may have edited it manually).
   useEffect(() => {
     if (isNew && totalRetencionesRegistradas_Bs > 0) {
       setRetencionesReal(totalRetencionesRegistradas_Bs);
     }
+    // Intentionally no else-branch: existing cuadres keep their saved value.
   }, [isNew, totalRetencionesRegistradas_Bs]);
 
   // Z Report calculated fields
@@ -525,10 +528,11 @@ export default function CuadreForm() {
     + displayAjustesManuales
   ) * 100) / 100;
 
-  // Total Justificado and Diferencia for bottom section
-  const displayTotalJustificado = isExisting
-    ? (existingCuadre.totalMetodosPOS ?? summaryReal)
-    : totalJustificado;
+  // Total Justificado and Diferencia for bottom section.
+  // Always use summaryReal (computed from live state) — never the saved POS total.
+  // Previously used existingCuadre.totalMetodosPOS which is the POS total, not the verified total,
+  // causing the displayed difference to diverge from the real cuadre calculation.
+  const displayTotalJustificado = summaryReal;
   const displayDiferencia = diferencia;
 
   const isLocked = existingCuadre?.cerradoPor && existingCuadre.estado !== "pendiente";
@@ -594,7 +598,10 @@ export default function CuadreForm() {
     },
     onSuccess: (data) => {
       toast({ title: "Cuadre guardado" });
+      // Invalidate both the list cache and the individual cuadre cache so that
+      // retencionesReal and all other saved fields reload correctly on navigation.
       queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
+      queryClient.invalidateQueries({ queryKey: ["cuadre", cuadreId] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       if (isNew) navigate(`/cuadre/${data.id}`);
     },
