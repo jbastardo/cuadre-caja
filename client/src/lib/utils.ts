@@ -65,22 +65,25 @@ export function getStatusLabel(estado: string): string {
  * Replica la lógica del formulario (CuadreForm.tsx) para consistencia entre
  * Dashboard, Historial, Reporte y Formulario.
  * 
- * @param cuadre - El objeto cuadre con ventaNetaZ, totalJustificadoReal, cerradoPor
+ * @param cuadre - El objeto cuadre con ventaNetaZ, diferencia, cerradoPor, estado
  * @param tolerance - Tolerancia en Bs (default 5)
  * @returns "cuadrado" | "descuadrado" | "pendiente"
  */
 export function calculateEstado(
-  cuadre: { ventaNetaZ?: number; totalJustificadoReal?: number; cerradoPor?: string; estado?: string },
+  cuadre: { ventaNetaZ?: number; diferencia?: number; cerradoPor?: string; estado?: string },
   tolerance: number = 5
 ): "cuadrado" | "descuadrado" | "pendiente" {
   const ventaNetaZ = cuadre.ventaNetaZ || 0;
-  const totalJustificado = cuadre.totalJustificadoReal || 0;
-  const diferencia = Math.abs(totalJustificado - ventaNetaZ);
+  const diferencia = cuadre.diferencia !== undefined ? Math.abs(cuadre.diferencia) : 0;
   
   // Mismo cálculo que CuadreForm.tsx líneas 792-798
+  // Si ventaNetaZ es 0, considerar cuadrado
   if (ventaNetaZ === 0) return "cuadrado";
+  // Si diferencia está dentro de tolerancia, considerar cuadrado
   if (diferencia < tolerance) return "cuadrado";
+  // Si está cerrado, es descuadrado
   if (cuadre.cerradoPor) return "descuadrado";
+  // Sino, está pendiente
   return "pendiente";
 }
 
