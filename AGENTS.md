@@ -69,4 +69,33 @@ Se actualizó la Sección V display para mostrar:
 ### Commands run
 - `npx vite build` (client) — fallo pre-existente en `main.tsx` (import `@/lib/queryClient`), no relacionado
 
+---
+
+## 2026-05-08 — Estado inconsistente: server SPECIAL_METHOD_IDS vs frontend SECTION3_EXCLUDED_IDS
+
+### Problem
+El estado del cuadre se veía diferente entre el formulario, el historial, el dashboard y el reporte. La inconsistencia se debía a que `server/db.ts` tenía `SPECIAL_METHOD_IDS` con ID 42 (Cashea) y filtraba por nombre "crédito" en `directMetodos`, mientras que el frontend (`CuadreForm.tsx`) no excluía ni ID 42 ni por nombre en su `directMetodos`. Esto causaba que `computeCuadreTotals` y `recalculateCuadreEstado` calcularan `totalMetodosReal` (y por ende `totalJustificado`, `diferencia`, `estado`) distinto al frontend.
+
+Además, el reporte (`CuadreReport.tsx`) usaba `cuadre.estado` (DB) para la etiqueta de estado pero `esCuadrado` (cálculo local) para el color, causando labels inconsistentes (ej. "Pendiente" en verde).
+
+### Solution
+**Server (`server/db.ts`)**:
+- Remover ID 42 de `SPECIAL_METHOD_IDS` — ahora coincide exactamente con `SECTION3_EXCLUDED_IDS = {26, 14, 33, 25}` del frontend
+- Remover función `isCreditoByName()` — el frontend no filtra directMetodos por nombre "crédito" (solo por SECTION3_EXCLUDED_IDS + delivery/diferencia)
+- Remover `NOMBRE_OVERRIDE_IDS` — ya no era necesario sin isCreditoByName
+- `directMetodos` filter ahora es: `!SPECIAL_METHOD_IDS.has(m.metodoId) && !isDeliveryOrDifName(m.metodoNombre)`
+
+**Reporte (`CuadreReport.tsx`)**:
+- Agregar `estadoVisible` calculado localmente con misma lógica que el form:
+  `esCuadrado ? "cuadrado" : cerradoPor ? "descuadrado" : "pendiente"`
+- Header usa `getStatusLabel(estadoVisible)` en vez de `getStatusLabel(cuadre.estado)`
+- Result box también usa `estadoVisible` para el badge (✓/✗/△)
+
+### Files modified
+- `server/db.ts` (lines 256-270: SPECIAL_METHOD_IDS sin 42, removidas isCreditoByName y NOMBRE_OVERRIDE_IDS; lines 281-296 y 634-638: directMetodos filter sin isCreditoByName)
+- `client/src/pages/CuadreReport.tsx` (lines 214-222: +estadoVisible; line 275: usa estadoVisible en header; line 721: result badge con pendiente)
+
+### Commands run
+- `git push origin HEAD:master` — OK
+
 ## Previous context stored in CLAUDE.md
