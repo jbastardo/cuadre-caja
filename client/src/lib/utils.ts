@@ -60,6 +60,30 @@ export function getStatusLabel(estado: string): string {
   }
 }
 
+/**
+ * Calcula el estado visible de un cuadre basado en la diferencia y si está cerrado.
+ * Replica la lógica del formulario (CuadreForm.tsx) para consistencia entre
+ * Dashboard, Historial, Reporte y Formulario.
+ * 
+ * @param cuadre - El objeto cuadre con ventaNetaZ, totalJustificadoReal, cerradoPor
+ * @param tolerance - Tolerancia en Bs (default 5)
+ * @returns "cuadrado" | "descuadrado" | "pendiente"
+ */
+export function calculateEstado(
+  cuadre: { ventaNetaZ?: number; totalJustificadoReal?: number; cerradoPor?: string; estado?: string },
+  tolerance: number = 5
+): "cuadrado" | "descuadrado" | "pendiente" {
+  const ventaNetaZ = cuadre.ventaNetaZ || 0;
+  const totalJustificado = cuadre.totalJustificadoReal || 0;
+  const diferencia = Math.abs(totalJustificado - ventaNetaZ);
+  
+  // Mismo cálculo que CuadreForm.tsx líneas 792-798
+  if (ventaNetaZ === 0) return "cuadrado";
+  if (diferencia < tolerance) return "cuadrado";
+  if (cuadre.cerradoPor) return "descuadrado";
+  return "pendiente";
+}
+
 export function todayStr(): string {
   return new Date().toISOString().split("T")[0];
 }
