@@ -254,28 +254,19 @@ export async function getCuadreBySessionId(sessionId: number, tipo?: string): Pr
 }
 
 // Método IDs excluidos de totalMetodosReal porque tienen campo dedicado en el cuadre.
-// IMPORTANTE: ID 38 ("Venta a crédito" en Odoo) es en realidad P.Movil BNC (type=bank).
+// Debe coincidir exactamente con SECTION3_EXCLUDED_IDS del frontend (CuadreForm.tsx).
+// NOTA: ID 42 (PXC Cashea) NO se excluye — el frontend lo incluye en directMetodos.
+// NOTA: ID 38 ("Venta a crédito" en Odoo) es en realidad P.Movil BNC (type=bank).
 // Es un ingreso directo y DEBE incluirse en totalMetodosReal. No va aquí.
 const SPECIAL_METHOD_IDS = new Set([
   26,       // Retención IVA   → campo totalRetencionesReal
   14, 33,   // Venta a crédito pay_later → campo totalCreditoPOS / totalAbonosReal
   25,       // Saldo a favor   → campo totalSaldoFavorReal
-  42,       // PXC Cashea      → cobro diferido al operador
 ]);
-
-// IDs con nombre incorrecto en Odoo — no se puede confiar en su metodoNombre para clasificar
-const NOMBRE_OVERRIDE_IDS = new Set([38, 42]);
 
 function isDeliveryOrDifName(name: string): boolean {
   const n = (name || "").toLowerCase();
   return n.includes("delivery") || n.includes("diferencia");
-}
-
-// Excluir por nombre "crédito" SOLO si el ID no tiene override (evita falso positivo en ID 38)
-function isCreditoByName(metodoId: number, name: string): boolean {
-  if (NOMBRE_OVERRIDE_IDS.has(metodoId)) return false; // nombre no es fiable para este ID
-  const n = (name || "").toLowerCase();
-  return n.includes("crédito") || n.includes("credito");
 }
 
 async function computeCuadreTotals(data: CreateCuadre): Promise<{
@@ -287,13 +278,12 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
   diferencia: number;
   estado: "cuadrado" | "pendiente";
 }> {
-  // Only sum DIRECT methods — special methods (retención, crédito, saldo a favor, cashea)
+  // Only sum DIRECT methods — special methods (retención, crédito, saldo a favor)
   // are already accounted for via their dedicated fields and must NOT be double-counted.
-  // Mirrors exactly: CuadreForm.tsx directMetodos filter (SECTION3_EXCLUDED_IDS + isDeliveryOrDiferencia + isVentaCredito).
+  // Mirrors exactly: CuadreForm.tsx directMetodos filter.
   const directMetodos = (data.metodos || []).filter(
     (m) => !SPECIAL_METHOD_IDS.has(m.metodoId)
         && !isDeliveryOrDifName(m.metodoNombre || "")
-        && !isCreditoByName(m.metodoId, m.metodoNombre || "")
   );
   const totalMetodosReal = directMetodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
 
@@ -645,7 +635,6 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   const directMetodos = metodos.filter(
     (m) => !SPECIAL_METHOD_IDS.has(m.metodoId)
         && !isDeliveryOrDifName(m.metodoNombre || "")
-        && !isCreditoByName(m.metodoId, m.metodoNombre || "")
   );
   const totalMetodosReal = directMetodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
   const totalDeducciones = deducciones.reduce((sum, d) => sum + toNum(d.monto), 0);

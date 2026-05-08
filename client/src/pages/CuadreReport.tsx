@@ -214,6 +214,12 @@ export default function CuadreReport() {
   // Diferencia recalculada localmente — nunca leer cuadre.diferencia de DB
   const diferencia  = Math.round((totalReal - ventaNetaZ) * 100) / 100;
   const esCuadrado  = Math.abs(diferencia) < 5 || cuadre.estado === "cuadrado";
+  // Estado visible coherente con el formulario y el historial
+  const estadoVisible = esCuadrado
+    ? "cuadrado"
+    : cuadre.cerradoPor
+      ? "descuadrado"
+      : "pendiente";
 
   const fechaFormateada = cuadre.fecha
     ? new Date(cuadre.fecha + "T12:00:00").toLocaleDateString("es-VE", {
@@ -266,7 +272,7 @@ export default function CuadreReport() {
           <div>
             <strong>Estado:</strong>{" "}
             <span style={{ fontWeight: 700, color: esCuadrado ? "#16a34a" : "#dc2626" }}>
-              {getStatusLabel(cuadre.estado)}
+              {getStatusLabel(estadoVisible)}
             </span>
           </div>
           {cuadre.cerradoPor && (
@@ -683,11 +689,11 @@ export default function CuadreReport() {
         )}
 
         {/* Resultado */}
-        <div style={{
-          border: `2px solid ${esCuadrado ? "#16a34a" : "#dc2626"}`,
-          borderRadius: 6, padding: 8,
-          background: esCuadrado ? "#f0fdf4" : "#fef2f2",
-          marginBottom: 6,
+          <div style={{
+            border: `2px solid ${esCuadrado ? "#16a34a" : "#dc2626"}`,
+            borderRadius: 6, padding: 8,
+            background: esCuadrado ? "#f0fdf4" : "#fef2f2",
+            marginBottom: 6,
         }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, textAlign: "center" }}>
             <div>
@@ -712,7 +718,7 @@ export default function CuadreReport() {
               color: "#fff", fontWeight: 700, fontSize: 13,
               padding: "4px 20px", borderRadius: 4, letterSpacing: "0.1em",
             }}>
-              {esCuadrado ? "✓ CUADRADO" : "✗ DESCUADRADO"}
+              {estadoVisible === "cuadrado" ? "✓ CUADRADO" : estadoVisible === "descuadrado" ? "✗ DESCUADRADO" : "△ PENDIENTE"}
             </span>
           </div>
           {Math.abs(difCambiaria) >= 0.01 && (
