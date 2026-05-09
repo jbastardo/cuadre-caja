@@ -465,12 +465,13 @@ export default function CuadreForm() {
   // totalJustificado = ALL components that justify the sales against Z:
   // Direct methods (real) + retenciones (real) + crédito (abonos + CxC) + saldos a favor (real)
   // + deducciones (delivery/dif POS + manual) + ajustes manuales
+  // NOTA: CxC pendiente se suma como valor absoluto (sin signo negativo)
   const totalJustificado = Math.round((
     totalDirectMetodosReal
     + retencionesReal
     + retencionesPorCobrar_Bs
     + totalAbonosRecibidos_Bs
-    + totalCxCPendiente_Bs
+    + Math.abs(totalCxCPendiente_Bs)  // ← Valor absoluto
     + saldoFavorReal
     + totalDeliveryDifPOS_Bs
     + totalDeducciones
@@ -542,12 +543,13 @@ export default function CuadreForm() {
   // TOTAL VERIFICADO: always compute from live state so it matches the individual line items
   // shown in Section 8. For existing cuadres, display* values come from saved fields for
   // retenciones/crédito/saldos, while totalDirectMetodosReal comes from the live metodos state.
+  // NOTA: CxC pendiente se suma como valor absoluto (sin signo negativo)
   const summaryReal = Math.round((
     totalDirectMetodosReal
     + displayRetencionesReal
     + displayRetencionesPorCobrar
     + displayAbonosReal
-    + displayCxCPendiente
+    + Math.abs(displayCxCPendiente)  // ← Valor absoluto
     + displaySaldoFavorReal
     + deliveryDifPOS
     + displayDeducciones
