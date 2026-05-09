@@ -461,6 +461,15 @@ export default function CuadreForm() {
   ) * 100) / 100;
   // Cuadre difference = totalJustificado - ventaNetaZ (comparing against Z, NOT Odoo)
   const diferencia = Math.round((totalJustificado - ventaNetaZ) * 100) / 100;
+  
+  // Estado calculado (mismo que se muestra en el badge)
+  const calculatedEstado = ventaNetaZ === 0
+    ? "cuadrado" as const
+    : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
+      ? "cuadrado" as const
+      : existingCuadre?.cerradoPor
+        ? "descuadrado" as const
+        : "pendiente" as const;
 
   // ─── Totals: guarantee correctness for old cuadres ─────────────────────────
   // For existing cuadres: compute from saved metodos/deducciones/ajustes only.
@@ -585,6 +594,8 @@ export default function CuadreForm() {
         totalMetodosPOS: summaryPOS,
         totalJustificadoReal: summaryReal,
         totalDirectoPOS: displayDirectoPOS,
+        diferencia,
+        estado: calculatedEstado,
       };
 
       if (isNew) {
@@ -788,21 +799,11 @@ export default function CuadreForm() {
                 Información de Sesión
                 <span className="bg-[#0A4083] text-white text-xs font-bold px-2 py-0.5 rounded">FISCAL</span>
               </span>
-              {(() => {
-                const calculatedEstado = ventaNetaZ === 0
-                  ? "cuadrado" as const
-                  : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
-                    ? "cuadrado" as const
-                    : existingCuadre?.cerradoPor
-                      ? "descuadrado" as const
-                      : "pendiente" as const;
-                const displayEstado = existingCuadre ? calculatedEstado : null;
-                return displayEstado ? (
-                  <Badge className={getStatusColor(displayEstado)}>
-                    {getStatusLabel(displayEstado)}
-                  </Badge>
-                ) : null;
-              })()}
+              {existingCuadre && (
+                <Badge className={getStatusColor(calculatedEstado)}>
+                  {getStatusLabel(calculatedEstado)}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
