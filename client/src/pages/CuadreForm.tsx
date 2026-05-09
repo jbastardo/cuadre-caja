@@ -164,7 +164,18 @@ export default function CuadreForm() {
   });
 
   const fiscalCuadres = useMemo(
-    () => allCuadres.filter(c => c.tipo !== "nf").sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id)),
+    () => allCuadres
+      .filter(c => c.tipo !== "nf")
+      .sort((a, b) => {
+        // Sort by date first (ascending: oldest to newest)
+        const dateCompare = a.fecha.localeCompare(b.fecha);
+        if (dateCompare !== 0) return dateCompare;
+        // Then by caja/sessionName (to keep consistent order within same day)
+        const cajaCompare = (a.caja || "").localeCompare(b.caja || "");
+        if (cajaCompare !== 0) return cajaCompare;
+        // Finally by id as fallback
+        return a.id.localeCompare(b.id);
+      }),
     [allCuadres]
   );
 
@@ -763,6 +774,17 @@ export default function CuadreForm() {
               <Button variant="ghost" size="sm" className="text-white hover:bg-white/20"
                 onClick={() => navigate(`/cuadre/${cuadreId}/report`)}>
                 <Printer className="h-4 w-4 mr-1" /> Reporte
+              </Button>
+            )}
+            {!isLocked && (
+              <Button 
+                size="sm" 
+                className="bg-white text-[#0A4083] hover:bg-white/90" 
+                onClick={() => saveMutation.mutate()} 
+                disabled={saveMutation.isPending}
+              >
+                <Save className="h-4 w-4 mr-1" />
+                {saveMutation.isPending ? "Guardando..." : "Guardar"}
               </Button>
             )}
           </div>
