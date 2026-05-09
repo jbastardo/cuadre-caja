@@ -1733,7 +1733,7 @@ export default function CuadreForm() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>CxC pendientes:</span>
-                  <span className="text-amber-700">{formatBs(displayCxCPendiente)}</span>
+                  <span className="text-amber-700">{formatBs(Math.abs(displayCxCPendiente))}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Saldos a favor:</span>
