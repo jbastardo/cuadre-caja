@@ -147,7 +147,7 @@ export default function CuadreForm() {
   });
 
   // Load existing cuadre
-  const { data: existingCuadre, isLoading: isLoadingCuadre } = useQuery<CuadreDetail>({
+  const { data: existingCuadre, isLoading: isLoadingCuadre, refetch: refetchCuadre } = useQuery<CuadreDetail>({
     queryKey: ["cuadre", cuadreId],
     queryFn: async () => {
       const res = await fetch(`/api/cuadres/${cuadreId}`);
@@ -624,14 +624,19 @@ export default function CuadreForm() {
         return res.json();
       }
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       toast({ title: "Cuadre guardado" });
       // Invalidate both the list cache and the individual cuadre cache so that
       // retencionesReal and all other saved fields reload correctly on navigation.
       queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
-      queryClient.invalidateQueries({ queryKey: ["cuadre", cuadreId] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      if (isNew) navigate(`/cuadre/${data.id}`);
+      
+      if (isNew) {
+        navigate(`/cuadre/${data.id}`);
+      } else {
+        // For existing cuadres, force immediate refetch to reload saved data
+        await refetchCuadre();
+      }
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -646,10 +651,10 @@ export default function CuadreForm() {
       });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "Cuadre cerrado" });
-      queryClient.invalidateQueries({ queryKey: ["cuadre", cuadreId] });
       queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
+      await refetchCuadre();
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -661,10 +666,10 @@ export default function CuadreForm() {
       const res = await apiRequest(`/api/cuadres/${cuadreId}/reopen`, { method: "POST" });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "Cuadre reabierto" });
-      queryClient.invalidateQueries({ queryKey: ["cuadre", cuadreId] });
       queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
+      await refetchCuadre();
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
