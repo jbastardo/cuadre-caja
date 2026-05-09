@@ -131,6 +131,7 @@ export default function CuadreForm() {
 
   const sessionId = isNew ? getSessionIdFromUrl() : 0;
 
+  const [isNavigating, setIsNavigating] = useState(false);
   const [metodos, setMetodos] = useState<MetodoRow[]>([]);
   const [deducciones, setDeducciones] = useState<DeduccionRow[]>([]);
   const [ajustes, setAjustes] = useState<AjusteRow[]>([]);
@@ -363,6 +364,11 @@ export default function CuadreForm() {
       ultimaNCZ: existingCuadre.ultimaNCZ || "",
     });
   }, [existingCuadre, isNew]);
+
+  // Reset isNavigating when cuadreId changes
+  useEffect(() => {
+    setIsNavigating(false);
+  }, [cuadreId]);
 
   // Effect 2a: For new cuadres — populate metodos from live fiscalSummary.
   // Effect 2b: For existing cuadres — refresh only POS amounts from fiscalSummary,
@@ -761,18 +767,43 @@ export default function CuadreForm() {
           </div>
           <div className="flex items-center gap-2">
             {!isNew && prevCuadre && (
-              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate(`/cuadre/${prevCuadre.id}`)}>
-                <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/20" 
+                onClick={() => {
+                  setIsNavigating(true);
+                  navigate(`/cuadre/${prevCuadre.id}`);
+                }}
+                disabled={isNavigating || isLoadingCuadre || isLoadingSession}
+              >
+                {isNavigating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <ChevronLeft className="h-4 w-4 mr-1" />}
+                Anterior
               </Button>
             )}
             {!isNew && nextCuadre && (
-              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate(`/cuadre/${nextCuadre.id}`)}>
-                Siguiente <ChevronRight className="h-4 w-4 ml-1" />
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/20" 
+                onClick={() => {
+                  setIsNavigating(true);
+                  navigate(`/cuadre/${nextCuadre.id}`);
+                }}
+                disabled={isNavigating || isLoadingCuadre || isLoadingSession}
+              >
+                Siguiente 
+                {isNavigating ? <Loader2 className="h-4 w-4 ml-1 animate-spin" /> : <ChevronRight className="h-4 w-4 ml-1" />}
               </Button>
             )}
             {!isNew && (
-              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20"
-                onClick={() => navigate(`/cuadre/${cuadreId}/report`)}>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/20"
+                onClick={() => navigate(`/cuadre/${cuadreId}/report`)}
+                disabled={isNavigating || isLoadingCuadre}
+              >
                 <Printer className="h-4 w-4 mr-1" /> Reporte
               </Button>
             )}
@@ -781,7 +812,7 @@ export default function CuadreForm() {
                 size="sm" 
                 className="bg-white text-[#0A4083] hover:bg-white/90" 
                 onClick={() => saveMutation.mutate()} 
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || isNavigating || isLoadingCuadre}
               >
                 <Save className="h-4 w-4 mr-1" />
                 {saveMutation.isPending ? "Guardando..." : "Guardar"}
