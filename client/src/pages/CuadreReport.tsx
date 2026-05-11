@@ -164,15 +164,10 @@ export default function CuadreReport() {
   const totalRetReal = cuadre.totalRetencionesReal || 0;   // ← campo manual del usuario
   const retPorCobrar = Math.max(0, Math.round((totalRetPOS - totalRetReal) * 100) / 100);
 
-  // Excedentes de ventas a crédito (sobrepago de retención → pasa a saldo a favor)
-  const totalExcedenteCreditSales = (creditSales?.length ?? 0) > 0
-    ? Math.round(creditSales.reduce((s, c) => s + (c.excedenteBs || 0), 0) * 100) / 100
-    : 0;
-
-  // Saldos a favor desde array + excedentes de crédito
-  const totalSFavorPOS = ((cuadre.saldosFavor?.length ?? 0) > 0
+  // Saldos a favor desde array
+  const totalSFavorPOS = (cuadre.saldosFavor?.length ?? 0) > 0
     ? Math.round(cuadre.saldosFavor.reduce((s, sf) => s + (sf.amountBs || sf.amount * tasa), 0) * 100) / 100
-    : (cuadre.totalSaldoFavorPOS || 0)) + totalExcedenteCreditSales;
+    : (cuadre.totalSaldoFavorPOS || 0);
 
   const totalSFavorReal = cuadre.totalSaldoFavorReal || 0;  // ← campo manual del usuario
 
@@ -564,13 +559,10 @@ export default function CuadreReport() {
         </div>
 
         {/* Saldos a favor */}
-        {(totalSFavorPOS > 0 || totalSFavorReal > 0 || totalExcedenteCreditSales > 0) && (
+        {(totalSFavorPOS > 0 || totalSFavorReal > 0) && (
           <div style={{ marginBottom: 4 }}>
             <SubHead>SALDOS A FAVOR GENERADOS</SubHead>
             <Row label="  Saldo a favor según POS (Bs):"   value={formatBs(totalSFavorPOS)}  indent />
-            {totalExcedenteCreditSales > 0 && (
-              <Row label="    Incluye excedente crédito (Bs):" value={formatBs(totalExcedenteCreditSales)} indent valueColor="#2563eb" />
-            )}
             <Row label="  Saldo a favor verificado (Bs):"  value={formatBs(totalSFavorReal)} bold indent valueColor="#16a34a" />
             {cuadre.saldoFavorObs && (
               <div style={{ fontSize: 9, color: "#666", paddingLeft: 10, fontStyle: "italic" }}>

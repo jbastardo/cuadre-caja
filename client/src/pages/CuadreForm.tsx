@@ -256,21 +256,10 @@ export default function CuadreForm() {
   );
   const totalRetencionesCredito_Bs = Math.round(totalRetencionesCredito_USD * rate * 100) / 100;
 
-  // Excedentes de ventas a crédito (sobrepago de retención → pasa a saldo a favor Sección 6)
-  const totalExcedenteUsd = useMemo(
-    () => Math.round((creditSales || []).reduce((sum, c) => sum + (c.excedenteUsd || 0), 0) * 100) / 100,
-    [creditSales]
-  );
-  const totalExcedenteBs = Math.round(totalExcedenteUsd * rate * 100) / 100;
-  const creditSalesConExcedente = useMemo(
-    () => (creditSales || []).filter(c => c.generaSaldoFavor),
-    [creditSales]
-  );
-
-  // Special method totals from fiscal summary + retenciones de crédito + excedentes
+  // Special method totals from fiscal summary + retenciones de crédito
   const totalRetencionesPOS_USD = (fiscalSummary?.totalRetencionesPOS || 0) + totalRetencionesCredito_USD;
   const totalCreditoPOS_USD = fiscalSummary?.totalCreditoPOS || 0;
-  const totalSaldoFavorPOS_USD = (fiscalSummary?.totalSaldoFavorPOS || 0) + totalExcedenteUsd;
+  const totalSaldoFavorPOS_USD = fiscalSummary?.totalSaldoFavorPOS || 0;
   const totalRetencionesPOS_Bs = Math.round(totalRetencionesPOS_USD * rate * 100) / 100;
   const totalCreditoPOS_Bs = Math.round(totalCreditoPOS_USD * rate * 100) / 100;
   const totalSaldoFavorPOS_Bs = Math.round(totalSaldoFavorPOS_USD * rate * 100) / 100;
@@ -305,6 +294,20 @@ export default function CuadreForm() {
   const totalCxCPendiente_Bs = useMemo(
     () => Math.round((creditSales || []).reduce((sum, c) => sum + ((c.residual || 0) * rate), 0) * 100) / 100,
     [creditSales, rate]
+  );
+
+  // Excedentes (pagos con exceso sobre la factura — ej: delivery)
+  const totalExcedenteBs = useMemo(
+    () => Math.round((creditSales || []).reduce((sum, c) => sum + (c.excedenteBs || 0), 0) * 100) / 100,
+    [creditSales]
+  );
+  const totalExcedenteUsd = useMemo(
+    () => Math.round((creditSales || []).reduce((sum, c) => sum + (c.excedenteUsd || 0), 0) * 100) / 100,
+    [creditSales]
+  );
+  const creditSalesConExcedente = useMemo(
+    () => (creditSales || []).filter(c => c.generaSaldoFavor),
+    [creditSales]
   );
 
   // Determine fiscal machine from session config
@@ -521,7 +524,7 @@ export default function CuadreForm() {
     ? (existingCuadre.totalCreditoPOS || 0)
     : totalCreditoPOS_Bs;
   const displaySaldoFavorPOS = isExisting
-    ? (existingCuadre.totalSaldoFavorPOS || 0) + totalExcedenteBs
+    ? (existingCuadre.totalSaldoFavorPOS || 0)
     : totalSaldoFavorPOS_Bs;
   // Use live retencionesReal state (loaded from existingCuadre by Effect 1, editable by user)
   const displayRetencionesReal = retencionesReal;

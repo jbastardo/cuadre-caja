@@ -1495,42 +1495,32 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
       }
     }
 
-    // Saldo = Total Factura - Abonos - Retención (misma fórmula para facturas y NCs)
+    // Saldo = Total Factura - Abonos - Retención
     // Positivo = cuenta por cobrar (cliente debe)
     // Negativo = saldo a favor (excedente/sobrante)
-    let saldoReal = Math.round((invoiceTotal - abonoAmount - retentionAmountUsd) * 100) / 100;
-
-    // Excedente = delivery (terceros) + sobrepago de retención
-    let excedenteUsd = Math.round(deliveryAmountUsd * 100) / 100;
-    let excedenteConcepto = excedenteUsd > 0 ? "delivery" : "";
-    let residualFinal = saldoReal;
-    let generaSaldoFavor = false;
-    let paymentState = isRefund ? "refunded" : "not_paid";
-
-    if (isRefund) {
-      // Las NC no generan saldo a favor nuevo — solo cancelan la factura
-      generaSaldoFavor = false;
-    } else if (saldoReal < 0 && abonoAmount > 0) {
-      // Sobrepago: el cliente pagó más de lo que debía (total factura - retención)
-      // El residual se lleva a 0 y el excedente pasa a saldo a favor (Sección 6)
-      generaSaldoFavor = true;
-      excedenteConcepto = "saldo a favor";
-      const overpayment = Math.abs(saldoReal);
-      excedenteUsd = Math.round((excedenteUsd + overpayment) * 100) / 100;
-      residualFinal = 0;
-      paymentState = "paid";
-    } else {
-      generaSaldoFavor = saldoReal < 0;
-      if (abonoAmount > 0) {
-        paymentState = saldoReal > 0 ? "partial" : "paid";
-      }
-    }
-
+    // For refunds, don't subtract retention separately since the invoice total already reflects it
+    const saldoReal = isRefund 
+      ? Math.round((invoiceTotal - abonoAmount) * 100) / 100
+      : Math.round((invoiceTotal - abonoAmount - retentionAmountUsd) * 100) / 100;
+    
+    // Excedente = delivery (terceros)
+    const excedenteUsd = Math.round(deliveryAmountUsd * 100) / 100;
     const excedenteBs = Math.round(excedenteUsd * rate * 100) / 100;
 
-    // Total pagado = abono + excedente
+    // Determine payment state based on saldo
+    // Si saldo > 0: partial (debe dinero)
+    // Si saldo <= 0: paid (pagado o saldo a favor)
+    let paymentState = isRefund ? "refunded" : "not_paid";
+    if (!isRefund && abonoAmount > 0) {
+      paymentState = saldoReal > 0 ? "partial" : "paid";
+    }
+
+    // Total pagado = abono + delivery
     const paymentTotalUsd = Math.round((abonoAmount + excedenteUsd) * 100) / 100;
     const paymentTotalBs = Math.round(paymentTotalUsd * rate * 100) / 100;
+
+    // generaSaldoFavor = true si saldo es negativo (hay excedente)
+    const generaSaldoFavor = saldoReal < 0;
 
     results.push({
       invoiceNumber,
@@ -1542,13 +1532,13 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
       abonoAmountBs,
       abonoJournal,
       abonoByJournal,
-      residual: residualFinal,
+      residual: saldoReal,
       paymentState,
       paymentTotalBs,
       paymentTotalUsd,
       excedenteBs,
       excedenteUsd,
-      excedenteConcepto,
+      excedenteConcepto: excedenteUsd > 0 ? "delivery" : "",
       generaSaldoFavor,
     });
   }
