@@ -1413,9 +1413,16 @@ export default function CuadreForm() {
                     </div>
                     <div className="bg-amber-50 rounded p-2">
                       <span className="text-amber-700 text-xs font-medium">CxC Pendientes:</span>
-                      <p className="font-bold text-amber-900 text-lg">{formatBs(totalCxCPendiente_Bs)}</p>
-                      <p className="text-xs text-muted-foreground">{formatUSD(totalCxCPendiente)}</p>
+                      <p className="font-bold text-amber-900 text-lg">{formatBs(Math.abs(totalCxCPendiente_Bs))}</p>
+                      <p className="text-xs text-muted-foreground">{formatUSD(Math.abs(totalCxCPendiente))}</p>
                     </div>
+                    {totalRetencionesCredito_Bs !== 0 && (
+                      <div className="bg-blue-50 rounded p-2">
+                        <span className="text-blue-700 text-xs font-medium">Retenciones de crédito:</span>
+                        <p className="font-bold text-blue-900 text-lg">{formatBs(Math.abs(totalRetencionesCredito_Bs))}</p>
+                        <p className="text-xs text-muted-foreground">{formatUSD(Math.abs(totalRetencionesCredito_USD))}</p>
+                      </div>
+                    )}
                   </div>
                   {/* CxC Pendientes detail — today's invoices only */}
                   {creditSales && creditSales.filter((c) => c.residual > 0).length > 0 && (
