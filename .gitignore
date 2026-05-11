@@ -3,4 +3,3 @@ dist/
 .env
 *.log
 google-credentials.json
-cuadre-caja/
