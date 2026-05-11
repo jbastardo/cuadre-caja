@@ -279,13 +279,15 @@ export default function CuadreForm() {
     }, 0) * 100) / 100,
     [creditSales, rate]
   );
-  // CxC Pendientes = suma de todos los saldos (positivos = debe, negativos = saldo a favor)
+  // CxC Pendientes = suma de todos los saldos ajustados por retenciones
+  // residual - retentionAmountPOS = lo que realmente debe el cliente
+  // (si es negativo, es saldo a favor del cliente)
   const totalCxCPendiente = useMemo(
-    () => Math.round((creditSales || []).reduce((sum, c) => sum + (c.residual || 0), 0) * 100) / 100,
+    () => Math.round((creditSales || []).reduce((sum, c) => sum + ((c.residual || 0) - (c.retentionAmountPOS || 0)), 0) * 100) / 100,
     [creditSales]
   );
   const totalCxCPendiente_Bs = useMemo(
-    () => Math.round((creditSales || []).reduce((sum, c) => sum + ((c.residual || 0) * rate), 0) * 100) / 100,
+    () => Math.round((creditSales || []).reduce((sum, c) => sum + (((c.residual || 0) - (c.retentionAmountPOS || 0)) * rate), 0) * 100) / 100,
     [creditSales, rate]
   );
 
