@@ -254,7 +254,6 @@ export default function CuadreForm() {
     () => Math.round((creditSales || []).reduce((sum, c) => sum + (c.retentionAmountPOS || 0), 0) * 100) / 100,
     [creditSales]
   );
-  const totalRetencionesCredito_Bs = Math.round(totalRetencionesCredito_USD * rate * 100) / 100;
 
   // Special method totals from fiscal summary + retenciones de crédito
   const totalRetencionesPOS_USD = (fiscalSummary?.totalRetencionesPOS || 0) + totalRetencionesCredito_USD;
@@ -516,9 +515,8 @@ export default function CuadreForm() {
   const ajustesTotal = ajustes.reduce((s, a) => s + (a.monto || 0), 0);
 
   // For existing cuadres: use saved special totals if available, else compute from metodos
-  // Retenciones de crédito se suman en vivo porque no estaban incluidas en datos guardados
   const displayRetencionesPOS = isExisting
-    ? (existingCuadre.totalRetencionesPOS || 0) + totalRetencionesCredito_Bs
+    ? (existingCuadre.totalRetencionesPOS || 0)
     : totalRetencionesPOS_Bs;
   const displayCreditoPOS = isExisting
     ? (existingCuadre.totalCreditoPOS || 0)
@@ -529,7 +527,7 @@ export default function CuadreForm() {
   // Use live retencionesReal state (loaded from existingCuadre by Effect 1, editable by user)
   const displayRetencionesReal = retencionesReal;
   const displayRetencionesPorCobrar = isExisting
-    ? (existingCuadre.retencionesPorCobrar || 0) + totalRetencionesCredito_Bs
+    ? (existingCuadre.retencionesPorCobrar || 0)
     : retencionesPorCobrar_Bs;
   const displayAbonosReal = isExisting
     ? (existingCuadre.totalAbonosReal || 0)
