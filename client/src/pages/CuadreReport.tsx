@@ -149,10 +149,8 @@ export default function CuadreReport() {
       }, 0) * 100) / 100
     : (cuadre.totalAbonosReal || 0);
 
-  // CxC Pendiente ajustado por retenciones: residual - retentionAmountPOS
-  // (si es negativo, es saldo a favor del cliente)
   const totalCxCPendiente = (creditSales?.length ?? 0) > 0
-    ? Math.round(creditSales.reduce((s, c) => s + (((c.residual || 0) - (c.retentionAmountPOS || 0)) * tasa), 0) * 100) / 100
+    ? Math.round(creditSales.reduce((s, c) => s + ((c.residual || 0) * tasa), 0) * 100) / 100
     : (cuadre.totalCxCPendiente || 0);
 
   // Retenciones desde retentions array
