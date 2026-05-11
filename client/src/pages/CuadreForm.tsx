@@ -249,8 +249,14 @@ export default function CuadreForm() {
   const totalOdooUSD = fiscalSummary?.totalUSD || existingCuadre?.totalOdooUSD || 0;
   const totalOdooBs = fiscalSummary?.totalVES || existingCuadre?.totalOdooBs || 0;
 
-  // Special method totals from fiscal summary
-  const totalRetencionesPOS_USD = fiscalSummary?.totalRetencionesPOS || 0;
+  // Retenciones de ventas a crédito (retenciones en facturas de crédito)
+  const totalRetencionesCredito_USD = useMemo(
+    () => Math.round((creditSales || []).reduce((sum, c) => sum + (c.retentionAmountPOS || 0), 0) * 100) / 100,
+    [creditSales]
+  );
+
+  // Special method totals from fiscal summary + retenciones de crédito
+  const totalRetencionesPOS_USD = (fiscalSummary?.totalRetencionesPOS || 0) + totalRetencionesCredito_USD;
   const totalCreditoPOS_USD = fiscalSummary?.totalCreditoPOS || 0;
   const totalSaldoFavorPOS_USD = fiscalSummary?.totalSaldoFavorPOS || 0;
   const totalRetencionesPOS_Bs = Math.round(totalRetencionesPOS_USD * rate * 100) / 100;

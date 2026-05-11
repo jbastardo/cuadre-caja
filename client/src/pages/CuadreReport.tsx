@@ -153,9 +153,12 @@ export default function CuadreReport() {
     ? Math.round(creditSales.reduce((s, c) => s + ((c.residual || 0) * tasa), 0) * 100) / 100
     : (cuadre.totalCxCPendiente || 0);
 
-  // Retenciones desde retentions array
+  // Retenciones desde retentions array + retenciones de crédito
+  const totalRetencionesCredito = (creditSales?.length ?? 0) > 0
+    ? Math.round(creditSales.reduce((s, c) => s + ((c.retentionAmountPOS || 0) * tasa), 0) * 100) / 100
+    : 0;
   const totalRetPOS = (retentions?.length ?? 0) > 0
-    ? Math.round(retentions.reduce((s, r) => s + ((r.posTotalUSD || 0) * tasa), 0) * 100) / 100
+    ? Math.round(retentions.reduce((s, r) => s + ((r.posTotalUSD || 0) * tasa), 0) * 100) / 100 + totalRetencionesCredito
     : (cuadre.totalRetencionesPOS || 0);
 
   const totalRetReal = cuadre.totalRetencionesReal || 0;   // ← campo manual del usuario
