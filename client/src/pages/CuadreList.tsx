@@ -46,12 +46,16 @@ export default function CuadreList() {
     staleTime: 2 * 60 * 1000,
   });
 
+  // Normalizar nombre de caja: "Caja 2 (Wendy García)" → "Caja 2"
+  const cajaBase = (name: string) => name.replace(/\s*\(.*?\)\s*/g, "").trim();
+
   // Group cuadres by fecha, deduplicated by caja (keep worst status per caja)
   const byDate = useMemo(() => {
     const map: Record<string, Cuadre[]> = {};
     for (const c of cuadres) {
       if (!map[c.fecha]) map[c.fecha] = [];
-      const existing = map[c.fecha].find(x => x.caja === c.caja && x.tipo === c.tipo);
+      const base = cajaBase(c.caja);
+      const existing = map[c.fecha].find(x => cajaBase(x.caja) === base && x.tipo === c.tipo);
       if (existing) {
         // Keep the one with worse status
         const statusOrder = { descuadrado: 0, pendiente: 1, cuadrado: 2, no_realizado: 3 };
@@ -105,7 +109,7 @@ export default function CuadreList() {
         const filtered = cuadres.filter(c => c.fecha.startsWith(`${year}-${String(month+1).padStart(2,"0")}`));
         const map: Record<string, Cuadre> = {};
         for (const c of filtered) {
-          const key = `${c.caja}-${c.tipo}`;
+          const key = `${cajaBase(c.caja)}-${c.tipo}`;
           const existing = map[key];
           if (!existing) { map[key] = c; }
           else {
@@ -253,7 +257,7 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                                                               "bg-amber-100 text-amber-800"}`}
                             >
                               <span className={`font-bold ${c.estado === "cuadrado" ? "text-green-600" : c.estado === "descuadrado" ? "text-red-600" : "text-amber-600"}`}>{estadoShort}</span>
-                              <span className="truncate">{c.caja} {tipoLabel}</span>
+                              <span className="truncate">{cajaBase(c.caja)} {tipoLabel}</span>
                             </div>
                           );
                         })}
@@ -304,7 +308,7 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                   >
                   <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-sm">{c.caja}</span>
+                          <span className="font-semibold text-sm">{cajaBase(c.caja)}</span>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${c.tipo === "nf" ? "bg-purple-200 text-purple-900" : "bg-blue-100 text-blue-900"}`}>
                             {c.tipo === "nf" ? "NF" : "Fiscal"}
                           </span>
