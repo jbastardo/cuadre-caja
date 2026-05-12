@@ -203,7 +203,6 @@ export default function CuadreReport() {
     totalDirectosReal  +
     totalCasheaReal    +
     totalRetReal       +
-    retPorCobrar       +
     totalAbonos        +
     Math.abs(totalCxCPendiente)  +  // ← Valor absoluto (sin signo negativo)
     totalSFavorReal    +
@@ -211,8 +210,8 @@ export default function CuadreReport() {
     totalAjustes
   ) * 100) / 100;
 
-  // Diferencia recalculada localmente para mostrar en el reporte
-  const diferencia  = Math.round((totalReal - ventaNetaZ) * 100) / 100;
+  // Diferencia: totalReal - ventaNetaZ, ajustada por la brecha entre ret. procesadas y ret. IVA
+  const diferencia  = Math.round((totalReal - ventaNetaZ - (totalRetReal - totalRetPOS)) * 100) / 100;
   // Estado tomado del formulario (calculado y guardado en BD) — coherente con historial y dashboard
   const estadoVisible = cuadre.estado || "pendiente";
   const esCuadrado = estadoVisible === "cuadrado";
@@ -574,7 +573,7 @@ export default function CuadreReport() {
 
         <div style={{ marginBottom: 4 }}>
           <Row label="Retenciones según POS (Bs):"                      value={formatBs(totalRetPOS)} />
-          <Row label="Retenciones canceladas / registradas RIVAC (Bs):" value={formatBs(totalRetReal)} indent />
+          <Row label="Retenciones procesadas / registradas RIVAC (Bs):" value={formatBs(totalRetReal)} indent />
           {retPorCobrar > 0 && (
             <Row label="Retenciones pendientes de cobro (Bs):" value={formatBs(retPorCobrar)} bold valueColor="#b45309" />
           )}
@@ -654,7 +653,7 @@ export default function CuadreReport() {
               <div style={{ border: "1px solid #c3d9f7", borderRadius: 4, padding: 6 }}>
                 <div style={{ fontSize: 9, fontWeight: 700, color: "#0A4083", marginBottom: 3 }}>VERIFICADO REAL</div>
                 <Row label="Pagos directos:"         value={formatBs(totalDirectosReal)} />
-                <Row label="Retenciones canceladas:" value={formatBs(totalRetReal)} />
+                <Row label="Retenciones procesadas:" value={formatBs(totalRetReal)} />
                 {retPorCobrar > 0 && (
                   <Row label="Ret. por cobrar:" value={formatBs(retPorCobrar)} valueColor="#b45309" />
                 )}
