@@ -42,13 +42,6 @@ export function formatDateTime(dateStr: string): string {
   });
 }
 
-export function calculateEstado(c: { ventaNetaZ?: number; diferencia?: number; cerradoPor?: string | null }): "cuadrado" | "descuadrado" | "pendiente" {
-  if (!c.ventaNetaZ) return "cuadrado";
-  if (Math.abs(c.diferencia || 0) < 5) return "cuadrado";
-  if (c.cerradoPor) return "descuadrado";
-  return "pendiente";
-}
-
 export function getStatusColor(estado: string): string {
   switch (estado) {
     case "cuadrado": return "text-green-700 bg-green-50 border-green-200";

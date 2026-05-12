@@ -211,15 +211,11 @@ export default function CuadreReport() {
     totalAjustes
   ) * 100) / 100;
 
-  // Diferencia recalculada localmente — nunca leer cuadre.diferencia de DB
+  // Diferencia recalculada localmente para mostrar en el reporte
   const diferencia  = Math.round((totalReal - ventaNetaZ) * 100) / 100;
-  const esCuadrado  = Math.abs(diferencia) < 5 || cuadre.estado === "cuadrado";
-  // Estado visible coherente con el formulario y el historial
-  const estadoVisible = esCuadrado
-    ? "cuadrado"
-    : cuadre.cerradoPor
-      ? "descuadrado"
-      : "pendiente";
+  // Estado tomado del formulario (calculado y guardado en BD) — coherente con historial y dashboard
+  const estadoVisible = cuadre.estado || "pendiente";
+  const esCuadrado = estadoVisible === "cuadrado";
 
   const fechaFormateada = cuadre.fecha
     ? new Date(cuadre.fecha + "T12:00:00").toLocaleDateString("es-VE", {

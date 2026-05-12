@@ -276,7 +276,7 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
   deliveryDifTotal: number;
   totalJustificado: number;
   diferencia: number;
-  estado: "cuadrado" | "pendiente";
+  estado: "cuadrado" | "descuadrado" | "pendiente";
 }> {
   // Only sum DIRECT methods — special methods (retención, crédito, saldo a favor)
   // are already accounted for via their dedicated fields and must NOT be double-counted.
@@ -307,12 +307,14 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
     totalAjustesManuales;
 
   const diferencia = Math.round((totalJustificado - ventaNetaZ) * 100) / 100;
-  const estado: "cuadrado" | "pendiente" =
-    ventaNetaZ === 0
-      ? "cuadrado"
-      : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
-      ? "cuadrado"
-      : "pendiente";
+  const estado: "cuadrado" | "descuadrado" | "pendiente" =
+    data.estado || (
+      ventaNetaZ === 0
+        ? "cuadrado"
+        : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
+          ? "cuadrado"
+          : "pendiente"
+    );
 
   return { totalMetodosReal, totalDeducciones, totalAjustesManuales, deliveryDifTotal, totalJustificado, diferencia, estado };
 }
@@ -447,16 +449,15 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
   if (existingRows.length === 0) return null;
   const existing = rowToCuadre(existingRows[0]);
 
-  const { totalMetodosReal, totalDeducciones, totalAjustesManuales, deliveryDifTotal, totalJustificado, diferencia } =
+  // Compute totals (sums items) but let form's estado take precedence
+  const { totalMetodosReal, totalDeducciones, totalAjustesManuales, deliveryDifTotal, totalJustificado, diferencia, estado: computedEstado } =
     await computeCuadreTotals(data);
 
-  let estado: Cuadre["estado"];
+  let estado: Cuadre["estado"] = computedEstado;
   if (existing.cerradoPor) {
-    estado = existing.estado;
-  } else if (data.ventaNetaZ === 0) {
-    estado = "cuadrado";
-  } else {
-    estado = Math.abs(diferencia) < CUADRE_TOLERANCE_BS ? "cuadrado" : "pendiente";
+    estado = existing.estado; // preserve on close
+  } else if (data.estado) {
+    estado = data.estado; // form-calculated estado takes priority
   }
 
   const client = await pool.connect();

@@ -300,6 +300,9 @@ export const createCuadreSchema = z.object({
 
   observaciones: z.string().optional(),
 
+  // Estado calculado por el formulario al guardar
+  estado: z.enum(["cuadrado", "descuadrado", "pendiente"]).optional(),
+
   // NF-specific observations (separate from fiscal observations)
   observacionesNF: z.string().optional(),
 
