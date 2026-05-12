@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatBs, formatUSD, getStatusColor, getStatusLabel, formatDateTime } from "@/lib/utils";
+import { calculateEstado, formatBs, formatUSD, getStatusColor, getStatusLabel, formatDateTime } from "@/lib/utils";
 import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow, SaldoFavorRow, Cuadre } from "@shared/schema";
 
 // Tolerance for "cuadrado" status: ±5 Bs (must match server CUADRE_TOLERANCE_BS)
@@ -563,7 +563,7 @@ export default function CuadreForm() {
   const displayTotalJustificado = summaryReal;
   const displayDiferencia = diferencia;
 
-  const isLocked = existingCuadre?.cerradoPor && existingCuadre.estado !== "pendiente";
+  const isLocked = existingCuadre?.cerradoPor && calculateEstado(existingCuadre) !== "pendiente";
   const canClose = (user?.rol === "supervisor" || user?.rol === "admin") && !isLocked;
   const canReopen = (user?.rol === "supervisor" || user?.rol === "admin") && isLocked;
   const canDelete = user?.rol === "admin";

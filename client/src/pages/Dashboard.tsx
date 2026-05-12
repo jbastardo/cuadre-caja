@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { formatUSD, formatBs, formatDateTime, getStatusColor, getStatusLabel, todayStr } from "@/lib/utils";
+import { calculateEstado, formatUSD, formatBs, formatDateTime, getStatusColor, getStatusLabel, todayStr } from "@/lib/utils";
 import { CalendarDays, LogOut, Store, Users, List, RefreshCw, Printer, Loader2, KeyRound } from "lucide-react";
 
 const FISCAL_MACHINE_MAP: Record<number, { machine: string; isMain: boolean }> = {
@@ -223,7 +223,7 @@ export default function Dashboard() {
           ) : (
             <div className="grid gap-3">
               {fiscalGroups.map((group) => {
-                const cuadreStatus = group.mainSession.cuadre?.estado || null;
+                const cuadreStatus = group.mainSession.cuadre ? calculateEstado(group.mainSession.cuadre) : null;
                 const totalBs = rate > 0 ? group.totalUSD * rate : 0;
                 const isCardLoading = loadingMachine === group.machine;
                 return (
