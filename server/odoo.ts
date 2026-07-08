@@ -736,21 +736,29 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
         ["state", "=", "posted"],
         ["date", "=", date],
       ]], {
-        fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id", "pos_session_id"],
+        fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id", "ref"],
       });
       // Exclude any NCs already counted from POS orders
       const existingMoveIds = new Set(Object.values(orderMoveMap));
       for (const nc of directNCs || []) {
         if (existingMoveIds.has(nc.id)) continue;
 
-        // Fiscal machine validation: check if NC's pos_session matches current machine
-        if (currentSerialMachine && nc.pos_session_id) {
-          const ncSessionId = Array.isArray(nc.pos_session_id) ? nc.pos_session_id[0] : nc.pos_session_id;
-          const ncSerial = sessionSerialMap[ncSessionId] || "";
-          if (ncSerial && ncSerial !== currentSerialMachine) {
-            console.log(`[getFiscalSummary] EXCLUDED direct NC ${nc.name} — serial mismatch: ${ncSerial} != ${currentSerialMachine}`);
-            continue;
+        // Try to determine the originating session through ref or payment references
+        // If we can't determine it, include the NC (safe default) but log a warning
+        let ncSerial = "";
+        const ref = nc.ref || "";
+        // Try to find a POS order reference in the NC's ref field
+        if (ref) {
+          const matchingOrder = (allOrders || []).find((o: any) => ref.includes(o.name || ""));
+          if (matchingOrder) {
+            const orderSessionId = Array.isArray(matchingOrder.session_id) ? matchingOrder.session_id[0] : matchingOrder.session_id;
+            ncSerial = sessionSerialMap[orderSessionId] || "";
           }
+        }
+
+        if (ncSerial && ncSerial !== currentSerialMachine) {
+          console.log(`[getFiscalSummary] EXCLUDED direct NC ${nc.name} — serial mismatch: ${ncSerial} != ${currentSerialMachine}`);
+          continue;
         }
 
         const isFromCompanion = companionJournalId && (Array.isArray(nc.journal_id) ? nc.journal_id[0] : nc.journal_id) === companionJournalId;
