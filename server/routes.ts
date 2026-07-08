@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import * as odoo from "./odoo.js";
 import * as db from "./db.js";
-import { createCuadreSchema, loginSchema, CreditSaleRow, RetentionRow, FiscalSummary } from "../shared/schema.js";
+import { createCuadreSchema, loginSchema } from "../shared/schema.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 
@@ -346,7 +346,7 @@ router.get("/api/cuadres/:id", requireAuth, async (req: Request, res: Response) 
     const cuadre = await db.getCuadreById(id);
     if (!cuadre) return res.status(404).json({ error: "Cuadre no encontrado" });
 
-    // Get serial machine from Odoo session
+    // Get serial machine from Odoo session (metadata rarely changes)
     let serialMachine = "";
     try {
       const session = await odoo.getSessionById(cuadre.sessionId);
@@ -355,25 +355,8 @@ router.get("/api/cuadres/:id", requireAuth, async (req: Request, res: Response) 
       console.warn("Fallo al obtener session para serial:", id);
     }
 
-    // Hidratación de datos desde Odoo (Opcional/Resiliente)
-    let extraData: {
-      creditSales: CreditSaleRow[];
-      saldosFavor: never[];
-      retenciones: RetentionRow[];
-      fiscalSummary: FiscalSummary | null;
-    } = { creditSales: [], saldosFavor: [], retenciones: [], fiscalSummary: null };
-    try {
-      const [credit, ret, fiscal] = await Promise.all([
-        odoo.getCreditSales(cuadre.sessionId),
-        odoo.getSessionRetentions(cuadre.sessionId),
-        odoo.getFiscalSummary(cuadre.sessionId)
-      ]);
-      extraData = { creditSales: credit, saldosFavor: [], retenciones: ret, fiscalSummary: fiscal };
-    } catch (e) {
-      console.warn("Fallo hidratación de Odoo para cuadre:", id);
-    }
-
-    res.json({ ...cuadre, serialMachine, ...extraData });
+    // Return snapshot data from DB (historical, immutable) — no live Odoo hydration
+    res.json({ ...cuadre, serialMachine });
   } catch (err) {
     res.status(500).json({ error: "Error al obtener detalle de cuadre" });
   }

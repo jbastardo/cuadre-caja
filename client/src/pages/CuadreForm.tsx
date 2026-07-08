@@ -615,6 +615,11 @@ export default function CuadreForm() {
         totalDirectoPOS: displayDirectoPOS,
         diferencia,
         estado: calculatedEstado,
+        // Snapshot data for historical consistency
+        creditSales: creditSales || [],
+        retenciones: retentions || [],
+        saldosFavor: saldoFavorDetail || [],
+        fiscalSummary: fiscalSummary || undefined,
       };
 
       if (isNew) {

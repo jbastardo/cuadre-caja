@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { formatBs, formatUSD, getStatusLabel, formatDateTime } from "@/lib/utils";
+import { formatBs, formatUSD, getStatusLabel, formatDateTime, calculateEstado } from "@/lib/utils";
 import { ArrowLeft, Printer } from "lucide-react";
 import type { CreditSaleRow, RetentionRow } from "@shared/schema";
 
@@ -212,8 +212,8 @@ export default function CuadreReport() {
 
   // Diferencia: totalReal - ventaNetaZ, ajustada por la brecha entre ret. procesadas y ret. IVA
   const diferencia  = Math.round((totalReal - ventaNetaZ - (totalRetReal - totalRetPOS)) * 100) / 100;
-  // Estado tomado del formulario (calculado y guardado en BD) — coherente con historial y dashboard
-  const estadoVisible = cuadre.estado || "pendiente";
+  // Estado calculado con misma lógica que formulario/dashboard/historial
+  const estadoVisible = calculateEstado(cuadre);
   const esCuadrado = estadoVisible === "cuadrado";
 
   const fechaFormateada = cuadre.fecha
