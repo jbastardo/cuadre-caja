@@ -600,6 +600,30 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
     }
   }
 
+  // Build session→serial_machine map for fiscal machine validation
+  const sessionSerialMap: Record<number, string> = {};
+  // Add main session serial (current session)
+  sessionSerialMap[mainSessionId] = currentSerialMachine;
+  // Add companion session serial if available (already fetched earlier)
+  if (companionSessionId) {
+    const cs = await getSessionById(companionSessionId);
+    if (cs) sessionSerialMap[companionSessionId] = cs.serial_machine || "";
+  }
+  // Add all order-linked sessions
+  const allSessionIds = [...new Set(Object.values(orderSessionMap))];
+  if (allSessionIds.length > 0) {
+    const sessionsData = await executeKw("pos.session", "read",
+      [allSessionIds],
+      { fields: ["id", "serial_machine"] }
+    );
+    for (const s of sessionsData || []) {
+      sessionSerialMap[s.id] = s.serial_machine || "";
+    }
+  }
+
+  // Current session's serial_machine — documents from other machines must be excluded
+  const currentSerialMachine = session.serial_machine || "";
+
   // Read all moves and filter to fiscal journals + posted invoices/refunds
   let invoices: any[] = [];
   if (moveIds.length > 0) {
@@ -621,9 +645,26 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
         journalInfo.journalId,
         ...(companionJournalId ? [companionJournalId] : [])
       ]);
-      return allowedJournals.has(jid)
-        && m.state === "posted"
-        && (m.move_type === "out_invoice" || m.move_type === "out_refund");
+      if (!allowedJournals.has(jid)) return false;
+      if (m.state !== "posted") return false;
+      if (m.move_type !== "out_invoice" && m.move_type !== "out_refund") return false;
+
+      // CRITICAL: Exclude documents whose originating session has a different fiscal machine.
+      // This prevents cross-contamination when a document is registered in the wrong journal
+      // (e.g., a Caja 1 NC accidentally created in Caja 2's journal).
+      if (currentSerialMachine) {
+        const originOrderId = Object.entries(orderMoveMap).find(([, moveId]) => moveId === m.id)?.[0];
+        if (originOrderId) {
+          const originSessionId = orderSessionMap[Number(originOrderId)];
+          const originSerial = sessionSerialMap[originSessionId] || "";
+          if (originSerial && originSerial !== currentSerialMachine) {
+            console.log(`[getFiscalSummary] EXCLUDED doc ${m.name} — serial mismatch: ${originSerial} != ${currentSerialMachine}`);
+            return false;
+          }
+        }
+      }
+
+      return true;
     });
     console.log(`[getFiscalSummary] Total moves: ${moveIds.length}, invoices filtered: ${invoices.length}`);
     console.log(`[getFiscalSummary] Invoice names: ${invoices.map((i: any) => i.name).slice(0, 20).join(", ")}`);
@@ -695,12 +736,23 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
         ["state", "=", "posted"],
         ["date", "=", date],
       ]], {
-        fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id"],
+        fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id", "pos_session_id"],
       });
       // Exclude any NCs already counted from POS orders
       const existingMoveIds = new Set(Object.values(orderMoveMap));
       for (const nc of directNCs || []) {
         if (existingMoveIds.has(nc.id)) continue;
+
+        // Fiscal machine validation: check if NC's pos_session matches current machine
+        if (currentSerialMachine && nc.pos_session_id) {
+          const ncSessionId = Array.isArray(nc.pos_session_id) ? nc.pos_session_id[0] : nc.pos_session_id;
+          const ncSerial = sessionSerialMap[ncSessionId] || "";
+          if (ncSerial && ncSerial !== currentSerialMachine) {
+            console.log(`[getFiscalSummary] EXCLUDED direct NC ${nc.name} — serial mismatch: ${ncSerial} != ${currentSerialMachine}`);
+            continue;
+          }
+        }
+
         const isFromCompanion = companionJournalId && (Array.isArray(nc.journal_id) ? nc.journal_id[0] : nc.journal_id) === companionJournalId;
         ncCount++;
         totalUSD -= nc.amount_total || 0;
