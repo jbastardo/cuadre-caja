@@ -130,6 +130,103 @@ router.post("/api/admin/add-indexes", requireAuth, async (_req: Request, res: Re
   }
 });
 
+// Recalculate fiscal fields for existing cuadres (fix for NCs missing from Odoo)
+router.post("/api/admin/recalculate-cuadres", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { cuadreIds, fechaDesde, fechaHasta } = req.body || {};
+    
+    // Get cuadres to recalculate
+    let cuadres: any[];
+    if (cuadreIds && cuadreIds.length > 0) {
+      const placeholders = cuadreIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+      const { rows } = await db.pool.query(`SELECT * FROM cuadres WHERE id IN (${placeholders}) AND tipo = 'fiscal'`, cuadreIds);
+      cuadres = rows;
+    } else {
+      const filters: any = {};
+      if (fechaDesde) filters.fecha = fechaDesde;
+      const result = await db.getCuadres(filters, 1, 99999);
+      cuadres = result.data;
+    }
+
+    const results: Array<{ cuadreId: string; sessionId: number; oldDif: number; newDif: number; updated: boolean }> = [];
+    let updatedCount = 0;
+    let errorCount = 0;
+
+    for (const cuadre of cuadres) {
+      try {
+        // Get fresh fiscal summary from Odoo (now with NC fix)
+        const fiscalSummary = await odoo.getFiscalSummary(cuadre.session_id);
+        
+        const newTotalOdooBs = Math.round(fiscalSummary.totalVES * 100) / 100;
+        const newRate = Math.round(fiscalSummary.rate * 100) / 100;
+        const newDifCambiaria = Math.round((cuadre.venta_neta_z - newTotalOdooBs) * 100) / 100;
+        const oldDif = Number(cuadre.dif_cambiaria) || 0;
+
+        // Only update if there's a meaningful difference (> 1 Bs)
+        if (Math.abs(newDifCambiaria - oldDif) > 1) {
+          const newTotalRetPOS = Math.round(fiscalSummary.totalRetencionesPOS * newRate * 100) / 100;
+          const newTotalCreditoPOS = Math.round(fiscalSummary.totalCreditoPOS * newRate * 100) / 100;
+          const newTotalSaldoFavorPOS = Math.round(fiscalSummary.totalSaldoFavorPOS * newRate * 100) / 100;
+
+          await db.pool.query(
+            `UPDATE cuadres SET
+              tasa_dia=$1, total_odoo_usd=$2, total_odoo_bs=$3, dif_cambiaria=$4,
+              total_retenciones_pos=$5, total_credito_pos=$6, total_saldo_favor_pos=$7
+            WHERE id=$8`,
+            [newRate, fiscalSummary.totalUSD, newTotalOdooBs, newDifCambiaria,
+             newTotalRetPOS, newTotalCreditoPOS, newTotalSaldoFavorPOS, cuadre.id]
+          );
+
+          // Update fiscal summary snapshot
+          await db.pool.query("DELETE FROM fiscal_summary_snapshot WHERE cuadre_id = $1", [cuadre.id]);
+          const fsId = `FS-${Date.now()}-${cuadre.id}`;
+          await db.pool.query(
+            `INSERT INTO fiscal_summary_snapshot (id, cuadre_id, journal_id, journal_code, invoice_count,
+              nc_count, total_usd, total_tax_usd, total_ves, rate, total_retenciones_pos, total_credito_pos,
+              total_saldo_favor_pos, first_invoice, last_invoice, first_nc, last_nc, companion_session_name,
+              payments, main_first_invoice, main_last_invoice, main_invoice_count, main_first_nc, main_last_nc,
+              main_nc_count, companion_first_invoice, companion_last_invoice, companion_invoice_count,
+              companion_first_nc, companion_last_nc, companion_nc_count, companion_journal_code,
+              main_journal_code, main_caja_name, companion_caja_name)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`,
+            [fsId, cuadre.id, fiscalSummary.journalId, fiscalSummary.journalCode, fiscalSummary.invoiceCount,
+              fiscalSummary.ncCount, fiscalSummary.totalUSD, fiscalSummary.totalTaxUSD, fiscalSummary.totalVES,
+              fiscalSummary.rate, fiscalSummary.totalRetencionesPOS, fiscalSummary.totalCreditoPOS,
+              fiscalSummary.totalSaldoFavorPOS, fiscalSummary.firstInvoice, fiscalSummary.lastInvoice,
+              fiscalSummary.firstNC, fiscalSummary.lastNC, fiscalSummary.companionSessionName,
+              JSON.stringify(fiscalSummary.payments || []),
+              fiscalSummary.mainFirstInvoice, fiscalSummary.mainLastInvoice, fiscalSummary.mainInvoiceCount,
+              fiscalSummary.mainFirstNC, fiscalSummary.mainLastNC, fiscalSummary.mainNcCount,
+              fiscalSummary.companionFirstInvoice, fiscalSummary.companionLastInvoice, fiscalSummary.companionInvoiceCount,
+              fiscalSummary.companionFirstNC, fiscalSummary.companionLastNC, fiscalSummary.companionNcCount,
+              fiscalSummary.companionJournalCode, fiscalSummary.mainJournalCode,
+              fiscalSummary.mainCajaName, fiscalSummary.companionCajaName]
+          );
+
+          results.push({ cuadreId: cuadre.id, sessionId: cuadre.session_id, oldDif, newDif: newDifCambiaria, updated: true });
+          updatedCount++;
+        } else {
+          results.push({ cuadreId: cuadre.id, sessionId: cuadre.session_id, oldDif, newDif: newDifCambiaria, updated: false });
+        }
+      } catch (err: any) {
+        results.push({ cuadreId: cuadre.id, sessionId: cuadre.session_id, error: err.message, updated: false });
+        errorCount++;
+        console.error(`[recalculate-cuadres] Error for cuadre ${cuadre.id}:`, err.message);
+      }
+    }
+
+    res.json({
+      total: cuadres.length,
+      updated: updatedCount,
+      errors: errorCount,
+      results,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ---- Auth ----
 router.post("/api/auth/login", async (req: Request, res: Response) => {
   try {

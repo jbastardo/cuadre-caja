@@ -647,6 +647,37 @@ export async function deleteCuadre(id: string): Promise<boolean> {
   return rowCount !== null && rowCount > 0;
 }
 
+export async function recalculateCuadreFiscalFields(id: string, fiscalSummary: FiscalSummary): Promise<Cuadre | null> {
+  const { rows: existingRows } = await pool.query("SELECT * FROM cuadres WHERE id = $1", [id]);
+  if (existingRows.length === 0) return null;
+  const existing = rowToCuadre(existingRows[0]);
+
+  const newTotalOdooUSD = Math.round(fiscalSummary.totalUSD * 100) / 100;
+  const newTotalOdooBs = Math.round(fiscalSummary.totalVES * 100) / 100;
+  const newRate = Math.round(fiscalSummary.rate * 100) / 100;
+  const newDifCambiaria = Math.round((existing.ventaNetaZ - newTotalOdooBs) * 100) / 100;
+
+  // Update totals that depend on fiscal summary
+  const newTotalRetPOS = Math.round(fiscalSummary.totalRetencionesPOS * newRate * 100) / 100;
+  const newTotalCreditoPOS = Math.round(fiscalSummary.totalCreditoPOS * newRate * 100) / 100;
+  const newTotalSaldoFavorPOS = Math.round(fiscalSummary.totalSaldoFavorPOS * newRate * 100) / 100;
+
+  const { rows } = await pool.query(
+    `UPDATE cuadres SET
+      tasa_dia=$1, total_odoo_usd=$2, total_odoo_bs=$3, dif_cambiaria=$4,
+      total_retenciones_pos=$5, total_credito_pos=$6, total_saldo_favor_pos=$7
+    WHERE id=$8 RETURNING *`,
+    [newRate, newTotalOdooUSD, newTotalOdooBs, newDifCambiaria,
+     newTotalRetPOS, newTotalCreditoPOS, newTotalSaldoFavorPOS, id]
+  );
+
+  // Also update fiscal summary snapshot
+  await saveFiscalSummarySnapshot(pool as any, id, fiscalSummary);
+
+  return rows.length > 0 ? rowToCuadre(rows[0]) : null;
+}
+
+
 export async function updateCuadreEstado(id: string, estado: "cuadrado" | "pendiente" | "descuadrado"): Promise<Cuadre | null> {
   const { rows } = await pool.query(
     "UPDATE cuadres SET estado=$1 WHERE id=$2 RETURNING *",
