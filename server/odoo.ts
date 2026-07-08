@@ -577,6 +577,9 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   // Get exchange rate
   const rate = await getDayRate(date);
 
+  // Current session's serial_machine — documents from other machines must be excluded
+  const currentSerialMachine = session.serial_machine || "";
+
   // --- SESSION-BASED INVOICE QUERY ---
   // Query invoices through POS sessions → orders → account.move
   // This ensures we only get invoices from THIS session's orders, not all invoices
@@ -620,9 +623,6 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
       sessionSerialMap[s.id] = s.serial_machine || "";
     }
   }
-
-  // Current session's serial_machine — documents from other machines must be excluded
-  const currentSerialMachine = session.serial_machine || "";
 
   // Read all moves and filter to fiscal journals + posted invoices/refunds
   let invoices: any[] = [];
