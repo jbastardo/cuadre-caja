@@ -681,36 +681,35 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   invoiceNames.sort();
   ncNames.sort();
 
-      // --- FALLBACK: Search NCs directly by journal+date if none found through POS orders ---
+  // --- FALLBACK: Always search NCs directly by journal+date ---
     // Some NCs are created directly in accounting (not through POS refunds)
-    if (ncCount === 0) {
-      // Search in both main and companion journals (same fiscal machine)
-      const searchJournals = [journalInfo.journalId];
-      if (companionJournalId) searchJournals.push(companionJournalId);
-      
-      for (const journalId of searchJournals) {
-        const directNCs = await executeKw("account.move", "search_read", [[
-          ["journal_id", "=", journalId],
-          ["move_type", "=", "out_refund"],
-          ["state", "=", "posted"],
-          ["date", "=", date],
-        ]], {
-          fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id"],
-        });
-        // Exclude any NCs already counted from POS orders
-        const existingMoveIds = new Set(Object.values(orderMoveMap));
-        for (const nc of directNCs || []) {
-          if (existingMoveIds.has(nc.id)) continue;
-          const isFromCompanion = companionJournalId && (Array.isArray(nc.journal_id) ? nc.journal_id[0] : nc.journal_id) === companionJournalId;
-          ncCount++;
-          totalUSD -= nc.amount_total || 0;
-          totalTaxUSD -= nc.amount_tax || 0;
-          totalVES -= nc.foreign_total_billed || 0;
-          if (nc.name) {
-            ncNames.push(nc.name);
-            if (isFromCompanion) { companionNcNames.push(nc.name); companionNcCount++; }
-            else { mainNcNames.push(nc.name); mainNcCount++; }
-          }
+    // and won't appear in the order→move mapping. We must find them regardless
+    // of how many NCs were found through POS orders.
+    const searchJournals = [journalInfo.journalId];
+    if (companionJournalId) searchJournals.push(companionJournalId);
+    
+    for (const journalId of searchJournals) {
+      const directNCs = await executeKw("account.move", "search_read", [[
+        ["journal_id", "=", journalId],
+        ["move_type", "=", "out_refund"],
+        ["state", "=", "posted"],
+        ["date", "=", date],
+      ]], {
+        fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id"],
+      });
+      // Exclude any NCs already counted from POS orders
+      const existingMoveIds = new Set(Object.values(orderMoveMap));
+      for (const nc of directNCs || []) {
+        if (existingMoveIds.has(nc.id)) continue;
+        const isFromCompanion = companionJournalId && (Array.isArray(nc.journal_id) ? nc.journal_id[0] : nc.journal_id) === companionJournalId;
+        ncCount++;
+        totalUSD -= nc.amount_total || 0;
+        totalTaxUSD -= nc.amount_tax || 0;
+        totalVES -= nc.foreign_total_billed || 0;
+        if (nc.name) {
+          ncNames.push(nc.name);
+          if (isFromCompanion) { companionNcNames.push(nc.name); companionNcCount++; }
+          else { mainNcNames.push(nc.name); mainNcCount++; }
         }
       }
     }
