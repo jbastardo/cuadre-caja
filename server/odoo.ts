@@ -1590,6 +1590,7 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
 
     // generaSaldoFavor = true si saldo es negativo (hay excedente)
     const generaSaldoFavor = saldoReal < 0;
+    const residualBs = Math.round((saldoReal || 0) * rate * 100) / 100;
 
     results.push({
       invoiceNumber,
@@ -1602,6 +1603,7 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
       abonoJournal,
       abonoByJournal,
       residual: saldoReal,
+      residualBs,
       paymentState,
       paymentTotalBs,
       paymentTotalUsd,

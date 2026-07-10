@@ -138,6 +138,7 @@ export interface CreditSaleRow {
   abonoJournal: string;
   abonoByJournal: Record<string, { usd: number; bs: number }>;
   residual: number;
+  residualBs: number;
   paymentState: string;
   // Excedente: when the client pays more than the invoice debt (e.g. delivery fee)
   paymentTotalBs: number;      // Total amount the client actually paid (Bs)
@@ -344,6 +345,7 @@ export const createCuadreSchema = z.object({
     abonoJournal: z.string(),
     abonoByJournal: z.record(z.object({ usd: z.number(), bs: z.number() })),
     residual: z.number(),
+    residualBs: z.number(),
     paymentState: z.string(),
     paymentTotalBs: z.number(),
     paymentTotalUsd: z.number(),

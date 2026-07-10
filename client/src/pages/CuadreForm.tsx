@@ -616,7 +616,10 @@ export default function CuadreForm() {
         diferencia,
         estado: calculatedEstado,
         // Snapshot data for historical consistency
-        creditSales: creditSales || [],
+        creditSales: (creditSales || []).map(c => ({
+          ...c,
+          residualBs: Math.round((c.residual || 0) * rate * 100) / 100,
+        })),
         retenciones: (retentions || []).map(r => ({
           ...r,
           posTotalBs: Math.round((r.posTotalUSD || 0) * rate * 100) / 100,

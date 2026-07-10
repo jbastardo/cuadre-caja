@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS credit_sales_snapshot (
   abono_journal     VARCHAR(255),
   abono_by_journal  TEXT,          -- JSON string
   residual          NUMERIC(15,2) DEFAULT 0,
+  residual_bs       NUMERIC(15,2) DEFAULT 0,
   payment_state     VARCHAR(50),
   payment_total_bs  NUMERIC(15,2) DEFAULT 0,
   payment_total_usd NUMERIC(15,2) DEFAULT 0,

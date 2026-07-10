@@ -766,12 +766,12 @@ async function saveCreditSalesSnapshot(client: PoolClient, cuadreId: string, row
     await client.query(
       `INSERT INTO credit_sales_snapshot (id, cuadre_id, invoice_number, partner, invoice_total,
         credit_amount_pos, retention_amount_pos, abono_amount, abono_amount_bs, abono_journal,
-        abono_by_journal, residual, payment_state, payment_total_bs, payment_total_usd,
+        abono_by_journal, residual, residual_bs, payment_state, payment_total_bs, payment_total_usd,
         excedente_bs, excedente_usd, excedente_concepto, genera_saldo_favor)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
       [id, cuadreId, r.invoiceNumber, r.partner, r.invoiceTotal, r.creditAmountPOS,
         r.retentionAmountPOS, r.abonoAmount, r.abonoAmountBs, r.abonoJournal,
-        JSON.stringify(r.abonoByJournal || {}), r.residual, r.paymentState,
+        JSON.stringify(r.abonoByJournal || {}), r.residual, r.residualBs, r.paymentState,
         r.paymentTotalBs, r.paymentTotalUsd, r.excedenteBs, r.excedenteUsd,
         r.excedenteConcepto, r.generaSaldoFavor]
     );
@@ -836,7 +836,7 @@ async function getCreditSalesSnapshot(cuadreId: string): Promise<CreditSaleRow[]
       credit_amount_pos as "creditAmountPOS", retention_amount_pos as "retentionAmountPOS",
       abono_amount as "abonoAmount", abono_amount_bs as "abonoAmountBs",
       abono_journal as "abonoJournal", abono_by_journal as "abonoByJournal",
-      residual, payment_state as "paymentState", payment_total_bs as "paymentTotalBs",
+      residual, residual_bs as "residualBs", payment_state as "paymentState", payment_total_bs as "paymentTotalBs",
       payment_total_usd as "paymentTotalUsd", excedente_bs as "excedenteBs",
       excedente_usd as "excedenteUsd", excedente_concepto as "excedenteConcepto",
       genera_saldo_favor as "generaSaldoFavor"

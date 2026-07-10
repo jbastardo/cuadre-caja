@@ -150,7 +150,7 @@ export default function CuadreReport() {
     : (cuadre.totalAbonosReal || 0);
 
   const totalCxCPendiente = (creditSales?.length ?? 0) > 0
-    ? Math.round(creditSales.reduce((s, c) => s + ((c.residual || 0) * tasa), 0) * 100) / 100
+    ? Math.round(creditSales.reduce((s, c) => s + ((c as any).residualBs > 0 ? (c as any).residualBs : (c.residual || 0) * tasa), 0) * 100) / 100
     : (cuadre.totalCxCPendiente || 0);
 
   // Retenciones desde retentions array — usar Bs guardados si existen
