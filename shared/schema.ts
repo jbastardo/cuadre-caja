@@ -410,7 +410,7 @@ export const createCuadreSchema = z.object({
     payments: z.array(z.object({
       methodId: z.number(),
       methodName: z.string(),
-      methodType: z.string(),
+      methodType: z.string().optional().default(""),
       totalUSD: z.number(),
       totalBs: z.number(),
       isCompanion: z.boolean().optional(),
