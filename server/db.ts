@@ -318,7 +318,7 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
     toNum(data.totalRetencionesReal) +
     toNum(data.retencionesPorCobrar) +
     toNum(data.totalAbonosReal) +
-    toNum(data.totalCxCPendiente) +
+    Math.abs(toNum(data.totalCxCPendiente)) +
     toNum(data.totalSaldoFavorReal) +
     deliveryDifTotal +
     totalDeducciones +
@@ -712,7 +712,7 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
     toNum(cuadre.totalRetencionesReal) +
     toNum(cuadre.retencionesPorCobrar) +
     toNum(cuadre.totalAbonosReal) +
-    toNum(cuadre.totalCxCPendiente) +
+    Math.abs(toNum(cuadre.totalCxCPendiente)) +
     toNum(cuadre.totalSaldoFavorReal) +
     deliveryDifTotal +
     totalDeducciones +

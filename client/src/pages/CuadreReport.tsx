@@ -157,11 +157,21 @@ export default function CuadreReport() {
   const ventaNetaZ        = cuadre.ventaNetaZ           || 0;
   const difCambiaria      = cuadre.difCambiaria         || 0;
 
-  // Total real y diferencia: usar valores guardados (autoritativos)
-  const totalReal = cuadre.totalJustificado || 0;
-  const diferencia = cuadre.diferencia || 0;
-  // Estado calculado con misma lógica que formulario/dashboard/historial
-  const estadoVisible = calculateEstado(cuadre);
+  // Total real y diferencia: usar totalJustificadoReal (calculado por el
+  // formulario con Math.abs para CxC) — coincide con lo que el usuario vio.
+  // Fallback a totalJustificado (server) para cuadres antiguos sin este campo.
+  const totalReal = cuadre.totalJustificadoReal || cuadre.totalJustificado || 0;
+  // Recalcular diferencia desde totalReal para evitar la del servidor
+  // (que se calculó sin Math.abs para CxC pendiente)
+  const diferencia = Math.round((totalReal - ventaNetaZ) * 100) / 100;
+  // Estado basado en la diferencia recalculada (misma lógica que el form)
+  const estadoVisible = ventaNetaZ === 0
+    ? "cuadrado"
+    : Math.abs(diferencia) < 5
+      ? "cuadrado"
+      : cuadre.cerradoPor
+        ? "descuadrado"
+        : "pendiente";
   const esCuadrado = estadoVisible === "cuadrado";
 
   const fechaFormateada = cuadre.fecha
