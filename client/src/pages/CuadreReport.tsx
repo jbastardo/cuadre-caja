@@ -128,11 +128,10 @@ export default function CuadreReport() {
   const creditSales: CreditSaleRow[] = cuadre.creditSales || [];
   const retentions: RetentionRow[]   = cuadre.retenciones  || [];
 
-  // ── Totales calculados desde los arrays de items ──────────────────────────
-  // Se calculan desde los arrays guardados (métodos, creditSales, retenciones)
-  // para que la Sección V sume exactamente los items que muestra. NO se usan
-  // los valores pre-computados del formulario (cuadre.totalXxx) porque tienen
-  // una agrupación/orden diferente sin el enfoque financiero necesario.
+  // ── Totales: usar valores guardados por el formulario (autoritativos) ─────
+  // El formulario calculó y guardó estos valores al momento de guardar.
+  // El reporte los usa directamente para que coincidan exactamente con lo
+  // que el usuario vio en el formulario.
 
   const totalDirectosPOS  = directos.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
   const totalDirectosReal = directos.reduce((s, m) => s + (m.montoReal    || 0), 0);
@@ -141,77 +140,26 @@ export default function CuadreReport() {
   const totalCasheaReal   = casheaMtds.reduce((s, m) => s + (m.montoReal    || 0), 0);
   const totalCreditoPOS   = creditoMtds.reduce((s, m) => s + (m.montoPOS_Bs || 0), 0);
 
-  // Abonos y CxC pendiente desde creditSales (USD → Bs con tasa del día)
-  const totalAbonos = (creditSales?.length ?? 0) > 0
-    ? Math.round(creditSales.reduce((s, c) => {
-        const v = c.abonoAmountBs > 0 ? c.abonoAmountBs : (c.abonoAmount || 0) * tasa;
-        return s + v;
-      }, 0) * 100) / 100
-    : (cuadre.totalAbonosReal || 0);
-
-  const totalCxCPendiente = (creditSales?.length ?? 0) > 0
-    ? Math.round(creditSales.reduce((s, c) => s + ((c as any).residualBs > 0 ? (c as any).residualBs : (c.residual || 0) * tasa), 0) * 100) / 100
-    : (cuadre.totalCxCPendiente || 0);
-
-  // Retenciones desde retentions array — usar Bs guardados si existen
-  const totalRetPOS = (retentions?.length ?? 0) > 0
-    ? Math.round(retentions.reduce((s, r) => s + ((r as any).posTotalBs > 0 ? (r as any).posTotalBs : (r.posTotalUSD || 0) * tasa), 0) * 100) / 100
-    : (cuadre.totalRetencionesPOS || 0);
-
-  const totalRetReal = cuadre.totalRetencionesReal || 0;   // ← campo manual del usuario
-  const retPorCobrar = Math.max(0, Math.round((totalRetPOS - totalRetReal) * 100) / 100);
-
-  // Saldos a favor desde array
-  const totalSFavorPOS = (cuadre.saldosFavor?.length ?? 0) > 0
-    ? Math.round(cuadre.saldosFavor.reduce((s, sf) => s + (sf.amountBs || sf.amount * tasa), 0) * 100) / 100
-    : (cuadre.totalSaldoFavorPOS || 0);
-
-  const totalSFavorReal = cuadre.totalSaldoFavorReal || 0;  // ← campo manual del usuario
-
-  // Ajustes manuales desde array
-  const totalAjustes = (cuadre.ajustesManuales?.length ?? 0) > 0
-    ? cuadre.ajustesManuales.reduce((s, a) => s + (a.monto || 0), 0)
-    : (cuadre.totalAjustesManuales || 0);
-
-  // Deducciones manuales (ítems adicionales de delivery/diferencia)
+  // Valores autoritativos guardados por el formulario
+  const totalRetPOS = cuadre.totalRetencionesPOS || 0;
+  const totalRetReal = cuadre.totalRetencionesReal || 0;
+  const retPorCobrar = cuadre.retencionesPorCobrar || 0;
+  const totalAbonos = cuadre.totalAbonosReal || 0;
+  const totalCxCPendiente = cuadre.totalCxCPendiente || 0;
+  const totalSFavorPOS = cuadre.totalSaldoFavorPOS || 0;
+  const totalSFavorReal = cuadre.totalSaldoFavorReal || 0;
+  const totalAjustes = cuadre.totalAjustesManuales || 0;
+  const totalDeducciones = cuadre.totalDeducciones || 0;
   const totalDeduccionesManuales = (cuadre.deducciones?.length ?? 0) > 0
     ? cuadre.deducciones.reduce((s, d) => s + (d.monto || 0), 0)
     : 0;
+
   const ventaNetaZ        = cuadre.ventaNetaZ           || 0;
   const difCambiaria      = cuadre.difCambiaria         || 0;
 
-  // ── CÁLCULO AUTORITATIVO DEL TOTAL REAL Y DIFERENCIA ──────────────────────
-  // Se recalcula aquí con la MISMA fórmula que usa el formulario (summaryReal).
-  // NO se usa cuadre.diferencia ni cuadre.totalJustificadoReal de la DB porque
-  // pueden estar desactualizados (guardados antes del fix del doble conteo).
-  //
-  // Fórmula equivalente a CuadreForm.tsx summaryReal.
-  // NOTA: el form incluye Cashea (ID 42) en totalDirectMetodosReal, pero el reporte
-  // lo mueve a Section III como línea separada. Por eso se suma totalCasheaReal aparte.
-  //   totalDirectosReal
-  //   + totalCasheaReal   (migrado de directos a línea propia en Secc. III)
-  //   + totalRetReal      (retenciones reales — campo manual)
-  //   + retPorCobrar
-  //   + totalAbonos
-  //   + totalCxCPendiente
-  //   + totalSFavorReal
-  //   + totalDeducciones  (deliveryPOS + deducciones manuales)
-  //   + totalAjustes
-  const totalDeducciones = Math.round((totalDeliveryPOS + totalDeduccionesManuales) * 100) / 100;
-
-  const totalReal = Math.round((
-    totalDirectosReal  +
-    totalCasheaReal    +
-    totalRetReal       +
-    totalAbonos        +
-    Math.abs(totalCxCPendiente)  +  // ← Valor absoluto (sin signo negativo)
-    totalSFavorReal    +
-    totalDeducciones   +
-    totalAjustes
-  ) * 100) / 100;
-
-  // Diferencia: totalReal - ventaNetaZ, ajustada por la brecha entre ret. procesadas y ret. IVA
-  const diferencia  = Math.round((totalReal - ventaNetaZ - (totalRetReal - totalRetPOS)) * 100) / 100;
+  // Total real y diferencia: usar valores guardados (autoritativos)
+  const totalReal = cuadre.totalJustificado || 0;
+  const diferencia = cuadre.diferencia || 0;
   // Estado calculado con misma lógica que formulario/dashboard/historial
   const estadoVisible = calculateEstado(cuadre);
   const esCuadrado = estadoVisible === "cuadrado";
