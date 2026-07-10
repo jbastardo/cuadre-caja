@@ -119,7 +119,9 @@ export interface RetentionRow {
   invoiceNumber: string;
   partner: string;
   posTotalUSD: number;
+  posTotalBs: number;
   retentionAmount: number;
+  retentionAmountBs: number;
   rivacEntryName: string;
   status: "registered" | "pending";
 }
@@ -355,7 +357,9 @@ export const createCuadreSchema = z.object({
     invoiceNumber: z.string(),
     partner: z.string(),
     posTotalUSD: z.number(),
+    posTotalBs: z.number(),
     retentionAmount: z.number(),
+    retentionAmountBs: z.number(),
     rivacEntryName: z.string(),
     status: z.enum(["registered", "pending"]),
   })).optional().default([]),

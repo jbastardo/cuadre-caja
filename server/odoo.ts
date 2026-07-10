@@ -1078,7 +1078,9 @@ export async function getSessionRetentions(sessionId: number): Promise<Retention
         invoiceNumber,
         partner: invInfo.partner,
         posTotalUSD: posAmount,
+        posTotalBs: 0,
         retentionAmount: Math.round((rivacEntry.amount_total || 0) * 100) / 100,
+        retentionAmountBs: 0,
         rivacEntryName: rivacEntry.name || "",
         status: "registered",
       });
@@ -1088,7 +1090,9 @@ export async function getSessionRetentions(sessionId: number): Promise<Retention
         invoiceNumber,
         partner: invInfo.partner,
         posTotalUSD: posAmount,
+        posTotalBs: 0,
         retentionAmount: 0,
+        retentionAmountBs: 0,
         rivacEntryName: "",
         status: "pending",
       });

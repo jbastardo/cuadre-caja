@@ -617,7 +617,11 @@ export default function CuadreForm() {
         estado: calculatedEstado,
         // Snapshot data for historical consistency
         creditSales: creditSales || [],
-        retenciones: retentions || [],
+        retenciones: (retentions || []).map(r => ({
+          ...r,
+          posTotalBs: Math.round((r.posTotalUSD || 0) * rate * 100) / 100,
+          retentionAmountBs: Math.round((r.retentionAmount || 0) * rate * 100) / 100,
+        })),
         saldosFavor: saldoFavorDetail || [],
         fiscalSummary: fiscalSummary || undefined,
       };

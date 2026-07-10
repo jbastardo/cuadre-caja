@@ -140,7 +140,9 @@ CREATE TABLE IF NOT EXISTS retenciones_snapshot (
   invoice_number    VARCHAR(50),
   partner           VARCHAR(255),
   pos_total_usd     NUMERIC(15,2) DEFAULT 0,
+  pos_total_bs      NUMERIC(15,2) DEFAULT 0,
   retention_amount  NUMERIC(15,2) DEFAULT 0,
+  retention_amount_bs NUMERIC(15,2) DEFAULT 0,
   rivac_entry_name  VARCHAR(255),
   status            VARCHAR(20) DEFAULT 'pending'
 );

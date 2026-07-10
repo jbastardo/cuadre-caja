@@ -785,10 +785,10 @@ async function saveRetencionesSnapshot(client: PoolClient, cuadreId: string, row
     const id = `RS-${Date.now()}-${idx++}`;
     await client.query(
       `INSERT INTO retenciones_snapshot (id, cuadre_id, invoice_number, partner, pos_total_usd,
-        retention_amount, rivac_entry_name, status)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [id, cuadreId, r.invoiceNumber, r.partner, r.posTotalUSD, r.retentionAmount,
-        r.rivacEntryName, r.status]
+        pos_total_bs, retention_amount, retention_amount_bs, rivac_entry_name, status)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [id, cuadreId, r.invoiceNumber, r.partner, r.posTotalUSD, r.posTotalBs,
+        r.retentionAmount, r.retentionAmountBs, r.rivacEntryName, r.status]
     );
   }
 }
@@ -852,7 +852,8 @@ async function getCreditSalesSnapshot(cuadreId: string): Promise<CreditSaleRow[]
 async function getRetencionesSnapshot(cuadreId: string): Promise<RetentionRow[]> {
   const { rows } = await pool.query(
     `SELECT invoice_number as "invoiceNumber", partner, pos_total_usd as "posTotalUSD",
-      retention_amount as "retentionAmount", rivac_entry_name as "rivacEntryName", status
+      pos_total_bs as "posTotalBs", retention_amount as "retentionAmount",
+      retention_amount_bs as "retentionAmountBs", rivac_entry_name as "rivacEntryName", status
     FROM retenciones_snapshot WHERE cuadre_id = $1 ORDER BY invoice_number`,
     [cuadreId]
   );

@@ -153,9 +153,9 @@ export default function CuadreReport() {
     ? Math.round(creditSales.reduce((s, c) => s + ((c.residual || 0) * tasa), 0) * 100) / 100
     : (cuadre.totalCxCPendiente || 0);
 
-  // Retenciones desde retentions array
+  // Retenciones desde retentions array — usar Bs guardados si existen
   const totalRetPOS = (retentions?.length ?? 0) > 0
-    ? Math.round(retentions.reduce((s, r) => s + ((r.posTotalUSD || 0) * tasa), 0) * 100) / 100
+    ? Math.round(retentions.reduce((s, r) => s + ((r as any).posTotalBs > 0 ? (r as any).posTotalBs : (r.posTotalUSD || 0) * tasa), 0) * 100) / 100
     : (cuadre.totalRetencionesPOS || 0);
 
   const totalRetReal = cuadre.totalRetencionesReal || 0;   // ← campo manual del usuario
@@ -596,11 +596,11 @@ export default function CuadreReport() {
                   <td style={{ padding: "2px 4px", fontWeight: 600 }}>{r.invoiceNumber}</td>
                   <td style={{ padding: "2px 4px" }}>{r.partner}</td>
                   <td style={{ textAlign: "right", padding: "2px 4px" }}>
-                    {formatBs(Math.round(r.posTotalUSD * tasa * 100) / 100)}
+                    {formatBs((r as any).posTotalBs > 0 ? (r as any).posTotalBs : Math.round(r.posTotalUSD * tasa * 100) / 100)}
                   </td>
                   <td style={{ textAlign: "right", padding: "2px 4px" }}>
                     {r.status === "registered"
-                      ? formatBs(Math.round(r.retentionAmount * tasa * 100) / 100) : "—"}
+                      ? formatBs((r as any).retentionAmountBs > 0 ? (r as any).retentionAmountBs : Math.round(r.retentionAmount * tasa * 100) / 100) : "—"}
                   </td>
                   <td style={{ textAlign: "center", padding: "2px 4px", fontWeight: 600,
                     color: r.status === "registered" ? "#16a34a" : "#b45309" }}>
