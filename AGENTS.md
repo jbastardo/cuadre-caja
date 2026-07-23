@@ -1,5 +1,62 @@
 # AGENTS.md - Project Context for Claude Code
 
+## Last Session - 2026-07-23
+
+### Task: Depuración de cuadre CQ-1784754974280 y corrección de bugs
+
+**Problem**: El cuadre CQ-1784754974280 tenía varias discrepancias:
+1. Bug en cálculo de `diferencia` por método en `metodos_verificados`: se calculaba `montoReal - montoUSD` (mezclando Bs con USD) en lugar de `montoReal - montoPOS_Bs`
+2. Discrepancia de facturas: Z dice 53 facturas (66524-66576), pero Odoo solo encuentra 34 (17+17)
+3. Diferencia cambiaria alta: 905.244,97 Bs
+
+**Solution implemented**:
+1. Corregido bug en `server/db.ts` líneas 353 y 489:
+   - Cambiado `const diff = Math.round((montoReal - montoUSD) * 100) / 100;`
+   - A `const diff = Math.round((montoReal - montoPosBs) * 100) / 100;`
+   - Esto asegura que la diferencia se calcule en la misma unidad (Bs vs Bs)
+
+2. Agregado endpoint de debug `GET /api/debug/fiscal-summary/:id` en `server/routes.ts`:
+   - Expone función `debugFiscalSummary` en `server/odoo.ts`
+   - Muestra todas las facturas encontradas por Odoo con detalles completos
+   - Agrupa facturas por sesión (main vs companion)
+   - Muestra facturas excluidas y razón de exclusión (journal, state, type)
+   - Útil para diagnosticar discrepancias entre Z y Odoo
+
+3. Corregido bug en `server/odoo.ts` función `getFiscalSummary` y `debugFiscalSummary`:
+   - El código solo calculaba el journal de la PRIMERA sesión companion
+   - Ahora calcula TODOS los journals de TODAS las sesiones relacionadas
+   - Esto corrige la discrepancia donde Z decía 53 facturas y Odoo solo 34
+   - Las 19 facturas faltantes estaban en journals de otras sesiones companion (FAC4 = journal 131)
+
+4. Corregido diferencia cambiaria alta (905.244,97 Bs → 36.759,85 Bs):
+   - La diferencia cambiaria alta se debía a que Odoo no incluía todas las facturas
+   - Al corregir el bug de los journals, el totalOdooBs pasó de 2.916.407,05 a 3.784.892,17 Bs
+   - La nueva diferencia cambiaria (36.759,85 Bs) coincide exactamente con el IGTF del Z
+   - Cuadre actualizado manualmente con los nuevos valores del fiscal summary
+
+**Files modified**:
+- server/db.ts (líneas 353, 489: corrección de cálculo de diferencia)
+- server/odoo.ts (agregada función `debugFiscalSummary` ~líneas 862-982, corregido `getFiscalSummary` para incluir todos los journals)
+- server/routes.ts (agregado endpoint `/api/debug/fiscal-summary/:id` ~líneas 842-850)
+
+**Commands run**:
+- git push origin main - OK (commit 7c1f076)
+- Cuadre CQ-1784754974280 actualizado con nuevos valores del fiscal summary
+
+**Result**:
+- Discrepancia de facturas resuelta: Z dice 53, Odoo ahora dice 53 ✓
+- Diferencia cambiaria corregida: 905.244,97 Bs → 36.759,85 Bs (coincide con IGTF) ✓
+- Bug de cálculo de diferencia por método corregido (Bs-USD → Bs-Bs) ✓
+
+**Commands run**:
+- git push origin main - OK (commit c4bb2f2)
+
+**Pending investigation**:
+- Usar endpoint de debug para diagnosticar por qué Z dice 53 facturas y Odoo solo 34
+- Investigar diferencia cambiaria alta (905.244,97 Bs) - posiblemente relacionada con la discrepancia de facturas
+
+---
+
 ## Last Session - 2026-04-17
 
 ### Task: Agregar retenciones a nota de crédito en Conciliación de Pagos Diferidos
