@@ -350,7 +350,7 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
       const montoPosBs = toNum((m as any).montoReal_Bs) || toNum(m.montoPOS_Bs);
       const montoUSD = toNum(m.montoPOS_USD);
       const montoReal = toNum(m.montoReal);
-      const diff = Math.round((montoReal - montoUSD) * 100) / 100;
+      const diff = Math.round((montoReal - montoPosBs) * 100) / 100;
       await client.query(
         "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
         [mid, id, m.metodoId, m.metodoNombre, montoUSD, montoPosBs, montoReal, diff, m.observacion || ""]
@@ -486,7 +486,7 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
       const montoPosBs = toNum((m as any).montoReal_Bs) || toNum(m.montoPOS_Bs);
       const montoUSD = toNum(m.montoPOS_USD);
       const montoReal = toNum(m.montoReal);
-      const diff = Math.round((montoReal - montoUSD) * 100) / 100;
+      const diff = Math.round((montoReal - montoPosBs) * 100) / 100;
       await client.query(
         "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
         [mid, id, m.metodoId, m.metodoNombre, montoUSD, montoPosBs, montoReal, diff, m.observacion || ""]

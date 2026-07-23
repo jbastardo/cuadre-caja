@@ -839,6 +839,16 @@ router.get("/api/debug/credit-sales/:id", requireAuth, async (req: Request, res:
   }
 });
 
+// Debug endpoint: fiscal summary with full invoice details for discrepancy diagnosis
+router.get("/api/debug/fiscal-summary/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const data = await odoo.debugFiscalSummary(Number(param(req, "id")));
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Debug endpoint: raw account.payment data for a specific reference
 router.get("/api/debug/pagos-ref", requireAuth, async (req: Request, res: Response) => {
   try {

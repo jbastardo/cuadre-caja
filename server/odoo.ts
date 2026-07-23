@@ -860,6 +860,148 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
 }
 
 /**
+ * Debug: get all invoices for a session with full details for discrepancy diagnosis
+ */
+export async function debugFiscalSummary(sessionId: number): Promise<any> {
+  const session = await getSessionById(sessionId);
+  if (!session) throw new Error("Sesión no encontrada");
+
+  const configId = session.config_id[0];
+  const journalInfo = CONFIG_JOURNAL_MAP[configId];
+  if (!journalInfo) throw new Error(`No hay diario fiscal configurado para config_id ${configId}`);
+
+  const date = session.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+  const { sessionIds, companionSessionName } = await getRelatedSessionIds(sessionId);
+
+  const mainSessionId = sessionId;
+  const companionSessionId = sessionIds.find(sid => sid !== mainSessionId);
+  let companionJournalId: number | undefined = undefined;
+  if (companionSessionId) {
+    const cs = await getSessionById(companionSessionId);
+    if (cs) {
+      const cj = CONFIG_JOURNAL_MAP[cs.config_id[0]];
+      if (cj) companionJournalId = cj.journalId;
+    }
+  }
+
+  const allOrders = await executeKw("pos.order", "search_read",
+    [[["session_id", "in", sessionIds]]],
+    { fields: ["id", "account_move", "session_id", "name"] }
+  );
+
+  const moveIds: number[] = [];
+  const orderMoveMap: Record<number, number> = {};
+  const orderSessionMap: Record<number, number> = {};
+  for (const o of allOrders || []) {
+    if (o.account_move) {
+      const moveId = Array.isArray(o.account_move) ? o.account_move[0] : o.account_move;
+      orderMoveMap[o.id] = moveId;
+      orderSessionMap[o.id] = Array.isArray(o.session_id) ? o.session_id[0] : o.session_id;
+      moveIds.push(moveId);
+    }
+  }
+
+  let allMoves: any[] = [];
+  if (moveIds.length > 0) {
+    allMoves = await executeKw("account.move", "read",
+      [moveIds],
+      {
+        fields: [
+          "id", "journal_id", "state", "move_type",
+          "amount_total", "amount_untaxed", "amount_tax",
+          "foreign_total_billed", "foreign_taxable_income", "foreign_rate",
+          "name", "invoice_date",
+        ],
+      }
+    );
+  }
+
+  const allowedJournals = new Set([
+    journalInfo.journalId,
+    ...(companionJournalId ? [companionJournalId] : [])
+  ]);
+
+  const invoices = allMoves.filter((m: any) => {
+    const jid = Array.isArray(m.journal_id) ? m.journal_id[0] : m.journal_id;
+    return allowedJournals.has(jid)
+      && m.state === "posted"
+      && (m.move_type === "out_invoice" || m.move_type === "out_refund");
+  });
+
+  const excludedByJournal = allMoves.filter((m: any) => {
+    const jid = Array.isArray(m.journal_id) ? m.journal_id[0] : m.journal_id;
+    return !allowedJournals.has(jid)
+      && m.state === "posted"
+      && (m.move_type === "out_invoice" || m.move_type === "out_refund");
+  });
+
+  const excludedByState = allMoves.filter((m: any) => {
+    const jid = Array.isArray(m.journal_id) ? m.journal_id[0] : m.journal_id;
+    return allowedJournals.has(jid)
+      && m.state !== "posted"
+      && (m.move_type === "out_invoice" || m.move_type === "out_refund");
+  });
+
+  const excludedByType = allMoves.filter((m: any) => {
+    const jid = Array.isArray(m.journal_id) ? m.journal_id[0] : m.journal_id;
+    return allowedJournals.has(jid)
+      && m.state === "posted"
+      && m.move_type !== "out_invoice"
+      && m.move_type !== "out_refund";
+  });
+
+  // Group by session
+  const bySession: Record<string, any[]> = {};
+  for (const inv of invoices) {
+    const moveId = inv.id;
+    const orderId = Object.keys(orderMoveMap).find(k => orderMoveMap[Number(k)] === moveId);
+    const sid = orderId ? orderSessionMap[Number(orderId)] : null;
+    const key = String(sid || "unknown");
+    if (!bySession[key]) bySession[key] = [];
+    bySession[key].push({
+      id: inv.id,
+      name: inv.name,
+      moveType: inv.move_type,
+      amountTotal: inv.amount_total,
+      foreignTotal: inv.foreign_total_billed,
+      foreignRate: inv.foreign_rate,
+      journalId: Array.isArray(inv.journal_id) ? inv.journal_id[0] : inv.journal_id,
+      state: inv.state,
+      invoiceDate: inv.invoice_date,
+    });
+  }
+
+  return {
+    sessionId,
+    sessionName: session.name,
+    configId,
+    date,
+    sessionIds,
+    companionSessionName,
+    mainJournalId: journalInfo.journalId,
+    mainJournalCode: journalInfo.journalCode,
+    companionJournalId,
+    totalOrders: allOrders?.length || 0,
+    totalMoves: moveIds.length,
+    includedInvoices: invoices.length,
+    includedByType: {
+      invoices: invoices.filter(i => i.move_type === "out_invoice").length,
+      refunds: invoices.filter(i => i.move_type === "out_refund").length,
+    },
+    excludedByJournal: excludedByJournal.length,
+    excludedByState: excludedByState.length,
+    excludedByType: excludedByType.length,
+    bySession,
+    allInvoiceNames: invoices.map(i => i.name).sort(),
+    excludedInvoiceNames: [
+      ...excludedByJournal.map(i => ({ name: i.name, reason: "journal", journalId: Array.isArray(i.journal_id) ? i.journal_id[0] : i.journal_id })),
+      ...excludedByState.map(i => ({ name: i.name, reason: "state", state: i.state })),
+      ...excludedByType.map(i => ({ name: i.name, reason: "type", type: i.move_type })),
+    ],
+  };
+}
+
+/**
  * Get IVA retentions for a session: cross-references POS retention payments
  * with RIVAC journal entries to verify registration status.
  */
