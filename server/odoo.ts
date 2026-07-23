@@ -559,17 +559,31 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   const mainSessionId = sessionId;
   const companionSessionId = sessionIds.find(sid => sid !== mainSessionId);
   const mainCajaName = session.config_id[1] || "";
+  
+  // Get ALL journals from ALL related sessions
+  const allowedJournals = new Set<number>([journalInfo.journalId]);
+  const sessionJournals: Record<number, { journalId: number; journalCode: string; cajaName: string }> = {};
+  sessionJournals[sessionId] = { journalId: journalInfo.journalId, journalCode: journalInfo.journalCode, cajaName: mainCajaName };
+  
   let companionCajaName = "";
   let companionJournalCode = "";
   let companionJournalId: number | undefined = undefined;
-  if (companionSessionId) {
-    const cs = await getSessionById(companionSessionId);
-    if (cs) {
-      companionCajaName = cs.config_id[1] || "";
-      const cj = CONFIG_JOURNAL_MAP[cs.config_id[0]];
-      if (cj) {
-        companionJournalCode = cj.journalCode;
-        companionJournalId = cj.journalId;
+  
+  for (const sid of sessionIds) {
+    if (sid !== sessionId) {
+      const s = await getSessionById(sid);
+      if (s) {
+        const cj = CONFIG_JOURNAL_MAP[s.config_id[0]];
+        if (cj) {
+          allowedJournals.add(cj.journalId);
+          sessionJournals[sid] = { journalId: cj.journalId, journalCode: cj.journalCode, cajaName: s.config_id[1] || "" };
+          // Keep backward compatibility with companion variables
+          if (!companionJournalId) {
+            companionCajaName = s.config_id[1] || "";
+            companionJournalCode = cj.journalCode;
+            companionJournalId = cj.journalId;
+          }
+        }
       }
     }
   }
@@ -640,11 +654,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
     );
     invoices = (allMoves || []).filter((m: any) => {
       const jid = Array.isArray(m.journal_id) ? m.journal_id[0] : m.journal_id;
-      // Include invoices/NCs from both main and companion session journals (same fiscal machine)
-      const allowedJournals = new Set([
-        journalInfo.journalId,
-        ...(companionJournalId ? [companionJournalId] : [])
-      ]);
+      // Include invoices/NCs from all related session journals (same fiscal machine)
       if (!allowedJournals.has(jid)) return false;
       if (m.state !== "posted") return false;
       if (m.move_type !== "out_invoice" && m.move_type !== "out_refund") return false;
@@ -932,14 +942,21 @@ export async function debugFiscalSummary(sessionId: number): Promise<any> {
   const date = session.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
   const { sessionIds, companionSessionName } = await getRelatedSessionIds(sessionId);
 
-  const mainSessionId = sessionId;
-  const companionSessionId = sessionIds.find(sid => sid !== mainSessionId);
-  let companionJournalId: number | undefined = undefined;
-  if (companionSessionId) {
-    const cs = await getSessionById(companionSessionId);
-    if (cs) {
-      const cj = CONFIG_JOURNAL_MAP[cs.config_id[0]];
-      if (cj) companionJournalId = cj.journalId;
+  // Get ALL journals from ALL related sessions
+  const allowedJournals = new Set<number>([journalInfo.journalId]);
+  const sessionJournals: Record<string, { journalId: number; journalCode: string }> = {};
+  sessionJournals[String(sessionId)] = { journalId: journalInfo.journalId, journalCode: journalInfo.journalCode };
+  
+  for (const sid of sessionIds) {
+    if (sid !== sessionId) {
+      const s = await getSessionById(sid);
+      if (s) {
+        const cj = CONFIG_JOURNAL_MAP[s.config_id[0]];
+        if (cj) {
+          allowedJournals.add(cj.journalId);
+          sessionJournals[String(sid)] = { journalId: cj.journalId, journalCode: cj.journalCode };
+        }
+      }
     }
   }
 
@@ -974,11 +991,6 @@ export async function debugFiscalSummary(sessionId: number): Promise<any> {
       }
     );
   }
-
-  const allowedJournals = new Set([
-    journalInfo.journalId,
-    ...(companionJournalId ? [companionJournalId] : [])
-  ]);
 
   const invoices = allMoves.filter((m: any) => {
     const jid = Array.isArray(m.journal_id) ? m.journal_id[0] : m.journal_id;
@@ -1039,7 +1051,8 @@ export async function debugFiscalSummary(sessionId: number): Promise<any> {
     companionSessionName,
     mainJournalId: journalInfo.journalId,
     mainJournalCode: journalInfo.journalCode,
-    companionJournalId,
+    sessionJournals,
+    allowedJournals: [...allowedJournals],
     totalOrders: allOrders?.length || 0,
     totalMoves: moveIds.length,
     includedInvoices: invoices.length,
