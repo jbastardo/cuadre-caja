@@ -63,3 +63,15 @@ export function getStatusLabel(estado: string): string {
 export function todayStr(): string {
   return new Date().toISOString().split("T")[0];
 }
+
+/**
+ * Calculate cuadre estado with the SAME logic used by the form.
+ * This ensures Dashboard, Historial, Reporte and Formulario all show
+ * the same status for a given cuadre.
+ */
+export function calculateEstado(cuadre: { ventaNetaZ: number; diferencia: number; cerradoPor?: string; estado?: string }): string {
+  if (cuadre.ventaNetaZ === 0) return "cuadrado";
+  if (Math.abs(cuadre.diferencia) < 5) return "cuadrado";
+  if (cuadre.cerradoPor) return "descuadrado";
+  return "pendiente";
+}

@@ -577,6 +577,9 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   // Get exchange rate
   const rate = await getDayRate(date);
 
+  // Current session's serial_machine — documents from other machines must be excluded
+  const currentSerialMachine = session.serial_machine || "";
+
   // --- SESSION-BASED INVOICE QUERY ---
   // Query invoices through POS sessions → orders → account.move
   // This ensures we only get invoices from THIS session's orders, not all invoices
@@ -597,6 +600,27 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
       orderMoveMap[o.id] = moveId;
       orderSessionMap[o.id] = Array.isArray(o.session_id) ? o.session_id[0] : o.session_id;
       moveIds.push(moveId);
+    }
+  }
+
+  // Build session→serial_machine map for fiscal machine validation
+  const sessionSerialMap: Record<number, string> = {};
+  // Add main session serial (current session)
+  sessionSerialMap[mainSessionId] = currentSerialMachine;
+  // Add companion session serial if available (already fetched earlier)
+  if (companionSessionId) {
+    const cs = await getSessionById(companionSessionId);
+    if (cs) sessionSerialMap[companionSessionId] = cs.serial_machine || "";
+  }
+  // Add all order-linked sessions
+  const allSessionIds = [...new Set(Object.values(orderSessionMap))];
+  if (allSessionIds.length > 0) {
+    const sessionsData = await executeKw("pos.session", "read",
+      [allSessionIds],
+      { fields: ["id", "serial_machine"] }
+    );
+    for (const s of sessionsData || []) {
+      sessionSerialMap[s.id] = s.serial_machine || "";
     }
   }
 
@@ -621,9 +645,26 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
         journalInfo.journalId,
         ...(companionJournalId ? [companionJournalId] : [])
       ]);
-      return allowedJournals.has(jid)
-        && m.state === "posted"
-        && (m.move_type === "out_invoice" || m.move_type === "out_refund");
+      if (!allowedJournals.has(jid)) return false;
+      if (m.state !== "posted") return false;
+      if (m.move_type !== "out_invoice" && m.move_type !== "out_refund") return false;
+
+      // CRITICAL: Exclude documents whose originating session has a different fiscal machine.
+      // This prevents cross-contamination when a document is registered in the wrong journal
+      // (e.g., a Caja 1 NC accidentally created in Caja 2's journal).
+      if (currentSerialMachine) {
+        const originOrderId = Object.entries(orderMoveMap).find(([, moveId]) => moveId === m.id)?.[0];
+        if (originOrderId) {
+          const originSessionId = orderSessionMap[Number(originOrderId)];
+          const originSerial = sessionSerialMap[originSessionId] || "";
+          if (originSerial && originSerial !== currentSerialMachine) {
+            console.log(`[getFiscalSummary] EXCLUDED doc ${m.name} — serial mismatch: ${originSerial} != ${currentSerialMachine}`);
+            return false;
+          }
+        }
+      }
+
+      return true;
     });
     console.log(`[getFiscalSummary] Total moves: ${moveIds.length}, invoices filtered: ${invoices.length}`);
     console.log(`[getFiscalSummary] Invoice names: ${invoices.map((i: any) => i.name).slice(0, 20).join(", ")}`);
@@ -681,36 +722,54 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   invoiceNames.sort();
   ncNames.sort();
 
-      // --- FALLBACK: Search NCs directly by journal+date if none found through POS orders ---
+  // --- FALLBACK: Always search NCs directly by journal+date ---
     // Some NCs are created directly in accounting (not through POS refunds)
-    if (ncCount === 0) {
-      // Search in both main and companion journals (same fiscal machine)
-      const searchJournals = [journalInfo.journalId];
-      if (companionJournalId) searchJournals.push(companionJournalId);
-      
-      for (const journalId of searchJournals) {
-        const directNCs = await executeKw("account.move", "search_read", [[
-          ["journal_id", "=", journalId],
-          ["move_type", "=", "out_refund"],
-          ["state", "=", "posted"],
-          ["date", "=", date],
-        ]], {
-          fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id"],
-        });
-        // Exclude any NCs already counted from POS orders
-        const existingMoveIds = new Set(Object.values(orderMoveMap));
-        for (const nc of directNCs || []) {
-          if (existingMoveIds.has(nc.id)) continue;
-          const isFromCompanion = companionJournalId && (Array.isArray(nc.journal_id) ? nc.journal_id[0] : nc.journal_id) === companionJournalId;
-          ncCount++;
-          totalUSD -= nc.amount_total || 0;
-          totalTaxUSD -= nc.amount_tax || 0;
-          totalVES -= nc.foreign_total_billed || 0;
-          if (nc.name) {
-            ncNames.push(nc.name);
-            if (isFromCompanion) { companionNcNames.push(nc.name); companionNcCount++; }
-            else { mainNcNames.push(nc.name); mainNcCount++; }
+    // and won't appear in the order→move mapping. We must find them regardless
+    // of how many NCs were found through POS orders.
+    const searchJournals = [journalInfo.journalId];
+    if (companionJournalId) searchJournals.push(companionJournalId);
+    
+    for (const journalId of searchJournals) {
+      const directNCs = await executeKw("account.move", "search_read", [[
+        ["journal_id", "=", journalId],
+        ["move_type", "=", "out_refund"],
+        ["state", "=", "posted"],
+        ["date", "=", date],
+      ]], {
+        fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id", "ref"],
+      });
+      // Exclude any NCs already counted from POS orders
+      const existingMoveIds = new Set(Object.values(orderMoveMap));
+      for (const nc of directNCs || []) {
+        if (existingMoveIds.has(nc.id)) continue;
+
+        // Try to determine the originating session through ref or payment references
+        // If we can't determine it, include the NC (safe default) but log a warning
+        let ncSerial = "";
+        const ref = nc.ref || "";
+        // Try to find a POS order reference in the NC's ref field
+        if (ref) {
+          const matchingOrder = (allOrders || []).find((o: any) => ref.includes(o.name || ""));
+          if (matchingOrder) {
+            const orderSessionId = Array.isArray(matchingOrder.session_id) ? matchingOrder.session_id[0] : matchingOrder.session_id;
+            ncSerial = sessionSerialMap[orderSessionId] || "";
           }
+        }
+
+        if (ncSerial && ncSerial !== currentSerialMachine) {
+          console.log(`[getFiscalSummary] EXCLUDED direct NC ${nc.name} — serial mismatch: ${ncSerial} != ${currentSerialMachine}`);
+          continue;
+        }
+
+        const isFromCompanion = companionJournalId && (Array.isArray(nc.journal_id) ? nc.journal_id[0] : nc.journal_id) === companionJournalId;
+        ncCount++;
+        totalUSD -= nc.amount_total || 0;
+        totalTaxUSD -= nc.amount_tax || 0;
+        totalVES -= nc.foreign_total_billed || 0;
+        if (nc.name) {
+          ncNames.push(nc.name);
+          if (isFromCompanion) { companionNcNames.push(nc.name); companionNcCount++; }
+          else { mainNcNames.push(nc.name); mainNcCount++; }
         }
       }
     }
@@ -1161,7 +1220,9 @@ export async function getSessionRetentions(sessionId: number): Promise<Retention
         invoiceNumber,
         partner: invInfo.partner,
         posTotalUSD: posAmount,
+        posTotalBs: 0,
         retentionAmount: Math.round((rivacEntry.amount_total || 0) * 100) / 100,
+        retentionAmountBs: 0,
         rivacEntryName: rivacEntry.name || "",
         status: "registered",
       });
@@ -1171,7 +1232,9 @@ export async function getSessionRetentions(sessionId: number): Promise<Retention
         invoiceNumber,
         partner: invInfo.partner,
         posTotalUSD: posAmount,
+        posTotalBs: 0,
         retentionAmount: 0,
+        retentionAmountBs: 0,
         rivacEntryName: "",
         status: "pending",
       });
@@ -1637,13 +1700,19 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
       }
     }
 
-    // Saldo = Total Factura - Abonos - Retención
+    // Saldo = Total Factura - Abonos -/+ Retención
     // Positivo = cuenta por cobrar (cliente debe)
     // Negativo = saldo a favor (excedente/sobrante)
-    // For refunds, don't subtract retention separately since the invoice total already reflects it
-    const saldoReal = isRefund 
-      ? Math.round((invoiceTotal - abonoAmount) * 100) / 100
+    // Facturas: la retención reduce lo que el cliente debe (se resta)
+    // NCs: la retención se reversa (se suma |retención|) para cancelar la factura
+    let saldoReal = isRefund 
+      ? Math.round((invoiceTotal - abonoAmount + Math.abs(retentionAmountUsd)) * 100) / 100
       : Math.round((invoiceTotal - abonoAmount - retentionAmountUsd) * 100) / 100;
+
+    // Sobrepago: si el cliente pagó más de lo que debía después de retención, residual = 0
+    if (!isRefund && abonoAmount > 0 && saldoReal < 0) {
+      saldoReal = 0;
+    }
     
     // Excedente = delivery (terceros)
     const excedenteUsd = Math.round(deliveryAmountUsd * 100) / 100;
@@ -1663,6 +1732,7 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
 
     // generaSaldoFavor = true si saldo es negativo (hay excedente)
     const generaSaldoFavor = saldoReal < 0;
+    const residualBs = Math.round((saldoReal || 0) * rate * 100) / 100;
 
     results.push({
       invoiceNumber,
@@ -1675,6 +1745,7 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
       abonoJournal,
       abonoByJournal,
       residual: saldoReal,
+      residualBs,
       paymentState,
       paymentTotalBs,
       paymentTotalUsd,

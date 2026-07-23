@@ -119,7 +119,9 @@ export interface RetentionRow {
   invoiceNumber: string;
   partner: string;
   posTotalUSD: number;
+  posTotalBs: number;
   retentionAmount: number;
+  retentionAmountBs: number;
   rivacEntryName: string;
   status: "registered" | "pending";
 }
@@ -136,6 +138,7 @@ export interface CreditSaleRow {
   abonoJournal: string;
   abonoByJournal: Record<string, { usd: number; bs: number }>;
   residual: number;
+  residualBs: number;
   paymentState: string;
   // Excedente: when the client pays more than the invoice debt (e.g. delivery fee)
   paymentTotalBs: number;      // Total amount the client actually paid (Bs)
@@ -300,6 +303,9 @@ export const createCuadreSchema = z.object({
 
   observaciones: z.string().optional(),
 
+  // Estado calculado por el formulario al guardar
+  estado: z.enum(["cuadrado", "descuadrado", "pendiente"]).optional(),
+
   // NF-specific observations (separate from fiscal observations)
   observacionesNF: z.string().optional(),
 
@@ -326,6 +332,95 @@ export const createCuadreSchema = z.object({
 
   // Manual adjustments
   ajustesManuales: z.array(ajusteManualSchema).optional().default([]),
+
+  // Snapshot data (saved at save time for historical consistency)
+  creditSales: z.array(z.object({
+    invoiceNumber: z.string(),
+    partner: z.string(),
+    invoiceTotal: z.number(),
+    creditAmountPOS: z.number(),
+    retentionAmountPOS: z.number(),
+    abonoAmount: z.number(),
+    abonoAmountBs: z.number(),
+    abonoJournal: z.string(),
+    abonoByJournal: z.record(z.object({ usd: z.number(), bs: z.number() })),
+    residual: z.number(),
+    residualBs: z.number().optional().default(0),
+    paymentState: z.string(),
+    paymentTotalBs: z.number(),
+    paymentTotalUsd: z.number(),
+    excedenteBs: z.number(),
+    excedenteUsd: z.number(),
+    excedenteConcepto: z.string(),
+    generaSaldoFavor: z.boolean(),
+  })).optional().default([]),
+
+  retenciones: z.array(z.object({
+    invoiceNumber: z.string(),
+    partner: z.string(),
+    posTotalUSD: z.number(),
+    posTotalBs: z.number().optional().default(0),
+    retentionAmount: z.number(),
+    retentionAmountBs: z.number().optional().default(0),
+    rivacEntryName: z.string(),
+    status: z.enum(["registered", "pending"]),
+  })).optional().default([]),
+
+  saldosFavor: z.array(z.object({
+    orderName: z.string(),
+    partner: z.string(),
+    invoiceNumber: z.string(),
+    amount: z.number(),
+    amountBs: z.number(),
+  })).optional().default([]),
+
+  fiscalSummary: z.object({
+    journalId: z.number(),
+    journalCode: z.string(),
+    invoiceCount: z.number(),
+    ncCount: z.number(),
+    totalUSD: z.number(),
+    totalTaxUSD: z.number(),
+    totalVES: z.number(),
+    rate: z.number(),
+    totalRetencionesPOS: z.number(),
+    totalCreditoPOS: z.number(),
+    totalSaldoFavorPOS: z.number(),
+    firstInvoice: z.string(),
+    lastInvoice: z.string(),
+    firstNC: z.string(),
+    lastNC: z.string(),
+    companionSessionName: z.string(),
+    mainFirstInvoice: z.string().optional(),
+    mainLastInvoice: z.string().optional(),
+    mainInvoiceCount: z.number().optional(),
+    mainFirstNC: z.string().optional(),
+    mainLastNC: z.string().optional(),
+    mainNcCount: z.number().optional(),
+    companionFirstInvoice: z.string().optional(),
+    companionLastInvoice: z.string().optional(),
+    companionInvoiceCount: z.number().optional(),
+    companionFirstNC: z.string().optional(),
+    companionLastNC: z.string().optional(),
+    companionNcCount: z.number().optional(),
+    companionJournalCode: z.string().optional(),
+    mainJournalCode: z.string().optional(),
+    mainCajaName: z.string().optional(),
+    companionCajaName: z.string().optional(),
+    payments: z.array(z.object({
+      methodId: z.number(),
+      methodName: z.string(),
+      methodType: z.string().optional().default(""),
+      totalUSD: z.number(),
+      totalBs: z.number(),
+      isCompanion: z.boolean().optional(),
+      orderRefs: z.array(z.string()).optional(),
+      mainAmountUSD: z.number().optional(),
+      companionAmountUSD: z.number().optional(),
+      mainAmountBs: z.number().optional(),
+      companionAmountBs: z.number().optional(),
+    })).optional().default([]),
+  }).optional(),
 });
 export type CreateCuadre = z.infer<typeof createCuadreSchema>;
 
@@ -364,16 +459,18 @@ export interface AjusteManual {
   referencia: string;
 }
 
-// Cuadre detail (with related records + live Odoo data hydrated by GET /api/cuadres/:id)
+// Cuadre detail (with related records + snapshot data from DB)
 export interface CuadreDetail extends Cuadre {
   metodos: MetodoVerificado[];
   deducciones: Deduccion[];
   ajustesManuales: AjusteManual[];
-  // Live fields hydrated from Odoo at query time
-  creditSales?: CreditSaleRow[];      // Ventas a crédito con detalle de excedente/saldo a favor
-  saldosFavor?: SaldoFavorRow[];      // Saldos a favor generados en la sesión
-  retenciones?: RetentionRow[];        // Retenciones IVA cruzadas con asientos RIVAC
-  fiscalSummary?: FiscalSummary;        // Resumen fiscal de facturas Odoo
-  tasa?: number;                       // Tasa del día (alias de tasaDia para compatibilidad con Report)
-  saldoFavorObs?: string;              // Observación de saldos a favor
+  // Snapshot fields hydrated from DB (historical, immutable)
+  creditSales?: CreditSaleRow[];
+  saldosFavor?: SaldoFavorRow[];
+  retenciones?: RetentionRow[];
+  fiscalSummary?: FiscalSummary;
+  tasa?: number;
+  saldoFavorObs?: string;
+  // Serial from Odoo session (rarely changes, fetched on demand)
+  serialMachine?: string;
 }

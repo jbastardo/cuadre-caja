@@ -9,6 +9,11 @@ import type {
   Deduccion,
   AjusteManual,
   CreateCuadre,
+  CreditSaleRow,
+  RetentionRow,
+  SaldoFavorRow,
+  FiscalSummary,
+  FiscalPayment,
 } from "../shared/schema.js";
 import { CUADRE_TOLERANCE_BS } from "../shared/schema.js";
 
@@ -230,13 +235,26 @@ export async function getCuadreById(id: string): Promise<CuadreDetail | null> {
   if (rows.length === 0) return null;
 
   const cuadre = rowToCuadre(rows[0]);
-  const [metodos, deducciones, ajustesManuales] = await Promise.all([
+  const [metodos, deducciones, ajustesManuales, creditSales, retenciones, saldosFavor, fiscalSummary] = await Promise.all([
     getMetodosByCuadre(id),
     getDeduccionesByCuadre(id),
     getAjustesByCuadre(id),
+    getCreditSalesSnapshot(id),
+    getRetencionesSnapshot(id),
+    getSaldosFavorSnapshot(id),
+    getFiscalSummarySnapshot(id),
   ]);
 
-  return { ...cuadre, metodos, deducciones, ajustesManuales };
+  return {
+    ...cuadre,
+    metodos,
+    deducciones,
+    ajustesManuales,
+    creditSales,
+    retenciones,
+    saldosFavor,
+    fiscalSummary: fiscalSummary || undefined,
+  };
 }
 
 export async function getCuadreBySessionId(sessionId: number, tipo?: string): Promise<Cuadre | null> {
@@ -253,6 +271,22 @@ export async function getCuadreBySessionId(sessionId: number, tipo?: string): Pr
   return rows.length > 0 ? rowToCuadre(rows[0]) : null;
 }
 
+// Método IDs excluidos de totalMetodosReal porque tienen campo dedicado en el cuadre.
+// Debe coincidir exactamente con SECTION3_EXCLUDED_IDS del frontend (CuadreForm.tsx).
+// NOTA: ID 42 (PXC Cashea) NO se excluye — el frontend lo incluye en directMetodos.
+// NOTA: ID 38 ("Venta a crédito" en Odoo) es en realidad P.Movil BNC (type=bank).
+// Es un ingreso directo y DEBE incluirse en totalMetodosReal. No va aquí.
+const SPECIAL_METHOD_IDS = new Set([
+  26,       // Retención IVA   → campo totalRetencionesReal
+  14, 33,   // Venta a crédito pay_later → campo totalCreditoPOS / totalAbonosReal
+  25,       // Saldo a favor   → campo totalSaldoFavorReal
+]);
+
+function isDeliveryOrDifName(name: string): boolean {
+  const n = (name || "").toLowerCase();
+  return n.includes("delivery") || n.includes("diferencia");
+}
+
 async function computeCuadreTotals(data: CreateCuadre): Promise<{
   totalMetodosReal: number;
   totalDeducciones: number;
@@ -260,14 +294,22 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
   deliveryDifTotal: number;
   totalJustificado: number;
   diferencia: number;
-  estado: "cuadrado" | "pendiente";
+  estado: "cuadrado" | "descuadrado" | "pendiente";
 }> {
-  const totalMetodosReal = (data.metodos || []).reduce((sum, m) => sum + toNum(m.montoReal), 0);
+  // Only sum DIRECT methods — special methods (retención, crédito, saldo a favor)
+  // are already accounted for via their dedicated fields and must NOT be double-counted.
+  // Mirrors exactly: CuadreForm.tsx directMetodos filter.
+  const directMetodos = (data.metodos || []).filter(
+    (m) => !SPECIAL_METHOD_IDS.has(m.metodoId)
+        && !isDeliveryOrDifName(m.metodoNombre || "")
+  );
+  const totalMetodosReal = directMetodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
+
   const totalDeducciones = (data.deducciones || []).reduce((sum, d) => sum + toNum(d.monto), 0);
   const totalAjustesManuales = (data.ajustesManuales || []).reduce((sum, a) => sum + toNum(a.monto), 0);
 
   const deliveryDifTotal = (data.metodos || [])
-    .filter((m) => (m.metodoNombre || "").toLowerCase().includes("delivery") || (m.metodoNombre || "").toLowerCase().includes("diferencia"))
+    .filter((m) => isDeliveryOrDifName(m.metodoNombre || ""))
     .reduce((s, m) => s + toNum(m.montoPOS_Bs), 0);
 
   const ventaNetaZ = toNum(data.ventaNetaZ);
@@ -276,19 +318,21 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
     toNum(data.totalRetencionesReal) +
     toNum(data.retencionesPorCobrar) +
     toNum(data.totalAbonosReal) +
-    toNum(data.totalCxCPendiente) +
+    Math.abs(toNum(data.totalCxCPendiente)) +
     toNum(data.totalSaldoFavorReal) +
     deliveryDifTotal +
     totalDeducciones +
     totalAjustesManuales;
 
   const diferencia = Math.round((totalJustificado - ventaNetaZ) * 100) / 100;
-  const estado: "cuadrado" | "pendiente" =
-    ventaNetaZ === 0
-      ? "cuadrado"
-      : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
-      ? "cuadrado"
-      : "pendiente";
+  const estado: "cuadrado" | "descuadrado" | "pendiente" =
+    data.estado || (
+      ventaNetaZ === 0
+        ? "cuadrado"
+        : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
+          ? "cuadrado"
+          : "pendiente"
+    );
 
   return { totalMetodosReal, totalDeducciones, totalAjustesManuales, deliveryDifTotal, totalJustificado, diferencia, estado };
 }
@@ -382,6 +426,12 @@ export async function createCuadre(data: CreateCuadre): Promise<CuadreDetail> {
       ajustesManuales.push({ id: aid, cuadreId: id, tipo: a.tipo, descripcion: a.descripcion, monto, referencia: a.referencia || "" });
     }
 
+    // Save snapshots for historical consistency
+    await saveCreditSalesSnapshot(client, id, (data as any).creditSales || []);
+    await saveRetencionesSnapshot(client, id, (data as any).retenciones || []);
+    await saveSaldosFavorSnapshot(client, id, (data as any).saldosFavor || []);
+    await saveFiscalSummarySnapshot(client, id, (data as any).fiscalSummary);
+
     await client.query("COMMIT");
     return {
       id, fecha: data.fecha, caja: data.caja, maquinaFiscal: data.maquinaFiscal,
@@ -423,16 +473,15 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
   if (existingRows.length === 0) return null;
   const existing = rowToCuadre(existingRows[0]);
 
-  const { totalMetodosReal, totalDeducciones, totalAjustesManuales, deliveryDifTotal, totalJustificado, diferencia } =
+  // Compute totals (sums items) but let form's estado take precedence
+  const { totalMetodosReal, totalDeducciones, totalAjustesManuales, deliveryDifTotal, totalJustificado, diferencia, estado: computedEstado } =
     await computeCuadreTotals(data);
 
-  let estado: Cuadre["estado"];
+  let estado: Cuadre["estado"] = computedEstado;
   if (existing.cerradoPor) {
-    estado = existing.estado;
-  } else if (data.ventaNetaZ === 0) {
-    estado = "cuadrado";
-  } else {
-    estado = Math.abs(diferencia) < CUADRE_TOLERANCE_BS ? "cuadrado" : "pendiente";
+    estado = existing.estado; // preserve on close
+  } else if (data.estado) {
+    estado = data.estado; // form-calculated estado takes priority
   }
 
   const client = await pool.connect();
@@ -475,48 +524,64 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
       ]
     );
 
-    await client.query("DELETE FROM metodos_verificados WHERE cuadre_id = $1", [id]);
-    await client.query("DELETE FROM deducciones WHERE cuadre_id = $1", [id]);
-    await client.query("DELETE FROM ajustes_manuales WHERE cuadre_id = $1", [id]);
-
+    // Only delete and recreate metodos_verificados if new data is explicitly provided.
+    // An empty or missing array means "no change" — preserve existing records.
     const metodos: MetodoVerificado[] = [];
-    let mIdx = 0;
-    for (const m of data.metodos) {
-      const mid = `MV-${Date.now()}-${mIdx++}-${m.metodoId}`;
-      const montoPosBs = toNum((m as any).montoReal_Bs) || toNum(m.montoPOS_Bs);
-      const montoUSD = toNum(m.montoPOS_USD);
-      const montoReal = toNum(m.montoReal);
-      const diff = Math.round((montoReal - montoPosBs) * 100) / 100;
-      await client.query(
-        "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-        [mid, id, m.metodoId, m.metodoNombre, montoUSD, montoPosBs, montoReal, diff, m.observacion || ""]
-      );
-      metodos.push({ id: mid, cuadreId: id, metodoId: m.metodoId, metodoNombre: m.metodoNombre, montoPOS_USD: montoUSD, montoPOS_Bs: montoPosBs, montoReal, diferencia: diff, observacion: m.observacion || "" });
+    if (data.metodos && data.metodos.length > 0) {
+      await client.query("DELETE FROM metodos_verificados WHERE cuadre_id = $1", [id]);
+      let mIdx = 0;
+      for (const m of data.metodos) {
+        const mid = `MV-${Date.now()}-${mIdx++}-${m.metodoId}`;
+        const montoPosBs = toNum((m as any).montoReal_Bs) || toNum(m.montoPOS_Bs);
+        const montoUSD = toNum(m.montoPOS_USD);
+        const montoReal = toNum(m.montoReal);
+        const diff = Math.round((montoReal - montoPosBs) * 100) / 100;
+        await client.query(
+          "INSERT INTO metodos_verificados (id, cuadre_id, metodo_id, metodo_nombre, monto_pos_usd, monto_pos_bs, monto_real, diferencia, observacion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+          [mid, id, m.metodoId, m.metodoNombre, montoUSD, montoPosBs, montoReal, diff, m.observacion || ""]
+        );
+        metodos.push({ id: mid, cuadreId: id, metodoId: m.metodoId, metodoNombre: m.metodoNombre, montoPOS_USD: montoUSD, montoPOS_Bs: montoPosBs, montoReal, diferencia: diff, observacion: m.observacion || "" });
+      }
     }
 
+    // Only delete and recreate deducciones if new data is explicitly provided.
     const deducciones: Deduccion[] = [];
-    let dIdx = 0;
-    for (const d of data.deducciones || []) {
-      const did = `DD-${Date.now()}-${dIdx++}-${Math.random().toString(36).slice(2, 6)}`;
-      const monto = toNum(d.monto);
-      await client.query(
-        "INSERT INTO deducciones (id, cuadre_id, tipo, descripcion, monto, comprobante) VALUES ($1,$2,$3,$4,$5,$6)",
-        [did, id, d.tipo, d.descripcion, monto, d.comprobante || ""]
-      );
-      deducciones.push({ id: did, cuadreId: id, tipo: d.tipo, descripcion: d.descripcion, monto, comprobante: d.comprobante || "" });
+    if (data.deducciones && data.deducciones.length > 0) {
+      await client.query("DELETE FROM deducciones WHERE cuadre_id = $1", [id]);
+      let dIdx = 0;
+      for (const d of data.deducciones) {
+        const did = `DD-${Date.now()}-${dIdx++}-${Math.random().toString(36).slice(2, 6)}`;
+        const monto = toNum(d.monto);
+        await client.query(
+          "INSERT INTO deducciones (id, cuadre_id, tipo, descripcion, monto, comprobante) VALUES ($1,$2,$3,$4,$5,$6)",
+          [did, id, d.tipo, d.descripcion, monto, d.comprobante || ""]
+        );
+        deducciones.push({ id: did, cuadreId: id, tipo: d.tipo, descripcion: d.descripcion, monto, comprobante: d.comprobante || "" });
+      }
     }
 
+    // Only delete and recreate ajustes_manuales if new data is explicitly provided.
     const ajustesManuales: AjusteManual[] = [];
-    let aIdx = 0;
-    for (const a of data.ajustesManuales || []) {
-      const aid = `AJ-${Date.now()}-${aIdx++}-${Math.random().toString(36).slice(2, 6)}`;
-      const monto = toNum(a.monto);
-      await client.query(
-        "INSERT INTO ajustes_manuales (id, cuadre_id, tipo, descripcion, monto, referencia) VALUES ($1,$2,$3,$4,$5,$6)",
-        [aid, id, a.tipo, a.descripcion, monto, a.referencia || ""]
-      );
-      ajustesManuales.push({ id: aid, cuadreId: id, tipo: a.tipo, descripcion: a.descripcion, monto, referencia: a.referencia || "" });
+    if (data.ajustesManuales && data.ajustesManuales.length > 0) {
+      await client.query("DELETE FROM ajustes_manuales WHERE cuadre_id = $1", [id]);
+      let aIdx = 0;
+      for (const a of data.ajustesManuales) {
+        const aid = `AJ-${Date.now()}-${aIdx++}-${Math.random().toString(36).slice(2, 6)}`;
+        const monto = toNum(a.monto);
+        await client.query(
+          "INSERT INTO ajustes_manuales (id, cuadre_id, tipo, descripcion, monto, referencia) VALUES ($1,$2,$3,$4,$5,$6)",
+          [aid, id, a.tipo, a.descripcion, monto, a.referencia || ""]
+        );
+        ajustesManuales.push({ id: aid, cuadreId: id, tipo: a.tipo, descripcion: a.descripcion, monto, referencia: a.referencia || "" });
+      }
     }
+
+    // Save snapshots for historical consistency (only if provided)
+    const anyData = data as any;
+    if (anyData.creditSales) await saveCreditSalesSnapshot(client, id, anyData.creditSales);
+    if (anyData.retenciones) await saveRetencionesSnapshot(client, id, anyData.retenciones);
+    if (anyData.saldosFavor) await saveSaldosFavorSnapshot(client, id, anyData.saldosFavor);
+    if (anyData.fiscalSummary) await saveFiscalSummarySnapshot(client, id, anyData.fiscalSummary);
 
     await client.query("COMMIT");
     return { ...existing,
@@ -582,6 +647,37 @@ export async function deleteCuadre(id: string): Promise<boolean> {
   return rowCount !== null && rowCount > 0;
 }
 
+export async function recalculateCuadreFiscalFields(id: string, fiscalSummary: FiscalSummary): Promise<Cuadre | null> {
+  const { rows: existingRows } = await pool.query("SELECT * FROM cuadres WHERE id = $1", [id]);
+  if (existingRows.length === 0) return null;
+  const existing = rowToCuadre(existingRows[0]);
+
+  const newTotalOdooUSD = Math.round(fiscalSummary.totalUSD * 100) / 100;
+  const newTotalOdooBs = Math.round(fiscalSummary.totalVES * 100) / 100;
+  const newRate = Math.round(fiscalSummary.rate * 100) / 100;
+  const newDifCambiaria = Math.round((existing.ventaNetaZ - newTotalOdooBs) * 100) / 100;
+
+  // Update totals that depend on fiscal summary
+  const newTotalRetPOS = Math.round(fiscalSummary.totalRetencionesPOS * newRate * 100) / 100;
+  const newTotalCreditoPOS = Math.round(fiscalSummary.totalCreditoPOS * newRate * 100) / 100;
+  const newTotalSaldoFavorPOS = Math.round(fiscalSummary.totalSaldoFavorPOS * newRate * 100) / 100;
+
+  const { rows } = await pool.query(
+    `UPDATE cuadres SET
+      tasa_dia=$1, total_odoo_usd=$2, total_odoo_bs=$3, dif_cambiaria=$4,
+      total_retenciones_pos=$5, total_credito_pos=$6, total_saldo_favor_pos=$7
+    WHERE id=$8 RETURNING *`,
+    [newRate, newTotalOdooUSD, newTotalOdooBs, newDifCambiaria,
+     newTotalRetPOS, newTotalCreditoPOS, newTotalSaldoFavorPOS, id]
+  );
+
+  // Also update fiscal summary snapshot
+  await saveFiscalSummarySnapshot(pool as any, id, fiscalSummary);
+
+  return rows.length > 0 ? rowToCuadre(rows[0]) : null;
+}
+
+
 export async function updateCuadreEstado(id: string, estado: "cuadrado" | "pendiente" | "descuadrado"): Promise<Cuadre | null> {
   const { rows } = await pool.query(
     "UPDATE cuadres SET estado=$1 WHERE id=$2 RETURNING *",
@@ -598,12 +694,17 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
   const deducciones = cuadre.deducciones || [];
   const ajustesManuales = cuadre.ajustesManuales || [];
 
-  const totalMetodosReal = metodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
+  // Same exclusion logic as computeCuadreTotals and frontend directMetodos filter.
+  const directMetodos = metodos.filter(
+    (m) => !SPECIAL_METHOD_IDS.has(m.metodoId)
+        && !isDeliveryOrDifName(m.metodoNombre || "")
+  );
+  const totalMetodosReal = directMetodos.reduce((sum, m) => sum + toNum(m.montoReal), 0);
   const totalDeducciones = deducciones.reduce((sum, d) => sum + toNum(d.monto), 0);
   const totalAjustesManuales = ajustesManuales.reduce((sum, a) => sum + toNum(a.monto), 0);
 
   const deliveryDifTotal = metodos
-    .filter((m) => (m.metodoNombre || "").toLowerCase().includes("delivery") || (m.metodoNombre || "").toLowerCase().includes("diferencia"))
+    .filter((m) => isDeliveryOrDifName(m.metodoNombre || ""))
     .reduce((sum, m) => sum + toNum(m.montoPOS_Bs), 0);
 
   const totalJustificado =
@@ -611,7 +712,7 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
     toNum(cuadre.totalRetencionesReal) +
     toNum(cuadre.retencionesPorCobrar) +
     toNum(cuadre.totalAbonosReal) +
-    toNum(cuadre.totalCxCPendiente) +
+    Math.abs(toNum(cuadre.totalCxCPendiente)) +
     toNum(cuadre.totalSaldoFavorReal) +
     deliveryDifTotal +
     totalDeducciones +
@@ -653,6 +754,146 @@ async function getAjustesByCuadre(cuadreId: string): Promise<AjusteManual[]> {
     [cuadreId]
   );
   return rows;
+}
+
+// ─── Snapshot Tables ─────────────────────────────────────────────────────────
+
+async function saveCreditSalesSnapshot(client: PoolClient, cuadreId: string, rows: CreditSaleRow[]): Promise<void> {
+  await client.query("DELETE FROM credit_sales_snapshot WHERE cuadre_id = $1", [cuadreId]);
+  let idx = 0;
+  for (const r of rows) {
+    const id = `CS-${Date.now()}-${idx++}`;
+    await client.query(
+      `INSERT INTO credit_sales_snapshot (id, cuadre_id, invoice_number, partner, invoice_total,
+        credit_amount_pos, retention_amount_pos, abono_amount, abono_amount_bs, abono_journal,
+        abono_by_journal, residual, residual_bs, payment_state, payment_total_bs, payment_total_usd,
+        excedente_bs, excedente_usd, excedente_concepto, genera_saldo_favor)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+      [id, cuadreId, r.invoiceNumber, r.partner, r.invoiceTotal, r.creditAmountPOS,
+        r.retentionAmountPOS, r.abonoAmount, r.abonoAmountBs, r.abonoJournal,
+        JSON.stringify(r.abonoByJournal || {}), r.residual, r.residualBs, r.paymentState,
+        r.paymentTotalBs, r.paymentTotalUsd, r.excedenteBs, r.excedenteUsd,
+        r.excedenteConcepto, r.generaSaldoFavor]
+    );
+  }
+}
+
+async function saveRetencionesSnapshot(client: PoolClient, cuadreId: string, rows: RetentionRow[]): Promise<void> {
+  await client.query("DELETE FROM retenciones_snapshot WHERE cuadre_id = $1", [cuadreId]);
+  let idx = 0;
+  for (const r of rows) {
+    const id = `RS-${Date.now()}-${idx++}`;
+    await client.query(
+      `INSERT INTO retenciones_snapshot (id, cuadre_id, invoice_number, partner, pos_total_usd,
+        pos_total_bs, retention_amount, retention_amount_bs, rivac_entry_name, status)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [id, cuadreId, r.invoiceNumber, r.partner, r.posTotalUSD, r.posTotalBs,
+        r.retentionAmount, r.retentionAmountBs, r.rivacEntryName, r.status]
+    );
+  }
+}
+
+async function saveSaldosFavorSnapshot(client: PoolClient, cuadreId: string, rows: SaldoFavorRow[]): Promise<void> {
+  await client.query("DELETE FROM saldos_favor_snapshot WHERE cuadre_id = $1", [cuadreId]);
+  let idx = 0;
+  for (const r of rows) {
+    const id = `SF-${Date.now()}-${idx++}`;
+    await client.query(
+      `INSERT INTO saldos_favor_snapshot (id, cuadre_id, order_name, partner, invoice_number, amount, amount_bs)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, cuadreId, r.orderName, r.partner, r.invoiceNumber, r.amount, r.amountBs]
+    );
+  }
+}
+
+async function saveFiscalSummarySnapshot(client: PoolClient, cuadreId: string, fs: FiscalSummary | undefined): Promise<void> {
+  await client.query("DELETE FROM fiscal_summary_snapshot WHERE cuadre_id = $1", [cuadreId]);
+  if (!fs) return;
+  const id = `FS-${Date.now()}`;
+  await client.query(
+    `INSERT INTO fiscal_summary_snapshot (id, cuadre_id, journal_id, journal_code, invoice_count,
+      nc_count, total_usd, total_tax_usd, total_ves, rate, total_retenciones_pos, total_credito_pos,
+      total_saldo_favor_pos, first_invoice, last_invoice, first_nc, last_nc, companion_session_name,
+      payments, main_first_invoice, main_last_invoice, main_invoice_count, main_first_nc, main_last_nc,
+      main_nc_count, companion_first_invoice, companion_last_invoice, companion_invoice_count,
+      companion_first_nc, companion_last_nc, companion_nc_count, companion_journal_code,
+      main_journal_code, main_caja_name, companion_caja_name)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`,
+    [id, cuadreId, fs.journalId, fs.journalCode, fs.invoiceCount, fs.ncCount,
+      fs.totalUSD, fs.totalTaxUSD, fs.totalVES, fs.rate, fs.totalRetencionesPOS,
+      fs.totalCreditoPOS, fs.totalSaldoFavorPOS, fs.firstInvoice, fs.lastInvoice,
+      fs.firstNC, fs.lastNC, fs.companionSessionName, JSON.stringify(fs.payments || []),
+      fs.mainFirstInvoice, fs.mainLastInvoice, fs.mainInvoiceCount, fs.mainFirstNC,
+      fs.mainLastNC, fs.mainNcCount, fs.companionFirstInvoice, fs.companionLastInvoice,
+      fs.companionInvoiceCount, fs.companionFirstNC, fs.companionLastNC, fs.companionNcCount,
+      fs.companionJournalCode, fs.mainJournalCode, fs.mainCajaName, fs.companionCajaName]
+  );
+}
+
+async function getCreditSalesSnapshot(cuadreId: string): Promise<CreditSaleRow[]> {
+  const { rows } = await pool.query(
+    `SELECT invoice_number as "invoiceNumber", partner, invoice_total as "invoiceTotal",
+      credit_amount_pos as "creditAmountPOS", retention_amount_pos as "retentionAmountPOS",
+      abono_amount as "abonoAmount", abono_amount_bs as "abonoAmountBs",
+      abono_journal as "abonoJournal", abono_by_journal as "abonoByJournal",
+      residual, residual_bs as "residualBs", payment_state as "paymentState", payment_total_bs as "paymentTotalBs",
+      payment_total_usd as "paymentTotalUsd", excedente_bs as "excedenteBs",
+      excedente_usd as "excedenteUsd", excedente_concepto as "excedenteConcepto",
+      genera_saldo_favor as "generaSaldoFavor"
+    FROM credit_sales_snapshot WHERE cuadre_id = $1 ORDER BY invoice_number`,
+    [cuadreId]
+  );
+  return rows.map((r: any) => ({
+    ...r,
+    abonoByJournal: typeof r.abonoByJournal === "string" ? JSON.parse(r.abonoByJournal) : r.abonoByJournal || {},
+  }));
+}
+
+async function getRetencionesSnapshot(cuadreId: string): Promise<RetentionRow[]> {
+  const { rows } = await pool.query(
+    `SELECT invoice_number as "invoiceNumber", partner, pos_total_usd as "posTotalUSD",
+      pos_total_bs as "posTotalBs", retention_amount as "retentionAmount",
+      retention_amount_bs as "retentionAmountBs", rivac_entry_name as "rivacEntryName", status
+    FROM retenciones_snapshot WHERE cuadre_id = $1 ORDER BY invoice_number`,
+    [cuadreId]
+  );
+  return rows;
+}
+
+async function getSaldosFavorSnapshot(cuadreId: string): Promise<SaldoFavorRow[]> {
+  const { rows } = await pool.query(
+    `SELECT order_name as "orderName", partner, invoice_number as "invoiceNumber", amount, amount_bs as "amountBs"
+    FROM saldos_favor_snapshot WHERE cuadre_id = $1 ORDER BY order_name`,
+    [cuadreId]
+  );
+  return rows;
+}
+
+async function getFiscalSummarySnapshot(cuadreId: string): Promise<FiscalSummary | null> {
+  const { rows } = await pool.query(
+    `SELECT journal_id as "journalId", journal_code as "journalCode", invoice_count as "invoiceCount",
+      nc_count as "ncCount", total_usd as "totalUSD", total_tax_usd as "totalTaxUSD",
+      total_ves as "totalVES", rate, total_retenciones_pos as "totalRetencionesPOS",
+      total_credito_pos as "totalCreditoPOS", total_saldo_favor_pos as "totalSaldoFavorPOS",
+      first_invoice as "firstInvoice", last_invoice as "lastInvoice", first_nc as "firstNC",
+      last_nc as "lastNC", companion_session_name as "companionSessionName", payments,
+      main_first_invoice as "mainFirstInvoice", main_last_invoice as "mainLastInvoice",
+      main_invoice_count as "mainInvoiceCount", main_first_nc as "mainFirstNC",
+      main_last_nc as "mainLastNC", main_nc_count as "mainNcCount",
+      companion_first_invoice as "companionFirstInvoice", companion_last_invoice as "companionLastInvoice",
+      companion_invoice_count as "companionInvoiceCount", companion_first_nc as "companionFirstNC",
+      companion_last_nc as "companionLastNC", companion_nc_count as "companionNcCount",
+      companion_journal_code as "companionJournalCode", main_journal_code as "mainJournalCode",
+      main_caja_name as "mainCajaName", companion_caja_name as "companionCajaName"
+    FROM fiscal_summary_snapshot WHERE cuadre_id = $1`,
+    [cuadreId]
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    ...r,
+    payments: typeof r.payments === "string" ? JSON.parse(r.payments) : r.payments || [],
+  } as FiscalSummary;
 }
 
 // ─── Initialize (run schema) ─────────────────────────────────────────────────

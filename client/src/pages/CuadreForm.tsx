@@ -131,6 +131,7 @@ export default function CuadreForm() {
 
   const sessionId = isNew ? getSessionIdFromUrl() : 0;
 
+  const [isNavigating, setIsNavigating] = useState(false);
   const [metodos, setMetodos] = useState<MetodoRow[]>([]);
   const [deducciones, setDeducciones] = useState<DeduccionRow[]>([]);
   const [ajustes, setAjustes] = useState<AjusteRow[]>([]);
@@ -146,7 +147,7 @@ export default function CuadreForm() {
   });
 
   // Load existing cuadre
-  const { data: existingCuadre, isLoading: isLoadingCuadre } = useQuery<CuadreDetail>({
+  const { data: existingCuadre, isLoading: isLoadingCuadre, refetch: refetchCuadre } = useQuery<CuadreDetail>({
     queryKey: ["cuadre", cuadreId],
     queryFn: async () => {
       const res = await fetch(`/api/cuadres/${cuadreId}`);
@@ -164,7 +165,18 @@ export default function CuadreForm() {
   });
 
   const fiscalCuadres = useMemo(
-    () => allCuadres.filter(c => c.tipo !== "nf").sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id)),
+    () => allCuadres
+      .filter(c => c.tipo !== "nf")
+      .sort((a, b) => {
+        // Sort by date first (ascending: oldest to newest)
+        const dateCompare = a.fecha.localeCompare(b.fecha);
+        if (dateCompare !== 0) return dateCompare;
+        // Then by caja/sessionName (to keep consistent order within same day)
+        const cajaCompare = (a.caja || "").localeCompare(b.caja || "");
+        if (cajaCompare !== 0) return cajaCompare;
+        // Finally by id as fallback
+        return a.id.localeCompare(b.id);
+      }),
     [allCuadres]
   );
 
@@ -300,102 +312,75 @@ export default function CuadreForm() {
     return String(session?.serial_machine || "");
   }, [session, existingCuadre]);
 
-  // Initialize from fiscal summary or existing cuadre
+  // Effect 1: Load all state from existingCuadre when it arrives.
+  // This is the source of truth for montoReal, observacion, and all other saved fields.
+  // Runs only when existingCuadre changes (i.e., once on load for existing cuadres).
   useEffect(() => {
-    if (existingCuadre && !isNew && fiscalSummary) {
-      // Merge live fiscal data with saved user inputs
-      const savedInputs = new Map(
-        existingCuadre.metodos.map((m) => [m.metodoId, { montoReal: m.montoReal, observacion: m.observacion }])
-      );
-      setMetodos(
-        fiscalSummary.payments.map((p) => ({
-          metodoId: p.methodId,
-          metodoNombre: p.methodName,
-          montoPOS_USD: p.totalUSD,
-          montoPOS_Bs: p.totalBs,
-          montoReal: savedInputs.get(p.methodId)?.montoReal || 0,
-          observacion: savedInputs.get(p.methodId)?.observacion || "",
-        }))
-      );
-      setDeducciones(
-        existingCuadre.deducciones.map((d) => ({
-          tipo: d.tipo,
-          descripcion: d.descripcion,
-          monto: d.monto,
-          comprobante: d.comprobante,
-        }))
-      );
-      setAjustes(
-        (existingCuadre.ajustesManuales || []).map((a) => ({
-          tipo: a.tipo,
-          descripcion: a.descripcion,
-          monto: a.monto,
-          referencia: a.referencia,
-        }))
-      );
-      setObservaciones(existingCuadre.observaciones);
-      setSaldoFavorReal(existingCuadre.totalSaldoFavorReal || 0);
-      setSaldoFavorObs(existingCuadre.saldoFavorObs || "");
-      setRetencionesReal(existingCuadre.totalRetencionesReal || 0);
-      setZData({
-        zNumero: existingCuadre.zNumero,
-        ventaBrutaZ: existingCuadre.ventaBrutaZ,
-        notasCreditoZ: existingCuadre.notasCreditoZ,
-        baseImponibleZ: existingCuadre.baseImponibleZ,
-        exentoZ: existingCuadre.exentoZ,
-        ivaZ: existingCuadre.ivaZ,
-        igtfZ: existingCuadre.igtfZ,
-        primeraFacturaZ: existingCuadre.primeraFacturaZ,
-        ultimaFacturaZ: existingCuadre.ultimaFacturaZ,
-        primeraNCZ: existingCuadre.primeraNCZ || "",
-        ultimaNCZ: existingCuadre.ultimaNCZ || "",
-      });
-    } else if (existingCuadre && !isNew) {
-      // Fallback if no fiscal data yet
-      setMetodos(
-        existingCuadre.metodos.map((m) => ({
-          metodoId: m.metodoId,
-          metodoNombre: m.metodoNombre,
-          montoPOS_USD: m.montoPOS_USD,
-          montoPOS_Bs: m.montoPOS_Bs,
-          montoReal: m.montoReal,
-          observacion: m.observacion,
-        }))
-      );
-      setDeducciones(
-        existingCuadre.deducciones.map((d) => ({
-          tipo: d.tipo,
-          descripcion: d.descripcion,
-          monto: d.monto,
-          comprobante: d.comprobante,
-        }))
-      );
-      setAjustes(
-        (existingCuadre.ajustesManuales || []).map((a) => ({
-          tipo: a.tipo,
-          descripcion: a.descripcion,
-          monto: a.monto,
-          referencia: a.referencia,
-        }))
-      );
-      setObservaciones(existingCuadre.observaciones);
-      setSaldoFavorReal(existingCuadre.totalSaldoFavorReal || 0);
-      setSaldoFavorObs(existingCuadre.saldoFavorObs || "");
-      setRetencionesReal(existingCuadre.totalRetencionesReal || 0);
-      setZData({
-        zNumero: existingCuadre.zNumero,
-        ventaBrutaZ: existingCuadre.ventaBrutaZ,
-        notasCreditoZ: existingCuadre.notasCreditoZ,
-        baseImponibleZ: existingCuadre.baseImponibleZ,
-        exentoZ: existingCuadre.exentoZ,
-        ivaZ: existingCuadre.ivaZ,
-        igtfZ: existingCuadre.igtfZ,
-        primeraFacturaZ: existingCuadre.primeraFacturaZ,
-        ultimaFacturaZ: existingCuadre.ultimaFacturaZ,
-        primeraNCZ: existingCuadre.primeraNCZ || "",
-        ultimaNCZ: existingCuadre.ultimaNCZ || "",
-      });
-    } else if (fiscalSummary && isNew) {
+    if (!existingCuadre || isNew) return;
+
+    setMetodos(
+      existingCuadre.metodos.map((m) => ({
+        metodoId: m.metodoId,
+        metodoNombre: m.metodoNombre,
+        // Use saved POS amounts as initial values; Effect 2 will refresh from fiscalSummary
+        montoPOS_USD: m.montoPOS_USD,
+        montoPOS_Bs: m.montoPOS_Bs,
+        // Always use saved montoReal and observacion — these are the user's inputs
+        montoReal: m.montoReal,
+        observacion: m.observacion,
+      }))
+    );
+    setDeducciones(
+      existingCuadre.deducciones.map((d) => ({
+        tipo: d.tipo,
+        descripcion: d.descripcion,
+        monto: d.monto,
+        comprobante: d.comprobante,
+      }))
+    );
+    setAjustes(
+      (existingCuadre.ajustesManuales || []).map((a) => ({
+        tipo: a.tipo,
+        descripcion: a.descripcion,
+        monto: a.monto,
+        referencia: a.referencia,
+      }))
+    );
+    setObservaciones(existingCuadre.observaciones);
+    setSaldoFavorReal(existingCuadre.totalSaldoFavorReal || 0);
+    setSaldoFavorObs(existingCuadre.saldoFavorObs || "");
+    setRetencionesReal(existingCuadre.totalRetencionesReal || 0);
+    setZData({
+      zNumero: existingCuadre.zNumero,
+      ventaBrutaZ: existingCuadre.ventaBrutaZ,
+      notasCreditoZ: existingCuadre.notasCreditoZ,
+      baseImponibleZ: existingCuadre.baseImponibleZ,
+      exentoZ: existingCuadre.exentoZ,
+      ivaZ: existingCuadre.ivaZ,
+      igtfZ: existingCuadre.igtfZ,
+      primeraFacturaZ: existingCuadre.primeraFacturaZ,
+      ultimaFacturaZ: existingCuadre.ultimaFacturaZ,
+      primeraNCZ: existingCuadre.primeraNCZ || "",
+      ultimaNCZ: existingCuadre.ultimaNCZ || "",
+    });
+  }, [existingCuadre, isNew]);
+
+  // Reset isNavigating when cuadreId changes
+  useEffect(() => {
+    setIsNavigating(false);
+  }, [cuadreId]);
+
+  // Effect 2a: For new cuadres — populate metodos from live fiscalSummary.
+  // Effect 2b: For existing cuadres — refresh only POS amounts from fiscalSummary,
+  // preserving the montoReal and observacion values already loaded by Effect 1.
+  // Using a functional setMetodos update ensures we read the latest state (with saved
+  // montoReal values) rather than a stale closure, so no montoReal values are lost
+  // even when fiscalSummary arrives after existingCuadre.
+  useEffect(() => {
+    if (!fiscalSummary) return;
+
+    if (isNew) {
+      // For new cuadres: use live Odoo data to populate the methods list
       setMetodos(
         fiscalSummary.payments.map((p) => ({
           metodoId: p.methodId,
@@ -406,14 +391,36 @@ export default function CuadreForm() {
           observacion: "",
         }))
       );
+    } else {
+      // For existing cuadres: update only POS amounts, never touch montoReal/observacion.
+      // Functional update reads the current metodos state (already populated by Effect 1)
+      // so saved montoReal values are always preserved regardless of load order.
+      const livePOS = new Map(
+        fiscalSummary.payments.map((p) => [p.methodId, { totalUSD: p.totalUSD, totalBs: p.totalBs }])
+      );
+      setMetodos((prev) =>
+        prev.map((m) => {
+          const live = livePOS.get(m.metodoId);
+          if (!live) return m;
+          return {
+            ...m,
+            montoPOS_USD: live.totalUSD,
+            montoPOS_Bs: live.totalBs,
+            // montoReal and observacion are intentionally NOT updated here
+          };
+        })
+      );
     }
-  }, [fiscalSummary, existingCuadre, isNew]);
+  }, [fiscalSummary, isNew]);
 
-  // Auto-update retencionesReal when RIVAC data loads (for new cuadres)
+  // Auto-update retencionesReal when RIVAC data loads (for new cuadres ONLY).
+  // For existing cuadres, retencionesReal is already loaded from DB by Effect 1
+  // and must NOT be overwritten by live RIVAC data (user may have edited it manually).
   useEffect(() => {
     if (isNew && totalRetencionesRegistradas_Bs > 0) {
       setRetencionesReal(totalRetencionesRegistradas_Bs);
     }
+    // Intentionally no else-branch: existing cuadres keep their saved value.
   }, [isNew, totalRetencionesRegistradas_Bs]);
 
   // Z Report calculated fields
@@ -458,12 +465,13 @@ export default function CuadreForm() {
   // totalJustificado = ALL components that justify the sales against Z:
   // Direct methods (real) + retenciones (real) + crédito (abonos + CxC) + saldos a favor (real)
   // + deducciones (delivery/dif POS + manual) + ajustes manuales
+  // NOTA: CxC pendiente se suma como valor absoluto (sin signo negativo)
   const totalJustificado = Math.round((
     totalDirectMetodosReal
     + retencionesReal
     + retencionesPorCobrar_Bs
     + totalAbonosRecibidos_Bs
-    + totalCxCPendiente_Bs
+    + Math.abs(totalCxCPendiente_Bs)  // ← Valor absoluto
     + saldoFavorReal
     + totalDeliveryDifPOS_Bs
     + totalDeducciones
@@ -471,6 +479,15 @@ export default function CuadreForm() {
   ) * 100) / 100;
   // Cuadre difference = totalJustificado - ventaNetaZ (comparing against Z, NOT Odoo)
   const diferencia = Math.round((totalJustificado - ventaNetaZ) * 100) / 100;
+  
+  // Estado calculado (mismo que se muestra en el badge)
+  const calculatedEstado = ventaNetaZ === 0
+    ? "cuadrado" as const
+    : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
+      ? "cuadrado" as const
+      : existingCuadre?.cerradoPor
+        ? "descuadrado" as const
+        : "pendiente" as const;
 
   // ─── Totals: guarantee correctness for old cuadres ─────────────────────────
   // For existing cuadres: compute from saved metodos/deducciones/ajustes only.
@@ -501,9 +518,8 @@ export default function CuadreForm() {
   const displaySaldoFavorPOS = isExisting
     ? (existingCuadre.totalSaldoFavorPOS || 0)
     : totalSaldoFavorPOS_Bs;
-  const displayRetencionesReal = isExisting
-    ? (existingCuadre.totalRetencionesReal || 0)
-    : retencionesReal;
+  // Use live retencionesReal state (loaded from existingCuadre by Effect 1, editable by user)
+  const displayRetencionesReal = retencionesReal;
   const displayRetencionesPorCobrar = isExisting
     ? (existingCuadre.retencionesPorCobrar || 0)
     : retencionesPorCobrar_Bs;
@@ -513,33 +529,39 @@ export default function CuadreForm() {
   const displayCxCPendiente = isExisting
     ? (existingCuadre.totalCxCPendiente || 0)
     : totalCxCPendiente_Bs;
-  const displaySaldoFavorReal = isExisting
-    ? (existingCuadre.totalSaldoFavorReal || 0)
-    : saldoFavorReal;
-  const displayAjustesManuales = isExisting
-    ? (existingCuadre.totalAjustesManuales || ajustesTotal)
-    : ajustesTotal;
-  const displayDeducciones = isExisting
-    ? (existingCuadre.totalDeducciones || deduccionesTotal)
-    : deduccionesTotal;
+  // Use live saldoFavorReal state (loaded from existingCuadre by Effect 1, editable by user)
+  const displaySaldoFavorReal = saldoFavorReal;
+  // Use live ajustesTotal/deduccionesTotal (loaded from existingCuadre by Effect 1, editable by user)
+  const displayAjustesManuales = ajustesTotal;
+  const displayDeducciones = deduccionesTotal;
 
   // TOTAL POS: for existing cuadres, use saved total or compute from all metodos POS
   const summaryPOS = isExisting
     ? (existingCuadre.totalMetodosPOS || allMetodosPOS)
     : Math.round((displayDirectoPOS + displayRetencionesPOS + displayCreditoPOS + displaySaldoFavorPOS + deliveryDifPOS) * 100) / 100;
 
-  // TOTAL VERIFICADO: for existing cuadres, use saved total or compute from all metodos Real + deducciones + ajustes
-  const summaryReal = isExisting
-    ? (existingCuadre.totalJustificadoReal || Math.round((allMetodosReal + displayDeducciones + displayAjustesManuales) * 100) / 100)
-    : Math.round((totalDirectMetodosReal + displayRetencionesReal + displayRetencionesPorCobrar + displayAbonosReal + displayCxCPendiente + displaySaldoFavorReal + deliveryDifPOS + displayDeducciones + displayAjustesManuales) * 100) / 100;
+  // TOTAL VERIFICADO: always compute from live state so it matches the individual line items
+  // shown in Section 8. For existing cuadres, display* values come from saved fields for
+  // retenciones/crédito/saldos, while totalDirectMetodosReal comes from the live metodos state.
+  // NOTA: CxC pendiente se suma como valor absoluto (sin signo negativo)
+  const summaryReal = Math.round((
+    totalDirectMetodosReal
+    + displayRetencionesReal
+    + displayRetencionesPorCobrar
+    + displayAbonosReal
+    + Math.abs(displayCxCPendiente)  // ← Valor absoluto
+    + displaySaldoFavorReal
+    + deliveryDifPOS
+    + displayDeducciones
+    + displayAjustesManuales
+  ) * 100) / 100;
 
-  // Total Justificado and Diferencia for bottom section
-  const displayTotalJustificado = isExisting
-    ? (existingCuadre.totalMetodosPOS ?? summaryReal)
-    : totalJustificado;
-  const displayDiferencia = isExisting && existingCuadre.diferencia !== undefined
-    ? existingCuadre.diferencia
-    : diferencia;
+  // Total Justificado and Diferencia for bottom section.
+  // Always use summaryReal (computed from live state) — never the saved POS total.
+  // Previously used existingCuadre.totalMetodosPOS which is the POS total, not the verified total,
+  // causing the displayed difference to diverge from the real cuadre calculation.
+  const displayTotalJustificado = summaryReal;
+  const displayDiferencia = diferencia;
 
   const isLocked = existingCuadre?.cerradoPor && existingCuadre.estado !== "pendiente";
   const canClose = (user?.rol === "supervisor" || user?.rol === "admin") && !isLocked;
@@ -576,23 +598,35 @@ export default function CuadreForm() {
         metodos,
         deducciones,
         ajustesManuales: ajustes,
-        totalRetencionesPOS: isExisting ? displayRetencionesPOS : totalRetencionesPOS_Bs,
-        totalRetencionesReal: isExisting ? displayRetencionesReal : retencionesReal,
-        totalCreditoPOS: isExisting ? displayCreditoPOS : totalCreditoPOS_Bs,
-        totalAbonosReal: isExisting ? displayAbonosReal : totalAbonosRecibidos_Bs,
-        totalCxCPendiente: isExisting ? displayCxCPendiente : totalCxCPendiente_Bs,
-        totalSaldoFavorPOS: isExisting ? displaySaldoFavorPOS : totalSaldoFavorPOS_Bs,
-        retencionesPorCobrar: isExisting ? displayRetencionesPorCobrar : retencionesPorCobrar_Bs,
-        totalSaldoFavorReal: isExisting ? displaySaldoFavorReal : saldoFavorReal,
+        totalRetencionesPOS: displayRetencionesPOS,
+        totalRetencionesReal: retencionesReal,
+        totalCreditoPOS: displayCreditoPOS,
+        totalAbonosReal: displayAbonosReal,
+        totalCxCPendiente: displayCxCPendiente,
+        totalSaldoFavorPOS: displaySaldoFavorPOS,
+        retencionesPorCobrar: displayRetencionesPorCobrar,
+        totalSaldoFavorReal: saldoFavorReal,
         saldoFavorObs,
-        totalAjustesManuales: isExisting ? displayAjustesManuales : totalAjustesManuales,
-        totalDeducciones: isExisting
-          ? Math.round((deliveryDifPOS + displayDeducciones) * 100) / 100
-          : Math.round((totalDeliveryDifPOS_Bs + totalDeducciones) * 100) / 100,
+        totalAjustesManuales: ajustesTotal,
+        totalDeducciones: Math.round((deliveryDifPOS + deduccionesTotal) * 100) / 100,
         // Calculated internally in form - needed for accurate report display
         totalMetodosPOS: summaryPOS,
         totalJustificadoReal: summaryReal,
         totalDirectoPOS: displayDirectoPOS,
+        diferencia,
+        estado: calculatedEstado,
+        // Snapshot data for historical consistency
+        creditSales: (creditSales || []).map(c => ({
+          ...c,
+          residualBs: Math.round((c.residual || 0) * rate * 100) / 100,
+        })),
+        retenciones: (retentions || []).map(r => ({
+          ...r,
+          posTotalBs: Math.round((r.posTotalUSD || 0) * rate * 100) / 100,
+          retentionAmountBs: Math.round((r.retentionAmount || 0) * rate * 100) / 100,
+        })),
+        saldosFavor: saldoFavorDetail || [],
+        fiscalSummary: fiscalSummary || undefined,
       };
 
       if (isNew) {
@@ -604,11 +638,19 @@ export default function CuadreForm() {
         return res.json();
       }
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       toast({ title: "Cuadre guardado" });
+      // Invalidate both the list cache and the individual cuadre cache so that
+      // retencionesReal and all other saved fields reload correctly on navigation.
       queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      if (isNew) navigate(`/cuadre/${data.id}`);
+      
+      if (isNew) {
+        navigate(`/cuadre/${data.id}`);
+      } else {
+        // For existing cuadres, force immediate refetch to reload saved data
+        await refetchCuadre();
+      }
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -623,10 +665,10 @@ export default function CuadreForm() {
       });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "Cuadre cerrado" });
-      queryClient.invalidateQueries({ queryKey: ["cuadre", cuadreId] });
       queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
+      await refetchCuadre();
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -638,10 +680,10 @@ export default function CuadreForm() {
       const res = await apiRequest(`/api/cuadres/${cuadreId}/reopen`, { method: "POST" });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "Cuadre reabierto" });
-      queryClient.invalidateQueries({ queryKey: ["cuadre", cuadreId] });
       queryClient.invalidateQueries({ queryKey: ["cuadres-all"] });
+      await refetchCuadre();
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -744,19 +786,55 @@ export default function CuadreForm() {
           </div>
           <div className="flex items-center gap-2">
             {!isNew && prevCuadre && (
-              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate(`/cuadre/${prevCuadre.id}`)}>
-                <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/20" 
+                onClick={() => {
+                  setIsNavigating(true);
+                  navigate(`/cuadre/${prevCuadre.id}`);
+                }}
+                disabled={isNavigating || isLoadingCuadre || isLoadingSession}
+              >
+                {isNavigating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <ChevronLeft className="h-4 w-4 mr-1" />}
+                Anterior
               </Button>
             )}
             {!isNew && nextCuadre && (
-              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20" onClick={() => navigate(`/cuadre/${nextCuadre.id}`)}>
-                Siguiente <ChevronRight className="h-4 w-4 ml-1" />
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/20" 
+                onClick={() => {
+                  setIsNavigating(true);
+                  navigate(`/cuadre/${nextCuadre.id}`);
+                }}
+                disabled={isNavigating || isLoadingCuadre || isLoadingSession}
+              >
+                Siguiente 
+                {isNavigating ? <Loader2 className="h-4 w-4 ml-1 animate-spin" /> : <ChevronRight className="h-4 w-4 ml-1" />}
               </Button>
             )}
             {!isNew && (
-              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20"
-                onClick={() => navigate(`/cuadre/${cuadreId}/report`)}>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/20"
+                onClick={() => navigate(`/cuadre/${cuadreId}/report`)}
+                disabled={isNavigating || isLoadingCuadre}
+              >
                 <Printer className="h-4 w-4 mr-1" /> Reporte
+              </Button>
+            )}
+            {!isLocked && (
+              <Button 
+                size="sm" 
+                className="bg-white text-[#0A4083] hover:bg-white/90" 
+                onClick={() => saveMutation.mutate()} 
+                disabled={saveMutation.isPending || isNavigating || isLoadingCuadre}
+              >
+                <Save className="h-4 w-4 mr-1" />
+                {saveMutation.isPending ? "Guardando..." : "Guardar"}
               </Button>
             )}
           </div>
@@ -793,21 +871,11 @@ export default function CuadreForm() {
                 Información de Sesión
                 <span className="bg-[#0A4083] text-white text-xs font-bold px-2 py-0.5 rounded">FISCAL</span>
               </span>
-              {(() => {
-                const calculatedEstado = ventaNetaZ === 0
-                  ? "cuadrado" as const
-                  : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
-                    ? "cuadrado" as const
-                    : existingCuadre?.cerradoPor
-                      ? "descuadrado" as const
-                      : "pendiente" as const;
-                const displayEstado = existingCuadre ? calculatedEstado : null;
-                return displayEstado ? (
-                  <Badge className={getStatusColor(displayEstado)}>
-                    {getStatusLabel(displayEstado)}
-                  </Badge>
-                ) : null;
-              })()}
+              {existingCuadre && (
+                <Badge className={getStatusColor(calculatedEstado)}>
+                  {getStatusLabel(calculatedEstado)}
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1679,7 +1747,7 @@ export default function CuadreForm() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>CxC pendientes:</span>
-                  <span className="text-amber-700">{formatBs(displayCxCPendiente)}</span>
+                  <span className="text-amber-700">{formatBs(Math.abs(displayCxCPendiente))}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Saldos a favor:</span>

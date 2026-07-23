@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ChevronLeft, ChevronRight, List, Calendar } from "lucide-react";
-import { getStatusColor, getStatusLabel } from "@/lib/utils";
+import { getStatusColor, getStatusLabel, calculateEstado } from "@/lib/utils";
 import type { Cuadre } from "@shared/schema";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -46,16 +46,20 @@ export default function CuadreList() {
     staleTime: 2 * 60 * 1000,
   });
 
+  // Normalizar nombre de caja: "Caja 2 (Wendy García)" → "Caja 2"
+  const cajaBase = (name: string) => name.replace(/\s*\(.*?\)\s*/g, "").trim();
+
   // Group cuadres by fecha, deduplicated by caja (keep worst status per caja)
   const byDate = useMemo(() => {
     const map: Record<string, Cuadre[]> = {};
     for (const c of cuadres) {
       if (!map[c.fecha]) map[c.fecha] = [];
-      const existing = map[c.fecha].find(x => x.caja === c.caja && x.tipo === c.tipo);
+      const base = cajaBase(c.caja);
+      const existing = map[c.fecha].find(x => cajaBase(x.caja) === base && x.tipo === c.tipo);
       if (existing) {
         // Keep the one with worse status
         const statusOrder = { descuadrado: 0, pendiente: 1, cuadrado: 2, no_realizado: 3 };
-        if ((statusOrder as any)[c.estado] < (statusOrder as any)[existing.estado]) {
+        if ((statusOrder as any)[calculateEstado(c)] < (statusOrder as any)[calculateEstado(existing)]) {
           Object.assign(existing, c);
         }
       } else {
@@ -105,12 +109,12 @@ export default function CuadreList() {
         const filtered = cuadres.filter(c => c.fecha.startsWith(`${year}-${String(month+1).padStart(2,"0")}`));
         const map: Record<string, Cuadre> = {};
         for (const c of filtered) {
-          const key = `${c.caja}-${c.tipo}`;
+          const key = `${cajaBase(c.caja)}-${c.tipo}`;
           const existing = map[key];
           if (!existing) { map[key] = c; }
           else {
             const statusOrder = { descuadrado: 0, pendiente: 1, cuadrado: 2, no_realizado: 3 };
-            if ((statusOrder as any)[c.estado] < (statusOrder as any)[existing.estado]) map[key] = c;
+            if ((statusOrder as any)[calculateEstado(c)] < (statusOrder as any)[calculateEstado(existing)]) map[key] = c;
           }
         }
         return Object.values(map);
@@ -121,17 +125,17 @@ export default function CuadreList() {
   const monthCuadres = cuadres.filter(c => c.fecha.startsWith(monthStr));
   const uniqueCajas = new Set(monthCuadres.map(c => `${c.caja}-${c.tipo}`));
   const stats = {
-    cuadrado:    monthCuadres.filter(c => c.estado === "cuadrado").length,
-    descuadrado: monthCuadres.filter(c => c.estado === "descuadrado").length,
-    pendiente:   monthCuadres.filter(c => c.estado === "pendiente").length,
+    cuadrado:    monthCuadres.filter(c => calculateEstado(c) === "cuadrado").length,
+    descuadrado: monthCuadres.filter(c => calculateEstado(c) === "descuadrado").length,
+    pendiente:   monthCuadres.filter(c => calculateEstado(c) === "pendiente").length,
     total:       uniqueCajas.size,
   };
 
   // Get dominant status for a day (worst first)
   function dayStatus(cuadresList: Cuadre[]): keyof typeof STATUS_DOT {
     if (!cuadresList.length) return "no_realizado";
-    if (cuadresList.some(c => c.estado === "descuadrado")) return "descuadrado";
-    if (cuadresList.some(c => c.estado === "pendiente"))   return "pendiente";
+    if (cuadresList.some(c => calculateEstado(c) === "descuadrado")) return "descuadrado";
+    if (cuadresList.some(c => calculateEstado(c) === "pendiente"))   return "pendiente";
     return "cuadrado";
   }
 
@@ -240,7 +244,8 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                       <div className="space-y-0.5">
                         {dayCuadres.slice(0, 4).map(c => {
                           const isNF = c.tipo === "nf";
-                          const estadoShort = c.estado === "cuadrado" ? "✓" : c.estado === "descuadrado" ? "✗" : "△";
+                          const est = calculateEstado(c);
+                          const estadoShort = est === "cuadrado" ? "✓" : est === "descuadrado" ? "✗" : "△";
                           const tipoLabel = isNF ? "NF" : "F";
                           return (
                             <div
@@ -248,12 +253,12 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                               onClick={e => { e.stopPropagation(); navigate(isNF ? `/cuadre-nf?sessionId=${c.sessionId}` : `/cuadre/${c.id}`); }}
                               className={`text-xs px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80 flex items-center gap-0.5
                                 ${isNF ? "bg-purple-100 text-purple-800" :
-                                  c.estado === "cuadrado"    ? "bg-green-100 text-green-800" :
-                                  c.estado === "descuadrado" ? "bg-red-100 text-red-800" :
-                                                              "bg-amber-100 text-amber-800"}`}
+                                  est === "cuadrado"    ? "bg-green-100 text-green-800" :
+                                  est === "descuadrado" ? "bg-red-100 text-red-800" :
+                                                          "bg-amber-100 text-amber-800"}`}
                             >
-                              <span className={`font-bold ${c.estado === "cuadrado" ? "text-green-600" : c.estado === "descuadrado" ? "text-red-600" : "text-amber-600"}`}>{estadoShort}</span>
-                              <span className="truncate">{c.caja} {tipoLabel}</span>
+                              <span className={`font-bold ${est === "cuadrado" ? "text-green-600" : est === "descuadrado" ? "text-red-600" : "text-amber-600"}`}>{estadoShort}</span>
+                              <span className="truncate">{cajaBase(c.caja)} {tipoLabel}</span>
                             </div>
                           );
                         })}
@@ -304,7 +309,7 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                   >
                   <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-sm">{c.caja}</span>
+                          <span className="font-semibold text-sm">{cajaBase(c.caja)}</span>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${c.tipo === "nf" ? "bg-purple-200 text-purple-900" : "bg-blue-100 text-blue-900"}`}>
                             {c.tipo === "nf" ? "NF" : "Fiscal"}
                           </span>
@@ -314,7 +319,7 @@ className={`min-h-[130px] border-b border-r p-1.5 cursor-pointer transition-colo
                           {c.cerradoPor && <span className="ml-2 text-gray-400">Cerrado por {c.cerradoPor}</span>}
                         </p>
                       </div>
-                    <Badge className={getStatusColor(c.estado)}>{getStatusLabel(c.estado)}</Badge>
+                    <Badge className={getStatusColor(calculateEstado(c))}>{getStatusLabel(calculateEstado(c))}</Badge>
                   </div>
                 ))
             )}
