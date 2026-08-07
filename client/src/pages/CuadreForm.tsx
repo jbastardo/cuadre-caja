@@ -462,33 +462,6 @@ export default function CuadreForm() {
     [ajustes]
   );
 
-  // totalJustificado = ALL components that justify the sales against Z:
-  // Direct methods (real) + retenciones (real) + crédito (abonos + CxC) + saldos a favor (real)
-  // + deducciones (delivery/dif POS + manual) + ajustes manuales
-  // NOTA: CxC pendiente se suma como valor absoluto (sin signo negativo)
-  const totalJustificado = Math.round((
-    totalDirectMetodosReal
-    + retencionesReal
-    + retencionesPorCobrar_Bs
-    + totalAbonosRecibidos_Bs
-    + Math.abs(totalCxCPendiente_Bs)  // ← Valor absoluto
-    + saldoFavorReal
-    + totalDeliveryDifPOS_Bs
-    + totalDeducciones
-    + totalAjustesManuales
-  ) * 100) / 100;
-  // Cuadre difference = totalJustificado - ventaNetaZ (comparing against Z, NOT Odoo)
-  const diferencia = Math.round((totalJustificado - ventaNetaZ) * 100) / 100;
-  
-  // Estado calculado (mismo que se muestra en el badge)
-  const calculatedEstado = ventaNetaZ === 0
-    ? "cuadrado" as const
-    : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
-      ? "cuadrado" as const
-      : existingCuadre?.cerradoPor
-        ? "descuadrado" as const
-        : "pendiente" as const;
-
   // ─── Totals: guarantee correctness for old cuadres ─────────────────────────
   // For existing cuadres: compute from saved metodos/deducciones/ajustes only.
   // Odoo data may be unavailable or changed for old sessions.
@@ -555,6 +528,18 @@ export default function CuadreForm() {
     + displayDeducciones
     + displayAjustesManuales
   ) * 100) / 100;
+
+  // Cuadre difference = totalJustificado - ventaNetaZ (comparing against Z, NOT Odoo)
+  const diferencia = Math.round((summaryReal - ventaNetaZ) * 100) / 100;
+  
+  // Estado calculado (mismo que se muestra en el badge)
+  const calculatedEstado = ventaNetaZ === 0
+    ? "cuadrado" as const
+    : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
+      ? "cuadrado" as const
+      : existingCuadre?.cerradoPor
+        ? "descuadrado" as const
+        : "pendiente" as const;
 
   // Total Justificado and Diferencia for bottom section.
   // Always use summaryReal (computed from live state) — never the saved POS total.
