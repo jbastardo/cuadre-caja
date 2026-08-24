@@ -1713,16 +1713,12 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
       }
     }
 
-    // Saldo = Total Factura - Abonos -/+ Retención
+    // Saldo = Deuda original tomada (creditAmountPOS) - Abonos posteriores
     // Positivo = cuenta por cobrar (cliente debe)
-    // Negativo = saldo a favor (excedente/sobrante)
-    // Facturas: la retención reduce lo que el cliente debe (se resta)
-    // NCs: la retención se reversa (se suma |retención|) para cancelar la factura
-    let saldoReal = isRefund 
-      ? Math.round((invoiceTotal - abonoAmount + Math.abs(retentionAmountUsd)) * 100) / 100
-      : Math.round((invoiceTotal - abonoAmount - retentionAmountUsd) * 100) / 100;
+    // Negativo = devolución o saldo a favor
+    let saldoReal = Math.round((creditAmountPOS - abonoAmount) * 100) / 100;
 
-    // Sobrepago: si el cliente pagó más de lo que debía después de retención, residual = 0
+    // Sobrepago: si el cliente pagó más de lo que debía (Abono > Deuda), la factura queda en 0
     if (!isRefund && abonoAmount > 0 && saldoReal < 0) {
       saldoReal = 0;
     }

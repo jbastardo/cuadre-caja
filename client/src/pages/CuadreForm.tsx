@@ -522,7 +522,7 @@ export default function CuadreForm() {
     + displayRetencionesReal
     + displayRetencionesPorCobrar
     + displayAbonosReal
-    + Math.abs(displayCxCPendiente)  // ← Valor absoluto
+    + displayCxCPendiente
     + displaySaldoFavorReal
     + deliveryDifPOS
     + displayDeducciones

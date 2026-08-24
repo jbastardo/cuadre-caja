@@ -422,7 +422,7 @@ export default function CuadreReport() {
             <div style={{ fontSize: 9, color: "#aaa", marginBottom: 4 }}>Sin ventas a crédito en esta sesión</div>
           )}
           <Row label="Abonos recibidos verificados (Bs):" value={formatBs(totalAbonos)} indent />
-          <Row label="CxC pendiente de cobro (Bs):" value={formatBs(Math.abs(totalCxCPendiente))} bold
+          <Row label="CxC pendiente de cobro (Bs):" value={formatBs(totalCxCPendiente)} bold
             valueColor={totalCxCPendiente > 0 ? "#dc2626" : "#16a34a"} />
         </div>
 
@@ -616,8 +616,8 @@ export default function CuadreReport() {
                   <Row label="Ret. por cobrar:" value={formatBs(retPorCobrar)} valueColor="#b45309" />
                 )}
                 <Row label="Abonos CxC recibidos:" value={formatBs(totalAbonos)} />
-                <Row label="CxC pendiente:"        value={formatBs(Math.abs(totalCxCPendiente))}
-                  valueColor={totalCxCPendiente > 0 ? "#dc2626" : undefined} />
+                <Row label="CxC pendiente:"        value={formatBs(totalCxCPendiente)}
+                  valueColor={totalCxCPendiente > 0 ? "#dc2626" : "#16a34a"} />
                 <Row label="Saldo a favor:"        value={formatBs(totalSFavorReal)} />
                 {totalDeliveryPOS !== 0 && <Row label="Delivery / Dif. (POS):" value={formatBs(totalDeliveryPOS)} />}
                 {totalDeduccionesManuales !== 0 && <Row label="Deducciones manuales:" value={formatBs(totalDeduccionesManuales)} />}
