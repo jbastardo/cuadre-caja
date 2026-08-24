@@ -55,6 +55,7 @@ async function migrate() {
 
     for (const table of tables) {
       console.log(`Migrating table: ${table}...`);
+      await target.query(`TRUNCATE TABLE "${table}" CASCADE`);
       const data = await source.query(`SELECT * FROM "${table}"`);
       if (data.rows.length === 0) {
         console.log(`  - 0 rows, skipping.`);
