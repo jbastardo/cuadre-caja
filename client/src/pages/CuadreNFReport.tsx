@@ -115,11 +115,15 @@ export default function CuadreNFReport() {
 
         {/* Summary */}
         <h2 className="font-bold text-base border-b pb-1 mb-2 mt-4">Resumen</h2>
-        <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
           <div>Recibos: <strong>{nonFiscalSummary.receiptCount}</strong></div>
-          <div>Total vendido: <strong className="text-purple-800">{formatUSD(nonFiscalSummary.totalUSD)}</strong></div>
+          <div>Ventas Brutas: <strong className="text-blue-800">{formatUSD(nonFiscalSummary.totalGrossUSD || nonFiscalSummary.totalUSD)}</strong></div>
+          {(nonFiscalSummary.totalRefundUSD || 0) > 0 && (
+            <div>Notas de Crédito: <strong className="text-red-700">-{formatUSD(nonFiscalSummary.totalRefundUSD || 0)}</strong></div>
+          )}
+          <div>Total Neto: <strong className="text-purple-800">{formatUSD(nonFiscalSummary.totalUSD)}</strong></div>
           {nonFiscalSummary.totalCreditUSD > 0 && (
-            <div>Credito NF: <strong className="text-amber-700">{formatUSD(nonFiscalSummary.totalCreditUSD)}</strong></div>
+            <div>Crédito NE: <strong className="text-amber-700">{formatUSD(nonFiscalSummary.totalCreditUSD)}</strong></div>
           )}
         </div>
 
@@ -147,6 +151,35 @@ export default function CuadreNFReport() {
                   <td className="py-1">TOTAL</td>
                   <td className="py-1 text-right">{nonFiscalSummary.payments.reduce((s, p) => s + p.count, 0)}</td>
                   <td className="py-1 text-right">{formatUSD(nonFiscalSummary.payments.reduce((s, p) => s + p.totalUSD, 0))}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* NF Refunds / Notas de Crédito */}
+        {nonFiscalSummary.refunds && nonFiscalSummary.refunds.length > 0 && (
+          <div className="mb-3">
+            <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-1">Notas de Crédito / Devoluciones NE</p>
+            <table className="w-full border-collapse mb-1">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-1">Documento / Orden</th>
+                  <th className="text-left py-1">Cliente</th>
+                  <th className="text-right py-1">Monto (USD)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nonFiscalSummary.refunds.map((r, idx) => (
+                  <tr key={idx} className="border-b bg-red-50">
+                    <td className="py-1">{r.orderName}</td>
+                    <td className="py-1">{r.partner || "—"}</td>
+                    <td className="py-1 text-right text-red-700">-{formatUSD(r.amountUSD)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 font-bold text-red-800">
+                  <td className="py-1" colSpan={2}>TOTAL DEVOLUCIONES / NC</td>
+                  <td className="py-1 text-right">-{formatUSD(nonFiscalSummary.totalRefundUSD || 0)}</td>
                 </tr>
               </tbody>
             </table>

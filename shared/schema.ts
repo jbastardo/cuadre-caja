@@ -172,9 +172,19 @@ export interface NonFiscalCreditRow {
   amountUSD: number;
 }
 
+export interface NonFiscalRefundRow {
+  orderName: string;
+  partner: string;
+  amountUSD: number;
+}
+
 export interface NonFiscalSummary {
   receiptCount: number;
   totalUSD: number;
+  totalGrossUSD?: number;
+  totalRefundUSD?: number;
+  refundCount?: number;
+  refunds?: NonFiscalRefundRow[];
   payments: NonFiscalPaymentGroup[];
   creditSales: NonFiscalCreditRow[];
   totalCreditUSD: number;

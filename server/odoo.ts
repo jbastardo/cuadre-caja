@@ -1929,7 +1929,20 @@ export async function getNonFiscalSummary(sessionId: number): Promise<NonFiscalS
   }
 
   const nfOrderIds = new Set(nfOrders.map((o: any) => o.id));
-  const totalUSD = Math.round(nfOrders.reduce((sum: number, o: any) => sum + (o.amount_total || 0), 0) * 100) / 100;
+
+  // Separate Gross Sales from Refunds / Notas de Crédito
+  const salesOrders = nfOrders.filter((o: any) => (o.amount_total || 0) >= 0);
+  const refundOrders = nfOrders.filter((o: any) => (o.amount_total || 0) < 0);
+
+  const totalGrossUSD = Math.round(salesOrders.reduce((sum: number, o: any) => sum + (o.amount_total || 0), 0) * 100) / 100;
+  const totalRefundUSD = Math.round(Math.abs(refundOrders.reduce((sum: number, o: any) => sum + (o.amount_total || 0), 0)) * 100) / 100;
+  const totalUSD = Math.round((totalGrossUSD - totalRefundUSD) * 100) / 100;
+
+  const refunds: { orderName: string; partner: string; amountUSD: number }[] = refundOrders.map((o: any) => ({
+    orderName: o.name || `#${o.id}`,
+    partner: o.partner_id ? o.partner_id[1] : "",
+    amountUSD: Math.round(Math.abs(o.amount_total || 0) * 100) / 100,
+  }));
 
   // Get payments for non-fiscal orders
   const allPayments = await executeKw("pos.payment", "search_read",
@@ -2011,6 +2024,10 @@ export async function getNonFiscalSummary(sessionId: number): Promise<NonFiscalS
   return {
     receiptCount: nfOrders.length,
     totalUSD,
+    totalGrossUSD,
+    totalRefundUSD,
+    refundCount: refundOrders.length,
+    refunds,
     payments,
     creditSales,
     totalCreditUSD,
