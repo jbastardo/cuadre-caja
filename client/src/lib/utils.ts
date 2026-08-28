@@ -69,11 +69,21 @@ export function todayStr(): string {
  * This ensures Dashboard, Historial, Reporte and Formulario all show
  * the same status for a given cuadre.
  */
-export function calculateEstado(cuadre: { ventaNetaZ: number; diferencia: number; cerradoPor?: string; estado?: string }): string {
-  if (cuadre.ventaNetaZ === 0) return "cuadrado";
-  if (Math.abs(cuadre.diferencia) < 5) return "cuadrado";
-  if (cuadre.cerradoPor) return "descuadrado";
-  return "pendiente";
+export function calculateEstado(cuadre: { ventaNetaZ?: number; diferencia?: number; cerradoPor?: string; estado?: string; tipo?: string }): string {
+  if (cuadre.tipo === "nf") {
+    return "cuadrado";
+  }
+  // Si no está cerrado por supervisor o su estado es pendiente, debe mostrarse como pendiente
+  if (!cuadre.cerradoPor || cuadre.estado === "pendiente") {
+    return "pendiente";
+  }
+  if (cuadre.estado === "descuadrado") {
+    return "descuadrado";
+  }
+  if (cuadre.estado === "cuadrado") {
+    return "cuadrado";
+  }
+  return Math.abs(cuadre.diferencia || 0) < 5 ? "cuadrado" : "descuadrado";
 }
 
 export function formatLocalDate(dateStr: string): string {

@@ -326,13 +326,9 @@ async function computeCuadreTotals(data: CreateCuadre): Promise<{
 
   const diferencia = Math.round((totalJustificado - ventaNetaZ) * 100) / 100;
   const estado: "cuadrado" | "descuadrado" | "pendiente" =
-    data.estado || (
-      ventaNetaZ === 0
-        ? "cuadrado"
-        : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
-          ? "cuadrado"
-          : "pendiente"
-    );
+    data.cerradoPor
+      ? (Math.abs(diferencia) < CUADRE_TOLERANCE_BS || ventaNetaZ === 0 ? "cuadrado" : "descuadrado")
+      : (data.estado || "pendiente");
 
   return { totalMetodosReal, totalDeducciones, totalAjustesManuales, deliveryDifTotal, totalJustificado, diferencia, estado };
 }
@@ -719,11 +715,9 @@ export async function recalculateCuadreEstado(id: string): Promise<Cuadre | null
     totalAjustesManuales;
 
   const diferencia = Math.round((totalJustificado - cuadre.ventaNetaZ) * 100) / 100;
-  const newEstado: "cuadrado" | "pendiente" =
-    cuadre.ventaNetaZ === 0
-      ? "cuadrado"
-      : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
-      ? "cuadrado"
+  const newEstado: "cuadrado" | "descuadrado" | "pendiente" =
+    cuadre.cerradoPor
+      ? (Math.abs(diferencia) < CUADRE_TOLERANCE_BS || cuadre.ventaNetaZ === 0 ? "cuadrado" : "descuadrado")
       : "pendiente";
 
   if (cuadre.estado === newEstado) return cuadre;
