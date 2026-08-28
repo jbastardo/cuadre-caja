@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatUSD, formatDateTime, formatBs, getStatusColor, getStatusLabel } from "@/lib/utils";
+import { formatUSD, formatDateTime, formatLocalDate, formatBs, getStatusColor, getStatusLabel } from "@/lib/utils";
 import type { NonFiscalSummary } from "@shared/schema";
 
 // Tolerance for "cuadrado" status: ±0.01 USD (must match server CUADRE_TOLERANCE_USD)

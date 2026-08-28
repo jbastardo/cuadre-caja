@@ -72,7 +72,7 @@ export default function CuadreNFReport() {
     enabled: !!sessionId,
   });
 
-  const fecha = session?.start_at?.split(" ")[0] || "";
+  const fecha = formatLocalDate(session?.start_at || session?.stop_at || "") || "";
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><p>Cargando...</p></div>;
   if (!nonFiscalSummary || nonFiscalSummary.receiptCount === 0) {

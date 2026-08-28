@@ -18,19 +18,25 @@ const FISCAL_MACHINE_MAP: Record<number, { machine: string; isMain: boolean }> =
   8: { machine: "Z7C7044514", isMain: false },
 };
 
+
+
 interface FiscalPrinterGroup {
   machine: string;
+  sessions: any[];
+  mainSessions: any[];
+  companionSessions: any[];
   mainSession: any;
   companionSession: any | null;
   totalOrderCount: number;
   totalUSD: number;
   cajaNames: string[];
+  cajeroNames: string[];
   earliestStart: string | null;
   latestEnd: string | null;
 }
 
 function groupByFiscalMachine(sessions: any[]): FiscalPrinterGroup[] {
-  const groups: Record<string, { main: any | null; companion: any | null }> = {};
+  const groups: Record<string, { mainList: any[]; companionList: any[] }> = {};
 
   for (const s of sessions) {
     const configId = s.config_id?.[0];
@@ -38,38 +44,46 @@ function groupByFiscalMachine(sessions: any[]): FiscalPrinterGroup[] {
     if (!mapping) continue;
 
     if (!groups[mapping.machine]) {
-      groups[mapping.machine] = { main: null, companion: null };
+      groups[mapping.machine] = { mainList: [], companionList: [] };
     }
     if (mapping.isMain) {
-      groups[mapping.machine].main = s;
+      groups[mapping.machine].mainList.push(s);
     } else {
-      groups[mapping.machine].companion = s;
+      groups[mapping.machine].companionList.push(s);
     }
   }
 
   return Object.entries(groups)
-    .filter(([, g]) => g.main != null)
+    .filter(([, g]) => g.mainList.length > 0 || g.companionList.length > 0)
     .map(([machine, g]) => {
-      const main = g.main!;
-      const comp = g.companion;
-      const sessions = comp ? [main, comp] : [main];
+      const allSessions = [...g.mainList, ...g.companionList];
+      // Pick main session (prioritize one with an existing cuadre, else the latest main session)
+      const mainWithCuadre = g.mainList.find(s => s.cuadre) || g.companionList.find(s => s.cuadre);
+      const main = mainWithCuadre || g.mainList[g.mainList.length - 1] || g.companionList[0];
+      const comp = g.companionList[g.companionList.length - 1] || null;
 
-      const totalOrderCount = sessions.reduce((sum, s) => sum + (s.order_count || 0), 0);
-      const totalUSD = sessions.reduce((sum, s) => sum + (s.total_payments_amount || 0), 0);
-      const cajaNames = sessions.map(s => s.config_id?.[1] || "Caja");
+      const totalOrderCount = allSessions.reduce((sum, s) => sum + (s.order_count || 0), 0);
+      const totalUSD = allSessions.reduce((sum, s) => sum + (s.total_payments_amount || 0), 0);
+      
+      const cajaNames = Array.from(new Set(allSessions.map(s => s.config_id?.[1] || "Caja")));
+      const cajeroNames = Array.from(new Set(allSessions.map(s => s.user_id?.[1]).filter(Boolean)));
 
-      const starts = sessions.map(s => s.start_at).filter(Boolean);
-      const ends = sessions.map(s => s.stop_at).filter(Boolean);
-      const earliestStart = starts.length > 0 ? starts.sort()[0] : null;
-      const latestEnd = ends.length > 0 ? ends.sort().reverse()[0] : null;
+      const starts = allSessions.map(s => s.start_at).filter(Boolean);
+      const ends = allSessions.map(s => s.stop_at).filter(Boolean);
+      const earliestStart = starts.length > 0 ? [...starts].sort()[0] : null;
+      const latestEnd = ends.length > 0 ? [...ends].sort().reverse()[0] : null;
 
       return {
         machine,
+        sessions: allSessions,
+        mainSessions: g.mainList,
+        companionSessions: g.companionList,
         mainSession: main,
         companionSession: comp,
         totalOrderCount,
         totalUSD,
         cajaNames,
+        cajeroNames,
         earliestStart,
         latestEnd,
       };
@@ -223,7 +237,7 @@ export default function Dashboard() {
           ) : (
             <div className="grid gap-3">
               {fiscalGroups.map((group) => {
-                const cuadre = group.mainSession.cuadre;
+                const cuadre = group.sessions.map(s => s.cuadre).find(Boolean) || group.mainSession.cuadre;
                 const cuadreStatus = cuadre ? calculateEstado(cuadre) : null;
                 const totalBs = rate > 0 ? group.totalUSD * rate : 0;
                 const isCardLoading = loadingMachine === group.machine;
@@ -250,7 +264,7 @@ export default function Dashboard() {
                             {group.cajaNames.join(" + ")}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Cajero: {group.mainSession.user_id?.[1]} &middot; {group.totalOrderCount} operaciones
+                            Cajero: {group.cajeroNames.join(", ") || group.mainSession.user_id?.[1]} &middot; {group.totalOrderCount} operaciones
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {group.earliestStart && <>Apertura: {formatDateTime(group.earliestStart)}</>}

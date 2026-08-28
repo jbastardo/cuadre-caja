@@ -583,7 +583,7 @@ router.post("/api/cuadres/nf/:sessionId", requireAuth, async (req: Request, res:
 
     // Create new NF cuadre
     const session = await odoo.getSessionById(sessionId);
-    const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+    const fecha = odoo.getVenezuelanDateFromUtc(session?.start_at || session?.stop_at || "") || new Date().toISOString().split("T")[0];
 
     console.log("[NF POST] Creating new NF cuadre, session:", session);
 

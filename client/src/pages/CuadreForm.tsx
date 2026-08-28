@@ -244,7 +244,7 @@ export default function CuadreForm() {
     enabled: !!effectiveSessionId,
   });
 
-  const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+  const fecha = formatLocalDate(session?.start_at || session?.stop_at || "") || new Date().toISOString().split("T")[0];
   const rate = fiscalSummary?.rate || existingCuadre?.tasaDia || 0;
   const totalOdooUSD = fiscalSummary?.totalUSD || existingCuadre?.totalOdooUSD || 0;
   const totalOdooBs = fiscalSummary?.totalVES || existingCuadre?.totalOdooBs || 0;

@@ -199,55 +199,90 @@ function filterBinaryFields(data: any): any {
  * If the session's config has a companion (shared fiscal machine), finds the companion's
  * session for the same date and returns both IDs.
  */
+
+// ========== TIMEZONE HELPERS (Venezuela: America/Caracas UTC-4) ==========
+/**
+ * Converts a Venezuelan date string (YYYY-MM-DD) to UTC datetime range [startUtc, endUtc]
+ * Venezuela is UTC-4.
+ * Start of day: YYYY-MM-DD 00:00:00 VET = YYYY-MM-DD 04:00:00 UTC
+ * End of day:   YYYY-MM-DD 23:59:59 VET = NextDay 03:59:59 UTC
+ */
+export function getUtcRangeForDate(dateStr: string): { startUtc: string; endUtc: string } {
+  if (!dateStr || !dateStr.includes("-")) {
+    const today = new Date().toISOString().split("T")[0];
+    dateStr = today;
+  }
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, day, 4, 0, 0));
+  const end = new Date(Date.UTC(year, month - 1, day + 1, 3, 59, 59));
+
+  const formatUtc = (d: Date) => {
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dNum = String(d.getUTCDate()).padStart(2, "0");
+    const h = String(d.getUTCHours()).padStart(2, "0");
+    const min = String(d.getUTCMinutes()).padStart(2, "0");
+    const s = String(d.getUTCSeconds()).padStart(2, "0");
+    return `${y}-${m}-${dNum} ${h}:${min}:${s}`;
+  };
+
+  return { startUtc: formatUtc(start), endUtc: formatUtc(end) };
+}
+
+/**
+ * Converts a UTC datetime string (from Odoo "YYYY-MM-DD HH:mm:ss") to Venezuelan date string (YYYY-MM-DD)
+ */
+export function getVenezuelanDateFromUtc(utcStr: string): string {
+  if (!utcStr) return "";
+  const [dPart, tPart] = utcStr.split(" ");
+  if (!dPart || !dPart.includes("-")) return "";
+  const [year, month, day] = dPart.split("-").map(Number);
+  const [h, m, s] = (tPart || "00:00:00").split(":").map(Number);
+  // Subtract 4 hours (UTC-4)
+  const dt = new Date(Date.UTC(year, month - 1, day, (h || 0) - 4, m || 0, s || 0));
+  const y = dt.getUTCFullYear();
+  const mon = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dNum = String(dt.getUTCDate()).padStart(2, "0");
+  return `${y}-${mon}-${dNum}`;
+}
+// ========== END TIMEZONE HELPERS ==========
+
 async function getRelatedSessionIds(sessionId: number): Promise<{ sessionIds: number[]; companionSessionName: string }> {
   const session = await getSessionById(sessionId);
   if (!session) return { sessionIds: [sessionId], companionSessionName: "" };
 
   const configId = session.config_id[0];
-  const serialMachine = session.serial_machine || "";
-  const date = session.start_at?.split(" ")[0];
-  
-  console.log(`[getRelatedSessionIds] Session ${sessionId}, configId ${configId}, serial_machine: ${serialMachine}, date: ${date}`);
+  const venDate = getVenezuelanDateFromUtc(session.start_at || session.stop_at || "");
+  if (!venDate) return { sessionIds: [sessionId], companionSessionName: "" };
 
-  // Strategy 1: Find sessions with same serial_machine (same fiscal printer)
-  if (serialMachine) {
-    const samePrinterSessions = await executeKw("pos.session", "search_read",
-      [[
-        ["serial_machine", "=", serialMachine],
-        ["start_at", ">=", `${date} 00:00:00`],
-        ["start_at", "<=", `${date} 23:59:59`],
-        ["state", "in", ["opened", "closing_control", "closed"]],
-      ]],
-      { fields: ["id", "name", "config_id", "serial_machine"] }
-    );
-    
-    if (samePrinterSessions?.length > 1) {
-      const sessionIds = samePrinterSessions.map((s: any) => s.id);
-      const names = samePrinterSessions.map((s: any) => s.name).join(", ");
-      console.log(`[getRelatedSessionIds] Found ${samePrinterSessions.length} sessions with same printer: ${names}`);
-      return { sessionIds, companionSessionName: `Múltiples sesiones misma impresora: ${names}` };
-    }
-  }
+  const { startUtc, endUtc } = getUtcRangeForDate(venDate);
 
-  // Strategy 2: Fallback to COMPANION_CONFIGS (same fiscal journal, different POS)
-  const companionConfigId = COMPANION_CONFIGS[configId];
-  if (!companionConfigId) return { sessionIds: [sessionId], companionSessionName: "" };
-  if (!date) return { sessionIds: [sessionId], companionSessionName: "" };
+  // Group by fiscal machine configs: Caja 1 (1) ↔ CASHEA 1 (7), Caja 2 (2) ↔ CASHEA 2 (8)
+  const relatedConfigs = (configId === 1 || configId === 7) ? [1, 7]
+                       : (configId === 2 || configId === 8) ? [2, 8]
+                       : [configId];
 
-  const companionSessions = await executeKw("pos.session", "search_read",
-    [[
-      ["config_id", "=", companionConfigId],
-      ["start_at", ">=", `${date} 00:00:00`],
-      ["start_at", "<=", `${date} 23:59:59`],
-      ["state", "in", ["opened", "closing_control", "closed"]],
-    ]],
-    { fields: ["id", "name", "config_id"], limit: 1 }
+  console.log(`[getRelatedSessionIds] Session ${sessionId}, configId ${configId}, venDate: ${venDate}, configs: [${relatedConfigs.join(", ")}]`);
+
+  const domain: any[] = [
+    ["config_id", "in", relatedConfigs],
+    "|",
+    "&", ["start_at", ">=", startUtc], ["start_at", "<=", endUtc],
+    "&", ["stop_at", ">=", startUtc], ["stop_at", "<=", endUtc],
+    ["state", "in", ["opened", "closing_control", "closed"]],
+  ];
+
+  const matchedSessions = await executeKw("pos.session", "search_read",
+    [domain],
+    { fields: ["id", "name", "config_id", "serial_machine", "user_id"] }
   );
 
-  if (companionSessions?.length > 0) {
-    const cs = companionSessions[0];
-    const companionName = `${cs.config_id[1]} (${cs.name})`;
-    return { sessionIds: [sessionId, cs.id], companionSessionName: companionName };
+  if (matchedSessions && matchedSessions.length > 0) {
+    const idSet = new Set<number>([sessionId, ...matchedSessions.map((s: any) => s.id)]);
+    const sessionIds = Array.from(idSet);
+    const names = matchedSessions.map((s: any) => `${s.config_id[1]} (${s.name})`).join(", ");
+    console.log(`[getRelatedSessionIds] Found ${sessionIds.length} related sessions for date ${venDate}: ${names}`);
+    return { sessionIds, companionSessionName: names };
   }
 
   return { sessionIds: [sessionId], companionSessionName: "" };
@@ -300,14 +335,14 @@ async function getFiscalOrderIds(sessionIds: number | number[]): Promise<Set<num
 }
 
 export async function getSessions(date: string): Promise<any[]> {
-  const dateStart = `${date} 00:00:00`;
-  const dateEnd = `${date} 23:59:59`;
+  const { startUtc, endUtc } = getUtcRangeForDate(date);
   const sessions = await executeKw(
     "pos.session",
     "search_read",
     [[
-      ["start_at", ">=", dateStart],
-      ["start_at", "<=", dateEnd],
+      "|",
+      "&", ["start_at", ">=", startUtc], ["start_at", "<=", endUtc],
+      "&", ["stop_at", ">=", startUtc], ["stop_at", "<=", endUtc],
       ["state", "in", ["opened", "closing_control", "closed"]],
     ]],
     {
@@ -318,6 +353,7 @@ export async function getSessions(date: string): Promise<any[]> {
         "cash_register_balance_end_real", "cash_register_difference",
         "total_payments_amount", "order_count",
       ],
+      order: "id asc",
     }
   );
   return sessions || [];
@@ -549,7 +585,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
     throw new Error(`No hay diario fiscal configurado para config_id ${configId}`);
   }
 
-  const date = session.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+  const date = getVenezuelanDateFromUtc(session.start_at || session.stop_at || "") || new Date().toISOString().split("T")[0];
 
   // Get related sessions (companion fiscal machine merge)
   const { sessionIds, companionSessionName } = await getRelatedSessionIds(sessionId);
@@ -939,7 +975,7 @@ export async function debugFiscalSummary(sessionId: number): Promise<any> {
   const journalInfo = CONFIG_JOURNAL_MAP[configId];
   if (!journalInfo) throw new Error(`No hay diario fiscal configurado para config_id ${configId}`);
 
-  const date = session.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+  const date = getVenezuelanDateFromUtc(session.start_at || session.stop_at || "") || new Date().toISOString().split("T")[0];
   const { sessionIds, companionSessionName } = await getRelatedSessionIds(sessionId);
 
   // Get ALL journals from ALL related sessions
@@ -1085,7 +1121,7 @@ export async function getSessionRetentions(sessionId: number): Promise<Retention
   const journalInfo = CONFIG_JOURNAL_MAP[configId];
   if (!journalInfo) throw new Error(`No hay diario fiscal configurado para config_id ${configId}`);
 
-  const date = session.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+  const date = getVenezuelanDateFromUtc(session.start_at || session.stop_at || "") || new Date().toISOString().split("T")[0];
 
   // Get related sessions (companion fiscal machine merge)
   const { sessionIds } = await getRelatedSessionIds(sessionId);
@@ -1779,7 +1815,7 @@ export async function getSaldoFavorDetail(sessionId: number): Promise<SaldoFavor
   const session = await getSessionById(sessionId);
   if (!session) throw new Error("Sesión no encontrada");
 
-  const date = session.start_at?.split(" ")[0] || new Date().toISOString().split("T")[0];
+  const date = getVenezuelanDateFromUtc(session.start_at || session.stop_at || "") || new Date().toISOString().split("T")[0];
   const rate = await getDayRate(date);
 
   // Get related sessions (companion fiscal machine merge)

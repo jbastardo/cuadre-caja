@@ -75,3 +75,15 @@ export function calculateEstado(cuadre: { ventaNetaZ: number; diferencia: number
   if (cuadre.cerradoPor) return "descuadrado";
   return "pendiente";
 }
+
+export function formatLocalDate(dateStr: string): string {
+  if (!dateStr) return "";
+  let normalized = dateStr.replace(" ", "T");
+  if (!normalized.endsWith("Z") && !normalized.includes("+")) normalized += "Z";
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return dateStr.split(" ")[0] || dateStr;
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: "America/Caracas",
+  }).format(d);
+}
