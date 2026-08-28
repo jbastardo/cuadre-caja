@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatBs, formatUSD, getStatusColor, getStatusLabel, formatDateTime } from "@/lib/utils";
+import { formatBs, formatUSD, getStatusColor, getStatusLabel, formatDateTime, formatLocalDate, todayStr } from "@/lib/utils";
 import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow, SaldoFavorRow, Cuadre } from "@shared/schema";
 
 // Tolerance for "cuadrado" status: ±5 Bs (must match server CUADRE_TOLERANCE_BS)
@@ -165,8 +165,8 @@ export default function CuadreForm() {
   });
 
   const fiscalCuadres = useMemo(
-    () => allCuadres
-      .filter(c => c.tipo !== "nf")
+    () => (Array.isArray(allCuadres) ? allCuadres : (allCuadres as any)?.data || [])
+      .filter((c: any) => c && c.tipo !== "nf")
       .sort((a, b) => {
         // Sort by date first (ascending: oldest to newest)
         const dateCompare = a.fecha.localeCompare(b.fecha);
@@ -244,7 +244,7 @@ export default function CuadreForm() {
     enabled: !!effectiveSessionId,
   });
 
-  const fecha = formatLocalDate(session?.start_at || session?.stop_at || "") || new Date().toISOString().split("T")[0];
+  const fecha = existingCuadre?.fecha || formatLocalDate(session?.start_at || session?.stop_at || "") || todayStr();
   const rate = fiscalSummary?.rate || existingCuadre?.tasaDia || 0;
   const totalOdooUSD = fiscalSummary?.totalUSD || existingCuadre?.totalOdooUSD || 0;
   const totalOdooBs = fiscalSummary?.totalVES || existingCuadre?.totalOdooBs || 0;
@@ -319,23 +319,23 @@ export default function CuadreForm() {
     if (!existingCuadre || isNew) return;
 
     setMetodos(
-      existingCuadre.metodos.map((m) => ({
+      (existingCuadre.metodos || []).map((m) => ({
         metodoId: m.metodoId,
         metodoNombre: m.metodoNombre,
         // Use saved POS amounts as initial values; Effect 2 will refresh from fiscalSummary
-        montoPOS_USD: m.montoPOS_USD,
-        montoPOS_Bs: m.montoPOS_Bs,
+        montoPOS_USD: m.montoPOS_USD || 0,
+        montoPOS_Bs: m.montoPOS_Bs || 0,
         // Always use saved montoReal and observacion — these are the user's inputs
-        montoReal: m.montoReal,
-        observacion: m.observacion,
+        montoReal: m.montoReal || 0,
+        observacion: m.observacion || "",
       }))
     );
     setDeducciones(
-      existingCuadre.deducciones.map((d) => ({
+      (existingCuadre.deducciones || []).map((d) => ({
         tipo: d.tipo,
         descripcion: d.descripcion,
-        monto: d.monto,
-        comprobante: d.comprobante,
+        monto: d.monto || 0,
+        comprobante: d.comprobante || "",
       }))
     );
     setAjustes(

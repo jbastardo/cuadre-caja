@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { formatUSD, formatDateTime } from "@/lib/utils";
+import { formatUSD, formatDateTime, formatLocalDate, formatBs } from "@/lib/utils";
 import type { NonFiscalSummary } from "@shared/schema";
 import { ArrowLeft, Printer } from "lucide-react";
 
