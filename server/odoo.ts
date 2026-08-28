@@ -1652,17 +1652,44 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
         // Extract the correlativo from invoice name (e.g., "INV/2026/00030221" -> "00030221")
         const correlativo = invoiceNumber.split("/").pop() || invoiceNumber;
 
-        // Find REAL PAYMENTS from account.payment matching the invoice correlativo and date
-        const payments = await executeKw(
-          "account.payment",
-          "search_read",
-          [[
-            ["ref", "=", correlativo],
-            ["date", "=", sessionDate],
-            ["state", "=", "posted"],
-          ]],
-          { fields: ["name", "ref", "journal_id", "amount", "currency_id", "payment_type"] }
-        ) || [];
+        // Find REAL PAYMENTS from account.payment matching invoice or partner
+        let payments: any[] = [];
+        try {
+          payments = await executeKw(
+            "account.payment",
+            "search_read",
+            [[
+              "|",
+              ["reconciled_invoice_ids", "in", [moveId]],
+              "|",
+              ["ref", "ilike", correlativo],
+              "&",
+              ["partner_id", "=", partnerId],
+              ["date", "=", sessionDate],
+              ["state", "=", "posted"],
+            ]],
+            { fields: ["name", "ref", "journal_id", "amount", "currency_id", "payment_type", "reconciled_invoice_ids"] }
+          ) || [];
+        } catch {
+          // Fallback if reconciled_invoice_ids is not searchable
+          try {
+            payments = await executeKw(
+              "account.payment",
+              "search_read",
+              [[
+                "|",
+                ["ref", "ilike", correlativo],
+                "&",
+                ["partner_id", "=", partnerId],
+                ["date", "=", sessionDate],
+                ["state", "=", "posted"],
+              ]],
+              { fields: ["name", "ref", "journal_id", "amount", "currency_id", "payment_type"] }
+            ) || [];
+          } catch {
+            payments = [];
+          }
+        }
 
         const journalsSeen = new Set<string>();
         for (const payment of payments) {
@@ -1746,6 +1773,19 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
         partnerBalance = Math.round((totalCredit - totalDebit) * 100) / 100;
       } catch {
         // Ignore errors fetching partner balance
+      }
+    }
+
+    // Fallback if no payment records were returned but invoice amount_residual indicates a payment
+    if (!isRefund && abonoAmount === 0 && invoice.amount_residual !== undefined && invoice.amount_residual < invoiceTotal) {
+      const residualPaid = Math.max(0, Math.round((creditAmountPOS - invoice.amount_residual) * 100) / 100);
+      if (residualPaid > 0) {
+        abonoAmount = residualPaid;
+        abonoAmountBs = Math.round(residualPaid * rate * 100) / 100;
+        if (abonoJournal === "—") abonoJournal = "Abono Odoo";
+        if (!abonoByJournal[abonoJournal]) {
+          abonoByJournal[abonoJournal] = { usd: abonoAmount, bs: abonoAmountBs };
+        }
       }
     }
 

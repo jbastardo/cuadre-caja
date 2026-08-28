@@ -144,7 +144,11 @@ export default function CuadreReport() {
   const totalRetPOS = cuadre.totalRetencionesPOS || 0;
   const totalRetReal = cuadre.totalRetencionesReal || 0;
   const retPorCobrar = cuadre.retencionesPorCobrar || 0;
-  const totalAbonos = cuadre.totalAbonosReal || 0;
+  const totalAbonosFromSales = creditSales.reduce((s, c) => {
+    if (c.abonoAmountBs && c.abonoAmountBs > 0) return s + c.abonoAmountBs;
+    return s + ((c.abonoAmount || 0) * tasa);
+  }, 0);
+  const totalAbonos = (cuadre.totalAbonosReal && cuadre.totalAbonosReal > 0) ? cuadre.totalAbonosReal : Math.round(totalAbonosFromSales * 100) / 100;
   const totalCxCPendiente = cuadre.totalCxCPendiente || 0;
   const totalSFavorPOS = cuadre.totalSaldoFavorPOS || 0;
   const totalSFavorReal = cuadre.totalSaldoFavorReal || 0;
