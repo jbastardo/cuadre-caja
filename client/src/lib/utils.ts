@@ -73,17 +73,26 @@ export function calculateEstado(cuadre: { ventaNetaZ?: number; diferencia?: numb
   if (cuadre.tipo === "nf") {
     return "cuadrado";
   }
-  // Si no está cerrado por supervisor o su estado es pendiente, debe mostrarse como pendiente
-  if (!cuadre.cerradoPor || cuadre.estado === "pendiente") {
+  const ventaZ = Number(cuadre.ventaNetaZ || 0);
+  const dif = Math.abs(Number(cuadre.diferencia || 0));
+
+  // Si no se ha ingresado el Reporte Z (venta 0), el cuadre fiscal está pendiente
+  if (ventaZ === 0) {
     return "pendiente";
   }
-  if (cuadre.estado === "descuadrado") {
-    return "descuadrado";
-  }
-  if (cuadre.estado === "cuadrado") {
+
+  // Si la diferencia está dentro de la tolerancia de ±5 Bs, está cuadrado
+  if (dif < 5) {
     return "cuadrado";
   }
-  return Math.abs(cuadre.diferencia || 0) < 5 ? "cuadrado" : "descuadrado";
+
+  // Si hay diferencia fuera de tolerancia:
+  // Si fue cerrado formalmente por la supervisora -> descuadrado
+  // Si aún no ha sido cerrado -> pendiente
+  if (cuadre.cerradoPor) {
+    return "descuadrado";
+  }
+  return "pendiente";
 }
 
 export function formatLocalDate(dateStr: string): string {

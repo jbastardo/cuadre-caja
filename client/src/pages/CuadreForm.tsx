@@ -533,11 +533,13 @@ export default function CuadreForm() {
   const diferencia = Math.round((summaryReal - ventaNetaZ) * 100) / 100;
   
   // Estado calculado (mismo que se muestra en el badge)
-  const calculatedEstado = existingCuadre?.cerradoPor
-    ? (Math.abs(diferencia) < CUADRE_TOLERANCE_BS || ventaNetaZ === 0)
+  const calculatedEstado = ventaNetaZ === 0
+    ? "pendiente" as const
+    : Math.abs(diferencia) < CUADRE_TOLERANCE_BS
       ? "cuadrado" as const
-      : "descuadrado" as const
-    : "pendiente" as const;
+      : existingCuadre?.cerradoPor
+        ? "descuadrado" as const
+        : "pendiente" as const;
 
   // Total Justificado and Diferencia for bottom section.
   // Always use summaryReal (computed from live state) — never the saved POS total.

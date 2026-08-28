@@ -169,9 +169,13 @@ export default function CuadreReport() {
   // (que se calculó sin Math.abs para CxC pendiente)
   const diferencia = Math.round((totalReal - ventaNetaZ) * 100) / 100;
   // Estado basado en la diferencia recalculada (misma lógica que el form)
-  const estadoVisible = cuadre.cerradoPor
-    ? (Math.abs(diferencia) < 5 || ventaNetaZ === 0 ? "cuadrado" : "descuadrado")
-    : "pendiente";
+  const estadoVisible = ventaNetaZ === 0
+    ? "pendiente"
+    : Math.abs(diferencia) < 5
+      ? "cuadrado"
+      : cuadre.cerradoPor
+        ? "descuadrado"
+        : "pendiente";
   const esCuadrado = estadoVisible === "cuadrado";
 
   const fechaFormateada = cuadre.fecha
