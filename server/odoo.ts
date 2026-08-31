@@ -274,15 +274,45 @@ async function getRelatedSessionIds(sessionId: number): Promise<{ sessionIds: nu
 
   const matchedSessions = await executeKw("pos.session", "search_read",
     [domain],
-    { fields: ["id", "name", "config_id", "serial_machine", "user_id"] }
+    { fields: ["id", "name", "config_id", "serial_machine", "user_id", "start_at"] }
   );
 
   if (matchedSessions && matchedSessions.length > 0) {
-    const idSet = new Set<number>([sessionId, ...matchedSessions.map((s: any) => s.id)]);
-    const sessionIds = Array.from(idSet);
-    const names = matchedSessions.map((s: any) => `${s.config_id[1]} (${s.name})`).join(", ");
-    console.log(`[getRelatedSessionIds] Found ${sessionIds.length} related sessions for date ${venDate}: ${names}`);
-    return { sessionIds, companionSessionName: names };
+    const companionConfigs = relatedConfigs.filter(c => c !== configId);
+    
+    let validSessionIds = [sessionId];
+    let names = [`${session.config_id[1]} (${session.name})`];
+    let companionNames: string[] = [];
+
+    const mainStart = new Date(session.start_at || session.stop_at || 0).getTime();
+
+    for (const compConfig of companionConfigs) {
+      // Find all sessions for this companion config on the same day
+      const compSessions = matchedSessions.filter((s: any) => s.config_id[0] === compConfig);
+      
+      if (compSessions.length > 0) {
+        // Find the one closest in start time to the main session (handles multiple shifts)
+        let closestSession = compSessions[0];
+        let minDiff = Math.abs(new Date(closestSession.start_at || 0).getTime() - mainStart);
+        
+        for (let i = 1; i < compSessions.length; i++) {
+          const diff = Math.abs(new Date(compSessions[i].start_at || 0).getTime() - mainStart);
+          if (diff < minDiff) {
+            closestSession = compSessions[i];
+            minDiff = diff;
+          }
+        }
+        
+        validSessionIds.push(closestSession.id);
+        const compName = `${closestSession.config_id[1]} (${closestSession.name})`;
+        names.push(compName);
+        companionNames.push(compName);
+      }
+    }
+
+    const companionSessionName = companionNames.join(", ");
+    console.log(`[getRelatedSessionIds] Found ${validSessionIds.length} valid related sessions: ${names.join(", ")}`);
+    return { sessionIds: validSessionIds, companionSessionName };
   }
 
   return { sessionIds: [sessionId], companionSessionName: "" };
@@ -1605,6 +1635,66 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
     }
   }
 
+  // Batch fetch ALL payments and receivables for all unique partnerIds to avoid N+1 queries
+  const uniquePartnerIds = Array.from(new Set(
+    (orders || [])
+      .map((o: any) => {
+        const moveId = o.account_move && o.account_move.length > 0 ? o.account_move[0] : null;
+        const inv = moveId ? invoiceMap[moveId] : null;
+        return inv?.partner_id ? (Array.isArray(inv.partner_id) ? inv.partner_id[0] : inv.partner_id) : (o.partner_id ? o.partner_id[0] : null);
+      })
+      .filter(Boolean)
+  ));
+
+  let allPayments: any[] = [];
+  let allPartnerLines: any[] = [];
+
+  if (uniquePartnerIds.length > 0) {
+    try {
+      allPayments = await executeKw(
+        "account.payment",
+        "search_read",
+        [[
+          ["partner_id", "in", uniquePartnerIds],
+          ["date", "=", sessionDate],
+          ["state", "=", "posted"],
+        ]],
+        { fields: ["name", "ref", "journal_id", "amount", "currency_id", "payment_type", "reconciled_invoice_ids", "partner_id"] }
+      ) || [];
+    } catch {
+      // Ignore errors fetching payments
+    }
+
+    try {
+      allPartnerLines = await executeKw(
+        "account.move.line",
+        "search_read",
+        [[
+          ["partner_id", "in", uniquePartnerIds],
+          ["account_type", "=", "asset_receivable"],
+        ]],
+        { fields: ["partner_id", "credit", "debit", "currency_id"] }
+      ) || [];
+    } catch {
+      // Ignore errors fetching partner balance
+    }
+  }
+
+  // Pre-calculate partner balances to avoid recalculating per order
+  const partnerBalanceMap: Record<number, number> = {};
+  const partnerCreditDebit: Record<number, { credit: number; debit: number }> = {};
+  for (const line of allPartnerLines) {
+    const pid = line.partner_id && line.partner_id[0];
+    if (pid) {
+      if (!partnerCreditDebit[pid]) partnerCreditDebit[pid] = { credit: 0, debit: 0 };
+      partnerCreditDebit[pid].credit += Math.abs(line.credit || 0);
+      partnerCreditDebit[pid].debit += Math.abs(line.debit || 0);
+    }
+  }
+  for (const pid in partnerCreditDebit) {
+    partnerBalanceMap[pid] = Math.round((partnerCreditDebit[pid].credit - partnerCreditDebit[pid].debit) * 100) / 100;
+  }
+
   for (const order of orders || []) {
     if (!order.account_move || order.account_move.length === 0) continue;
 
@@ -1652,44 +1742,8 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
         // Extract the correlativo from invoice name (e.g., "INV/2026/00030221" -> "00030221")
         const correlativo = invoiceNumber.split("/").pop() || invoiceNumber;
 
-        // Find REAL PAYMENTS from account.payment matching invoice or partner
-        let payments: any[] = [];
-        try {
-          payments = await executeKw(
-            "account.payment",
-            "search_read",
-            [[
-              "|",
-              ["reconciled_invoice_ids", "in", [moveId]],
-              "|",
-              ["ref", "ilike", correlativo],
-              "&",
-              ["partner_id", "=", partnerId],
-              ["date", "=", sessionDate],
-              ["state", "=", "posted"],
-            ]],
-            { fields: ["name", "ref", "journal_id", "amount", "currency_id", "payment_type", "reconciled_invoice_ids"] }
-          ) || [];
-        } catch {
-          // Fallback if reconciled_invoice_ids is not searchable
-          try {
-            payments = await executeKw(
-              "account.payment",
-              "search_read",
-              [[
-                "|",
-                ["ref", "ilike", correlativo],
-                "&",
-                ["partner_id", "=", partnerId],
-                ["date", "=", sessionDate],
-                ["state", "=", "posted"],
-              ]],
-              { fields: ["name", "ref", "journal_id", "amount", "currency_id", "payment_type"] }
-            ) || [];
-          } catch {
-            payments = [];
-          }
-        }
+        // Find REAL PAYMENTS from pre-fetched allPayments
+        const payments = allPayments.filter((p: any) => p.partner_id && p.partner_id[0] === partnerId);
 
         const journalsSeen = new Set<string>();
         for (const payment of payments) {
@@ -1742,39 +1796,7 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
     }
 
     // Get partner's account balance (saldo a favor = credit - debit on receivable account)
-    let partnerBalance = 0;
-    
-    if (partnerId) {
-      try {
-        // Get all receivable lines for this partner
-        const partnerLines = await executeKw(
-          "account.move.line",
-          "search_read",
-          [[
-            ["partner_id", "=", partnerId],
-            ["account_type", "=", "asset_receivable"],
-          ]],
-          { fields: ["credit", "debit", "currency_id"] }
-        ) || [];
-
-        // Calculate balance: sum of credits (what partner owes) - sum of debits (payments received)
-        let totalCredit = 0;
-        let totalDebit = 0;
-        for (const line of partnerLines) {
-          const credit = Math.abs(line.credit || 0);
-          const debit = Math.abs(line.debit || 0);
-          totalCredit += credit;
-          totalDebit += debit;
-        }
-        
-        // Balance = totalCredit - totalDebit
-        // Positive = partner owes money
-        // Negative = partner has overpaid (saldo a favor)
-        partnerBalance = Math.round((totalCredit - totalDebit) * 100) / 100;
-      } catch {
-        // Ignore errors fetching partner balance
-      }
-    }
+    let partnerBalance = partnerId ? (partnerBalanceMap[partnerId] || 0) : 0;
 
     // Fallback if no payment records were returned but invoice amount_residual indicates a payment
     if (!isRefund && abonoAmount === 0 && invoice.amount_residual !== undefined && invoice.amount_residual < invoiceTotal) {
