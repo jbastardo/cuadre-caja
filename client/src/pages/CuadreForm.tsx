@@ -18,7 +18,7 @@ import type { CuadreDetail, FiscalSummary, RetentionRow, CreditSaleRow, SaldoFav
 // Tolerance for "cuadrado" status: ±5 Bs (must match server CUADRE_TOLERANCE_BS)
 const CUADRE_TOLERANCE_BS = 5;
 import {
-  ArrowLeft, ChevronLeft, ChevronRight, Save, Printer, Trash2, Plus, RotateCcw, Lock, AlertTriangle, Loader2,
+  ArrowLeft, ChevronLeft, ChevronRight, Save, Printer, Trash2, Plus, RotateCcw, Lock, AlertTriangle, Loader2, RefreshCw,
 } from "lucide-react";
 
 // Payment method IDs to exclude from Section 3 display (they have dedicated sections).
@@ -132,6 +132,7 @@ export default function CuadreForm() {
   const sessionId = isNew ? getSessionIdFromUrl() : 0;
 
   const [isNavigating, setIsNavigating] = useState(false);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [metodos, setMetodos] = useState<MetodoRow[]>([]);
   const [deducciones, setDeducciones] = useState<DeduccionRow[]>([]);
   const [ajustes, setAjustes] = useState<AjusteRow[]>([]);
@@ -689,6 +690,24 @@ export default function CuadreForm() {
     },
   });
 
+  const handleManualRefresh = async () => {
+    setIsManualRefreshing(true);
+    try {
+      if (!isNew) {
+        await refetchCuadre();
+      }
+      await refetchFiscal();
+      if (effectiveSessionId) {
+        queryClient.invalidateQueries({ queryKey: ["session", effectiveSessionId] });
+      }
+      toast({ title: "Datos actualizados desde el servidor" });
+    } catch (err: any) {
+      toast({ title: "Error al actualizar", description: err?.message, variant: "destructive" });
+    } finally {
+      setIsManualRefreshing(false);
+    }
+  };
+
   const updateMetodo = (idx: number, field: keyof MetodoRow, value: any) => {
     setMetodos((prev) => prev.map((m, i) => (i === idx ? { ...m, [field]: value } : m)));
   };
@@ -800,6 +819,17 @@ export default function CuadreForm() {
                 {isNavigating ? <Loader2 className="h-4 w-4 ml-1 animate-spin" /> : <ChevronRight className="h-4 w-4 ml-1" />}
               </Button>
             )}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-white hover:bg-white/20"
+              onClick={handleManualRefresh}
+              disabled={isManualRefreshing || isNavigating || isLoadingCuadre}
+              title="Recargar datos del servidor"
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${isManualRefreshing ? "animate-spin" : ""}`} />
+              Actualizar
+            </Button>
             {!isNew && (
               <Button 
                 variant="ghost" 

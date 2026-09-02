@@ -473,15 +473,49 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
   if (existingRows.length === 0) return null;
   const existing = rowToCuadre(existingRows[0]);
 
+  // Protect existing Z data from being overwritten with empty/zero values by a stale client session
+  const hasExistingZ = Boolean(existing.zNumero || toNum(existing.ventaBrutaZ) > 0 || toNum(existing.baseImponibleZ) > 0);
+  const incomingHasZ = Boolean(data.zNumero || toNum(data.ventaBrutaZ) > 0 || toNum(data.baseImponibleZ) > 0);
+  const preserveZ = hasExistingZ && !incomingHasZ;
+
+  const zNumero = preserveZ ? existing.zNumero : (data.zNumero || "");
+  const ventaBrutaZ = preserveZ ? existing.ventaBrutaZ : toNum(data.ventaBrutaZ);
+  const notasCreditoZ = preserveZ ? existing.notasCreditoZ : toNum(data.notasCreditoZ);
+  const ventaNetaZ = preserveZ ? existing.ventaNetaZ : toNum(data.ventaNetaZ);
+  const baseImponibleZ = preserveZ ? existing.baseImponibleZ : toNum(data.baseImponibleZ);
+  const exentoZ = preserveZ ? existing.exentoZ : toNum(data.exentoZ);
+  const ivaZ = preserveZ ? existing.ivaZ : toNum(data.ivaZ);
+  const igtfZ = preserveZ ? existing.igtfZ : toNum(data.igtfZ);
+  const primeraFacturaZ = preserveZ ? existing.primeraFacturaZ : (data.primeraFacturaZ || "");
+  const ultimaFacturaZ = preserveZ ? existing.ultimaFacturaZ : (data.ultimaFacturaZ || "");
+  const primeraNCZ = preserveZ ? (existing.primeraNCZ || "") : (data.primeraNCZ || "");
+  const ultimaNCZ = preserveZ ? (existing.ultimaNCZ || "") : (data.ultimaNCZ || "");
+
+  const resolvedData: CreateCuadre = {
+    ...data,
+    zNumero,
+    ventaBrutaZ,
+    notasCreditoZ,
+    ventaNetaZ,
+    baseImponibleZ,
+    exentoZ,
+    ivaZ,
+    igtfZ,
+    primeraFacturaZ,
+    ultimaFacturaZ,
+    primeraNCZ,
+    ultimaNCZ,
+  };
+
   // Compute totals (sums items) but let form's estado take precedence
   const { totalMetodosReal, totalDeducciones, totalAjustesManuales, deliveryDifTotal, totalJustificado, diferencia, estado: computedEstado } =
-    await computeCuadreTotals(data);
+    await computeCuadreTotals(resolvedData);
 
   let estado: Cuadre["estado"] = computedEstado;
   if (existing.cerradoPor) {
     estado = existing.estado; // preserve on close
-  } else if (data.estado) {
-    estado = data.estado; // form-calculated estado takes priority
+  } else if (data.estado && !preserveZ) {
+    estado = data.estado; // form-calculated estado takes priority unless Z was preserved
   }
 
   const client = await pool.connect();
@@ -504,22 +538,22 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
         total_metodos_pos=$41, total_justificado_real=$42, total_directo_pos=$43
       WHERE id=$44`,
       [
-        data.fecha, data.caja, data.maquinaFiscal, data.sessionId, data.sessionName, data.cajero,
-        data.zNumero, toNum(data.ventaBrutaZ), toNum(data.notasCreditoZ), toNum(data.ventaNetaZ),
-        toNum(data.baseImponibleZ), toNum(data.exentoZ), toNum(data.ivaZ), toNum(data.igtfZ),
-        data.primeraFacturaZ, data.ultimaFacturaZ, data.primeraNCZ || "", data.ultimaNCZ || "",
-        toNum(data.tasaDia), toNum(data.totalOdooUSD), toNum(data.totalOdooBs), toNum(data.difCambiaria),
+        resolvedData.fecha, resolvedData.caja, resolvedData.maquinaFiscal, resolvedData.sessionId, resolvedData.sessionName, resolvedData.cajero,
+        zNumero, ventaBrutaZ, notasCreditoZ, ventaNetaZ,
+        baseImponibleZ, exentoZ, ivaZ, igtfZ,
+        primeraFacturaZ, ultimaFacturaZ, primeraNCZ, ultimaNCZ,
+        toNum(resolvedData.tasaDia), toNum(resolvedData.totalOdooUSD), toNum(resolvedData.totalOdooBs), toNum(resolvedData.difCambiaria),
         Math.round(totalMetodosReal * 100) / 100,
         Math.round((totalDeducciones + deliveryDifTotal) * 100) / 100,
         Math.round(totalJustificado * 100) / 100,
         diferencia, estado,
-        data.observaciones || "", data.observacionesNF || "", data.tipo || existing.tipo || "fiscal",
-        toNum(data.totalRetencionesPOS), toNum(data.totalRetencionesReal), toNum(data.retencionesPorCobrar),
-        toNum(data.totalCreditoPOS), toNum(data.totalAbonosReal), toNum(data.totalCxCPendiente),
-        toNum(data.totalSaldoFavorPOS), toNum(data.totalSaldoFavorReal),
+        resolvedData.observaciones || "", resolvedData.observacionesNF || "", resolvedData.tipo || existing.tipo || "fiscal",
+        toNum(resolvedData.totalRetencionesPOS), toNum(resolvedData.totalRetencionesReal), toNum(resolvedData.retencionesPorCobrar),
+        toNum(resolvedData.totalCreditoPOS), toNum(resolvedData.totalAbonosReal), toNum(resolvedData.totalCxCPendiente),
+        toNum(resolvedData.totalSaldoFavorPOS), toNum(resolvedData.totalSaldoFavorReal),
         Math.round(totalAjustesManuales * 100) / 100,
-        data.saldoFavorObs || "",
-        toNum(data.totalMetodosPOS), toNum(data.totalJustificadoReal), toNum(data.totalDirectoPOS),
+        resolvedData.saldoFavorObs || "",
+        toNum(resolvedData.totalMetodosPOS), toNum(resolvedData.totalJustificadoReal), toNum(resolvedData.totalDirectoPOS),
         id,
       ]
     );
@@ -585,29 +619,29 @@ export async function updateCuadre(id: string, data: CreateCuadre): Promise<Cuad
 
     await client.query("COMMIT");
     return { ...existing,
-      fecha: data.fecha, caja: data.caja, maquinaFiscal: data.maquinaFiscal,
-      sessionId: data.sessionId, sessionName: data.sessionName, cajero: data.cajero,
-      zNumero: data.zNumero, ventaBrutaZ: data.ventaBrutaZ, notasCreditoZ: data.notasCreditoZ,
-      ventaNetaZ: data.ventaNetaZ, baseImponibleZ: data.baseImponibleZ, exentoZ: data.exentoZ,
-      ivaZ: data.ivaZ, igtfZ: data.igtfZ, primeraFacturaZ: data.primeraFacturaZ,
-      ultimaFacturaZ: data.ultimaFacturaZ, primeraNCZ: data.primeraNCZ || "", ultimaNCZ: data.ultimaNCZ || "",
-      tasaDia: data.tasaDia, totalOdooUSD: data.totalOdooUSD, totalOdooBs: data.totalOdooBs,
-      difCambiaria: data.difCambiaria,
+      fecha: resolvedData.fecha, caja: resolvedData.caja, maquinaFiscal: resolvedData.maquinaFiscal,
+      sessionId: resolvedData.sessionId, sessionName: resolvedData.sessionName, cajero: resolvedData.cajero,
+      zNumero, ventaBrutaZ, notasCreditoZ,
+      ventaNetaZ, baseImponibleZ, exentoZ,
+      ivaZ, igtfZ, primeraFacturaZ,
+      ultimaFacturaZ, primeraNCZ, ultimaNCZ,
+      tasaDia: resolvedData.tasaDia, totalOdooUSD: resolvedData.totalOdooUSD, totalOdooBs: resolvedData.totalOdooBs,
+      difCambiaria: resolvedData.difCambiaria,
       totalMetodosReal: Math.round(totalMetodosReal * 100) / 100,
       totalDeducciones: Math.round((totalDeducciones + deliveryDifTotal) * 100) / 100,
       totalJustificado: Math.round(totalJustificado * 100) / 100,
       diferencia, estado,
-      observaciones: data.observaciones || "", observacionesNF: data.observacionesNF || "",
-      tipo: data.tipo || existing.tipo || "fiscal",
-      totalRetencionesPOS: data.totalRetencionesPOS || 0, totalRetencionesReal: data.totalRetencionesReal || 0,
-      retencionesPorCobrar: data.retencionesPorCobrar || 0,
-      totalCreditoPOS: data.totalCreditoPOS || 0, totalAbonosReal: data.totalAbonosReal || 0,
-      totalCxCPendiente: data.totalCxCPendiente || 0,
-      totalSaldoFavorPOS: data.totalSaldoFavorPOS || 0, totalSaldoFavorReal: data.totalSaldoFavorReal || 0,
+      observaciones: resolvedData.observaciones || "", observacionesNF: resolvedData.observacionesNF || "",
+      tipo: resolvedData.tipo || existing.tipo || "fiscal",
+      totalRetencionesPOS: resolvedData.totalRetencionesPOS || 0, totalRetencionesReal: resolvedData.totalRetencionesReal || 0,
+      retencionesPorCobrar: resolvedData.retencionesPorCobrar || 0,
+      totalCreditoPOS: resolvedData.totalCreditoPOS || 0, totalAbonosReal: resolvedData.totalAbonosReal || 0,
+      totalCxCPendiente: resolvedData.totalCxCPendiente || 0,
+      totalSaldoFavorPOS: resolvedData.totalSaldoFavorPOS || 0, totalSaldoFavorReal: resolvedData.totalSaldoFavorReal || 0,
       totalAjustesManuales: Math.round(totalAjustesManuales * 100) / 100,
-      saldoFavorObs: data.saldoFavorObs || "",
-      totalMetodosPOS: data.totalMetodosPOS || 0, totalJustificadoReal: data.totalJustificadoReal || 0,
-      totalDirectoPOS: data.totalDirectoPOS || 0,
+      saldoFavorObs: resolvedData.saldoFavorObs || "",
+      totalMetodosPOS: resolvedData.totalMetodosPOS || 0, totalJustificadoReal: resolvedData.totalJustificadoReal || 0,
+      totalDirectoPOS: resolvedData.totalDirectoPOS || 0,
       metodos, deducciones, ajustesManuales,
     };
   } catch (err) {

@@ -1,4 +1,5 @@
 import { Switch, Route } from "wouter";
+import { useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
@@ -38,6 +39,29 @@ window.fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<R
 
 function AppRoutes() {
   const { user, isLoading } = useAuth();
+
+  // Clean up residual search parameters (e.g. ?sessionId=4459) from window.location.search
+  // to avoid URL pollution and discrepancies across browser tabs in HashRouter.
+  useEffect(() => {
+    if (window.location.search) {
+      const searchParams = new URLSearchParams(window.location.search);
+      const sessionId = searchParams.get("sessionId");
+      let currentHash = window.location.hash || "#/";
+
+      // If we have a sessionId and are on a route that uses it, ensure it's in the hash
+      if (sessionId && !currentHash.includes("sessionId=")) {
+        const [hashPath, hashQuery] = currentHash.split("?");
+        if (hashPath === "#/cuadre/new" || hashPath === "#/cuadre-nf" || hashPath === "#/cuadre-nf/report") {
+          const hashParams = new URLSearchParams(hashQuery || "");
+          hashParams.set("sessionId", sessionId);
+          currentHash = `${hashPath}?${hashParams.toString()}`;
+        }
+      }
+
+      // Replace URL cleanly without reloading
+      window.history.replaceState(null, "", window.location.pathname + currentHash);
+    }
+  }, []);
 
   if (isLoading) {
     return (
