@@ -141,12 +141,7 @@ function authenticate(): Promise<number> {
   });
 }
 
-function executeKw(
-  model: string,
-  method: string,
-  args: any[],
-  kwargs: Record<string, any> = {}
-): Promise<any> {
+export const executeKw = (model: string, method: string, args: any[] = [], kwargs: any = {}): Promise<any> => {
   return authenticate().then((uid) => {
     return new Promise((resolve, reject) => {
       const client = getObjectClient();
@@ -278,36 +273,28 @@ async function getRelatedSessionIds(sessionId: number): Promise<{ sessionIds: nu
   );
 
   if (matchedSessions && matchedSessions.length > 0) {
-    const companionConfigs = relatedConfigs.filter(c => c !== configId);
-    
-    let validSessionIds = [sessionId];
-    let names = [`${session.config_id[1]} (${session.name})`];
+    let validSessionIds: number[] = [];
+    let names: string[] = [];
     let companionNames: string[] = [];
 
-    const mainStart = new Date(session.start_at || session.stop_at || 0).getTime();
-
-    for (const compConfig of companionConfigs) {
-      // Find all sessions for this companion config on the same day
-      const compSessions = matchedSessions.filter((s: any) => s.config_id[0] === compConfig);
-      
-      if (compSessions.length > 0) {
-        // Find the one closest in start time to the main session (handles multiple shifts)
-        let closestSession = compSessions[0];
-        let minDiff = Math.abs(new Date(closestSession.start_at || 0).getTime() - mainStart);
+    // Aggregate ALL sessions for the related configs that occurred on this day
+    for (const s of matchedSessions) {
+      if (!validSessionIds.includes(s.id)) {
+        validSessionIds.push(s.id);
+        const name = `${s.config_id[1]} (${s.name})`;
+        names.push(name);
         
-        for (let i = 1; i < compSessions.length; i++) {
-          const diff = Math.abs(new Date(compSessions[i].start_at || 0).getTime() - mainStart);
-          if (diff < minDiff) {
-            closestSession = compSessions[i];
-            minDiff = diff;
-          }
+        // Treat as companion if it's a different config than the main session's config
+        if (s.config_id[0] !== configId) {
+          companionNames.push(name);
         }
-        
-        validSessionIds.push(closestSession.id);
-        const compName = `${closestSession.config_id[1]} (${closestSession.name})`;
-        names.push(compName);
-        companionNames.push(compName);
       }
+    }
+
+    // Ensure the original sessionId is at least in the array (should be found by search_read, but just in case)
+    if (!validSessionIds.includes(sessionId)) {
+      validSessionIds.unshift(sessionId);
+      names.unshift(`${session.config_id[1]} (${session.name})`);
     }
 
     const companionSessionName = companionNames.join(", ");
