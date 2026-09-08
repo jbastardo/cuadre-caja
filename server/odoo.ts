@@ -1751,6 +1751,17 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
           const paymentType = payment.payment_type || "";
           if (paymentType !== "inbound") continue;
           
+          let journalName = "";
+          if (payment.journal_id) {
+            journalName = Array.isArray(payment.journal_id) ? payment.journal_id[1] : "Journal";
+          }
+
+          // Skip retentions to prevent double-counting in totalAbonosReal vs totalRetencionesReal
+          // creditAmountPOS already excludes the retention amount, so we shouldn't add it as an abono.
+          if (journalName.toLowerCase().includes("retenci")) {
+            continue;
+          }
+          
           const amount = Math.round((payment.amount || 0) * 100) / 100;
 
           // Check currency - if VES (id 3), amount is already in Bs
@@ -1767,9 +1778,7 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
             abonoAmountBs += amountBs;
           }
 
-          if (payment.journal_id) {
-            const journalName = Array.isArray(payment.journal_id) ? payment.journal_id[1] : "Journal";
-            
+          if (journalName) {
             if (!journalsSeen.has(journalName)) {
               journalsSeen.add(journalName);
               if (abonoJournal === "—") {
