@@ -261,9 +261,8 @@ async function getRelatedSessionIds(sessionId: number): Promise<{ sessionIds: nu
 
   const domain: any[] = [
     ["config_id", "in", relatedConfigs],
-    "|",
-    "&", ["start_at", ">=", startUtc], ["start_at", "<=", endUtc],
-    "&", ["stop_at", ">=", startUtc], ["stop_at", "<=", endUtc],
+    ["start_at", ">=", startUtc], 
+    ["start_at", "<=", endUtc],
     ["state", "in", ["opened", "closing_control", "closed"]],
   ];
 
