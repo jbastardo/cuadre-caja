@@ -1747,6 +1747,32 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
           if (journalName.toLowerCase().includes("retenci")) {
             continue;
           }
+
+          // FIX: Skip POS payments that are already counted in direct methods.
+          // POS payments in Odoo typically have "tpv" or the POS order name ("caja-") in their reference.
+          const ref = (payment.ref || "").toLowerCase();
+          const name = (payment.name || "").toLowerCase();
+          
+          let isPosPayment = false;
+          
+          // Check if payment reference matches any POS order in the current session
+          for (const ord of orders || []) {
+            const posRef = (ord.pos_reference || "").toLowerCase();
+            const ordName = (ord.name || "").toLowerCase();
+            if ((posRef && ref.includes(posRef)) || (ordName && ref.includes(ordName))) {
+              isPosPayment = true;
+              break;
+            }
+          }
+
+          // Fallback to general POS keywords
+          if (ref.includes("tpv") || ref.includes("caja-") || name.includes("tpv") || name.includes("caja-")) {
+            isPosPayment = true;
+          }
+
+          if (isPosPayment) {
+            continue;
+          }
           
           const amount = Math.round((payment.amount || 0) * 100) / 100;
 
