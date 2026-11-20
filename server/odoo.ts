@@ -652,7 +652,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   // on the shared journal (fixes FAC4 shared between CASHEA 1 and CASHEA 2).
   const allOrders = await executeKw("pos.order", "search_read",
     [[["session_id", "in", sessionIds]]],
-    { fields: ["id", "account_move", "session_id"] }
+    { fields: ["id", "name", "account_move", "session_id", "amount_total", "igtf_amount", "mf_invoice_number", "mf_reportz", "fiscal_machine"] }
   );
   console.log(`[getFiscalSummary] Total orders found: ${allOrders?.length || 0}`);
 
@@ -660,33 +660,47 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   const moveIds: number[] = [];
   const orderMoveMap: Record<number, number> = {};
   const orderSessionMap: Record<number, number> = {};
+  const orderByMoveId: Record<number, any> = {};
   for (const o of allOrders || []) {
     if (o.account_move) {
       const moveId = Array.isArray(o.account_move) ? o.account_move[0] : o.account_move;
       orderMoveMap[o.id] = moveId;
       orderSessionMap[o.id] = Array.isArray(o.session_id) ? o.session_id[0] : o.session_id;
+      orderByMoveId[moveId] = o;
       moveIds.push(moveId);
     }
   }
 
   // Build session→serial_machine map for fiscal machine validation
   const sessionSerialMap: Record<number, string> = {};
+  const sessionReportZMap: Record<number, string> = {};
   // Add main session serial (current session)
   sessionSerialMap[mainSessionId] = currentSerialMachine;
+  if (typeof session.report_z === "string" && session.report_z.trim()) {
+    sessionReportZMap[mainSessionId] = session.report_z.trim();
+  }
   // Add companion session serial if available (already fetched earlier)
   if (companionSessionId) {
     const cs = await getSessionById(companionSessionId);
-    if (cs) sessionSerialMap[companionSessionId] = cs.serial_machine || "";
+    if (cs) {
+      sessionSerialMap[companionSessionId] = cs.serial_machine || "";
+      if (typeof cs.report_z === "string" && cs.report_z.trim()) {
+        sessionReportZMap[companionSessionId] = cs.report_z.trim();
+      }
+    }
   }
   // Add all order-linked sessions
   const allSessionIds = [...new Set(Object.values(orderSessionMap))];
   if (allSessionIds.length > 0) {
     const sessionsData = await executeKw("pos.session", "read",
       [allSessionIds],
-      { fields: ["id", "serial_machine"] }
+      { fields: ["id", "serial_machine", "report_z"] }
     );
     for (const s of sessionsData || []) {
       sessionSerialMap[s.id] = s.serial_machine || "";
+      if (typeof s.report_z === "string" && s.report_z.trim()) {
+        sessionReportZMap[s.id] = s.report_z.trim();
+      }
     }
   }
 
@@ -700,7 +714,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
           "id", "journal_id", "state", "move_type",
           "amount_total", "amount_untaxed", "amount_tax",
           "foreign_total_billed", "foreign_taxable_income", "foreign_rate",
-          "name",
+          "name", "mf_invoice_number", "mf_reportz", "mf_serial",
         ],
       }
     );
@@ -711,10 +725,15 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
       if (m.state !== "posted") return false;
       if (m.move_type !== "out_invoice" && m.move_type !== "out_refund") return false;
 
-      // CRITICAL: Exclude documents whose originating session has a different fiscal machine.
+      // CRITICAL: Exclude documents whose originating fiscal machine differs from current session.
       // This prevents cross-contamination when a document is registered in the wrong journal
       // (e.g., a Caja 1 NC accidentally created in Caja 2's journal).
       if (currentSerialMachine) {
+        const moveSerial = typeof m.mf_serial === "string" ? m.mf_serial.trim() : "";
+        if (moveSerial && moveSerial !== currentSerialMachine) {
+          console.log(`[getFiscalSummary] EXCLUDED doc ${m.name} — mf_serial mismatch: ${moveSerial} != ${currentSerialMachine}`);
+          return false;
+        }
         const originOrderId = Object.entries(orderMoveMap).find(([, moveId]) => moveId === m.id)?.[0];
         if (originOrderId) {
           const originSessionId = orderSessionMap[Number(originOrderId)];
@@ -785,63 +804,162 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   ncNames.sort();
 
   // --- FALLBACK: Always search NCs directly by journal+date ---
-    // Some NCs are created directly in accounting (not through POS refunds)
-    // and won't appear in the order→move mapping. We must find them regardless
-    // of how many NCs were found through POS orders.
-    const searchJournals = [journalInfo.journalId];
-    if (companionJournalId) searchJournals.push(companionJournalId);
-    
-    for (const journalId of searchJournals) {
-      const directNCs = await executeKw("account.move", "search_read", [[
-        ["journal_id", "=", journalId],
-        ["move_type", "=", "out_refund"],
-        ["state", "=", "posted"],
-        ["date", "=", date],
-      ]], {
-        fields: ["id", "name", "amount_total", "amount_tax", "foreign_total_billed", "journal_id", "ref"],
-      });
-      // Exclude any NCs already counted from POS orders
-      const existingMoveIds = new Set(Object.values(orderMoveMap));
-      for (const nc of directNCs || []) {
-        if (existingMoveIds.has(nc.id)) continue;
+  // Some NCs are created directly in accounting (not through POS refunds)
+  // and won't appear in the order→move mapping. We must find them regardless
+  // of how many NCs were found through POS orders.
+  const searchJournals = [journalInfo.journalId];
+  if (companionJournalId && !searchJournals.includes(companionJournalId)) searchJournals.push(companionJournalId);
+  const includedDirectNCs: any[] = [];
+  const existingMoveIds = new Set(Object.values(orderMoveMap));
 
-        // Try to determine the originating session through ref or payment references
-        // If we can't determine it, include the NC (safe default) but log a warning
-        let ncSerial = "";
-        const ref = nc.ref || "";
-        // Try to find a POS order reference in the NC's ref field
-        if (ref) {
-          const matchingOrder = (allOrders || []).find((o: any) => ref.includes(o.name || ""));
-          if (matchingOrder) {
-            const orderSessionId = Array.isArray(matchingOrder.session_id) ? matchingOrder.session_id[0] : matchingOrder.session_id;
-            ncSerial = sessionSerialMap[orderSessionId] || "";
+  for (const journalId of searchJournals) {
+    const directNCs = await executeKw("account.move", "search_read", [[
+      ["journal_id", "=", journalId],
+      ["move_type", "=", "out_refund"],
+      ["state", "=", "posted"],
+      ["date", "=", date],
+    ]], {
+      fields: [
+        "id", "name", "amount_total", "amount_tax", "foreign_total_billed",
+        "foreign_taxable_income", "journal_id", "ref",
+        "mf_serial", "mf_invoice_number", "mf_reportz", "reversed_entry_id",
+      ],
+    });
+    // Exclude any NCs already counted from POS orders
+    for (const nc of directNCs || []) {
+      if (existingMoveIds.has(nc.id)) continue;
+
+      // Determine originating fiscal machine serial:
+      // 1) mf_serial directly on the credit note
+      // 2) POS order linked to the credit note's reversed invoice
+      // 3) POS order reference match in nc.ref
+      let ncSerial = typeof nc.mf_serial === "string" ? nc.mf_serial.trim() : "";
+
+      if (!ncSerial && nc.reversed_entry_id) {
+        const reversedMoveId = Array.isArray(nc.reversed_entry_id) ? nc.reversed_entry_id[0] : nc.reversed_entry_id;
+        if (reversedMoveId) {
+          const origOrder = orderByMoveId[reversedMoveId];
+          if (origOrder) {
+            const origSid = Array.isArray(origOrder.session_id) ? origOrder.session_id[0] : origOrder.session_id;
+            ncSerial = sessionSerialMap[origSid] || (typeof origOrder.fiscal_machine === "string" ? origOrder.fiscal_machine.trim() : "");
+          } else {
+            const linkedOrders = await executeKw("pos.order", "search_read",
+              [[["account_move", "=", reversedMoveId]]],
+              { fields: ["id", "session_id", "fiscal_machine"], limit: 1 }
+            );
+            if (linkedOrders && linkedOrders.length > 0) {
+              const lo = linkedOrders[0];
+              ncSerial = typeof lo.fiscal_machine === "string" ? lo.fiscal_machine.trim() : "";
+              if (!ncSerial && lo.session_id) {
+                const lSid = Array.isArray(lo.session_id) ? lo.session_id[0] : lo.session_id;
+                const lSession = await getSessionById(lSid);
+                ncSerial = lSession?.serial_machine || "";
+              }
+            }
           }
         }
+      }
 
-        if (ncSerial && ncSerial !== currentSerialMachine) {
-          console.log(`[getFiscalSummary] EXCLUDED direct NC ${nc.name} — serial mismatch: ${ncSerial} != ${currentSerialMachine}`);
-          continue;
-        }
-
-        const isFromCompanion = companionJournalId && (Array.isArray(nc.journal_id) ? nc.journal_id[0] : nc.journal_id) === companionJournalId;
-        ncCount++;
-        totalUSD -= nc.amount_total || 0;
-        totalTaxUSD -= nc.amount_tax || 0;
-        totalVES -= nc.foreign_total_billed || 0;
-        if (nc.name) {
-          ncNames.push(nc.name);
-          if (isFromCompanion) { companionNcNames.push(nc.name); companionNcCount++; }
-          else { mainNcNames.push(nc.name); mainNcCount++; }
+      if (!ncSerial && nc.ref) {
+        const ref = String(nc.ref);
+        const matchingOrder = (allOrders || []).find((o: any) => o.name && ref.includes(o.name));
+        if (matchingOrder) {
+          const orderSessionId = Array.isArray(matchingOrder.session_id) ? matchingOrder.session_id[0] : matchingOrder.session_id;
+          ncSerial = sessionSerialMap[orderSessionId] || "";
         }
       }
+
+      if (currentSerialMachine && ncSerial && ncSerial !== currentSerialMachine) {
+        console.log(`[getFiscalSummary] EXCLUDED direct NC ${nc.name} — serial mismatch: ${ncSerial} != ${currentSerialMachine}`);
+        continue;
+      }
+
+      existingMoveIds.add(nc.id);
+      includedDirectNCs.push(nc);
+
+      const isFromCompanion = companionJournalId && (Array.isArray(nc.journal_id) ? nc.journal_id[0] : nc.journal_id) === companionJournalId;
+      ncCount++;
+      totalUSD -= nc.amount_total || 0;
+      totalTaxUSD -= nc.amount_tax || 0;
+      totalVES -= nc.foreign_total_billed || 0;
+      if (nc.name) {
+        ncNames.push(nc.name);
+        if (isFromCompanion) { companionNcNames.push(nc.name); companionNcCount++; }
+        else { mainNcNames.push(nc.name); mainNcCount++; }
+      }
     }
-      // Re-sort NC names after fallback
-    ncNames.sort();
-    mainNcNames.sort();
+  }
+  // Re-sort NC names after fallback
+  ncNames.sort();
+  mainNcNames.sort();
   mainInvoiceNames.sort();
   mainNcNames.sort();
   companionInvoiceNames.sort();
   companionNcNames.sort();
+
+  // Compute suggested Z Report fields from Odoo fiscal printer metadata (binaural_pos_mf)
+  const sortFiscalSeq = (a: string, b: string) => {
+    const na = parseInt(a.replace(/\D/g, ""), 10);
+    const nb = parseInt(b.replace(/\D/g, ""), 10);
+    if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+    return a.localeCompare(b);
+  };
+
+  let invTotalBs = 0;
+  let baseImponibleBs = 0;
+  let igtfUsd = 0;
+  let ncTotalBs = 0;
+  const mfInvNumbers: string[] = [];
+  const mfNcNumbers: string[] = [];
+  const zNumberCandidates: string[] = [];
+
+  for (const inv of invoices) {
+    const linkedOrder = orderByMoveId[inv.id];
+    const rzMove = typeof inv.mf_reportz === "string" ? inv.mf_reportz.trim() : "";
+    const rzOrder = typeof linkedOrder?.mf_reportz === "string" ? linkedOrder.mf_reportz.trim() : "";
+    for (const rz of [rzMove, rzOrder]) {
+      if (rz && rz.toUpperCase() !== "REC") zNumberCandidates.push(rz);
+    }
+
+    if (inv.move_type === "out_refund") {
+      ncTotalBs += inv.foreign_total_billed || 0;
+      const mfNc = (typeof inv.mf_invoice_number === "string" && inv.mf_invoice_number.trim())
+        || (typeof linkedOrder?.mf_invoice_number === "string" && linkedOrder.mf_invoice_number.trim())
+        || "";
+      if (mfNc) mfNcNumbers.push(mfNc);
+    } else {
+      invTotalBs += inv.foreign_total_billed || 0;
+      baseImponibleBs += inv.foreign_taxable_income || 0;
+      igtfUsd += linkedOrder?.igtf_amount || 0;
+      const mfInv = (typeof inv.mf_invoice_number === "string" && inv.mf_invoice_number.trim())
+        || (typeof linkedOrder?.mf_invoice_number === "string" && linkedOrder.mf_invoice_number.trim())
+        || "";
+      if (mfInv) mfInvNumbers.push(mfInv);
+    }
+  }
+
+  for (const nc of includedDirectNCs) {
+    ncTotalBs += nc.foreign_total_billed || 0;
+    const mfNc = typeof nc.mf_invoice_number === "string" ? nc.mf_invoice_number.trim() : "";
+    if (mfNc) mfNcNumbers.push(mfNc);
+    const rzNc = typeof nc.mf_reportz === "string" ? nc.mf_reportz.trim() : "";
+    if (rzNc && rzNc.toUpperCase() !== "REC") zNumberCandidates.push(rzNc);
+  }
+
+  mfInvNumbers.sort(sortFiscalSeq);
+  mfNcNumbers.sort(sortFiscalSeq);
+
+  const zReportNumber = sessionReportZMap[mainSessionId]
+    || Object.values(sessionReportZMap).find(Boolean)
+    || zNumberCandidates.find(Boolean)
+    || "";
+  const zBaseImponibleBs = Math.round(baseImponibleBs * 100) / 100;
+  const zIvaBs = Math.round(zBaseImponibleBs * 0.16 * 100) / 100;
+  const exentoDiff = Math.round((invTotalBs - zBaseImponibleBs - zIvaBs) * 100) / 100;
+  const zExentoBs = exentoDiff > 1 ? exentoDiff : 0;
+  const zIgtfBs = Math.round(igtfUsd * rate * 100) / 100;
+  const zVentaBrutaBs = Math.round((invTotalBs + zIgtfBs) * 100) / 100;
+  const zNotasCreditoBs = Math.round(ncTotalBs * 100) / 100;
 
   // Get POS payments grouped by method from ALL related sessions, converted to Bs
   // WARNING: All payment methods from fiscal journal orders must be included.
@@ -977,6 +1095,17 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
     companionFirstNC: companionNcNames[0] || undefined,
     companionLastNC: companionNcNames[companionNcNames.length - 1] || undefined,
     companionNcCount: companionNcCount || undefined,
+    zReportNumber,
+    zVentaBrutaBs,
+    zNotasCreditoBs,
+    zBaseImponibleBs,
+    zExentoBs,
+    zIvaBs,
+    zIgtfBs,
+    zPrimeraFactura: mfInvNumbers[0] || "",
+    zUltimaFactura: mfInvNumbers[mfInvNumbers.length - 1] || "",
+    zPrimeraNC: mfNcNumbers[0] || "",
+    zUltimaNC: mfNcNumbers[mfNcNumbers.length - 1] || "",
   };
 }
 

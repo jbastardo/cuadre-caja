@@ -1,5 +1,76 @@
 # AGENTS.md - Project Context for Claude Code
 
+## Last Session - 2026-11-20
+
+### Task: Auto-lectura de Reportes Z desde Odoo, corrección de ruteo hash y filtro de NCs por serial fiscal (17/11)
+
+**Problem**: Al intentar realizar o revisar los cuadres del `17/11/2026`, el sistema presentaba tres fallos:
+1. La Sección 1 (Datos del Reporte Z) no se pre-cargaba desde Odoo (`pos.session.report_z`, `account.move.mf_invoice_number`, `foreign_taxable_income`, `foreign_total_billed`, `pos.order.igtf_amount`), dejando el cuadre de Caja 2 (`CQ-1795012726240`) sin `zNumero` y al cuadre de Caja 1 (`sessionId: 4690`, Z `1578`) sin crear.
+2. En `client/src/main.tsx`, `useHashLocation` devolvía la ruta con el query string incluido (ej. `"/cuadre/new?sessionId=4690"`), haciendo que `useRoute("/cuadre/new")` devolviera `false` y `<Route path="/cuadre/:id">` intentara cargar el cuadre `"new?sessionId=4690"` (404), impidiendo leer los datos de Odoo en cuadres nuevos.
+3. En `server/odoo.ts` (`getFiscalSummary`), el fallback `directNCs` sobre el diario compartido `FAC4` (`journal_id = 131`) no inspeccionaba `mf_serial` ni `reversed_entry_id`, contaminando la sesión `4690` (Caja 1, `Z1F0019552`) con la NC `RFAC4/2026/0095` (`25.866,78 Bs`) perteneciente a Caja 2 (`Z7C7044514`).
+
+**Solution implemented**:
+1. `shared/schema.ts`: Agregados campos opcionales sugeridos del Reporte Z (`zReportNumber`, `zVentaBrutaBs`, `zNotasCreditoBs`, `zBaseImponibleBs`, `zExentoBs`, `zIvaBs`, `zIgtfBs`, `zPrimeraFactura`, `zUltimaFactura`, `zPrimeraNC`, `zUltimaNC`) en `FiscalSummary` y `createCuadreSchema.fiscalSummary`.
+2. `server/odoo.ts`:
+   - `getFiscalSummary` ahora lee `mf_serial`, `mf_invoice_number`, `mf_reportz`, `igtf_amount`, `foreign_taxable_income` y `report_z` de `pos.session` / `pos.order` / `account.move`.
+   - Agregado filtrado por `mf_serial` (y `reversed_entry_id` en `directNCs`) para excluir documentos de otra máquina fiscal (evitando que `RFAC4/2026/0095` entre en Caja 1).
+   - Calculados y devueltos los campos sugeridos del Reporte Z en `getFiscalSummary`.
+3. `client/src/main.tsx` y `client/src/pages/CuadreForm.tsx`:
+   - Implementado `useCleanHashLocation` que separa los query params del pathname para que `/cuadre/new` y `/cuadre-nf` siempre hagan match en `wouter`.
+   - Agregada auto-carga de `zData` desde `fiscalSummary` para cuadres nuevos o cuadres existentes sin `zNumero`/montos Z, más el botón manual `"Cargar Z desde Odoo"` en la Sección 1.
+4. Regularizados en producción los cuadres del `17/11/2026`:
+   - Actualizado `CQ-1795012726240` (Caja 2, `sessionId: 4693`) con `zNumero: "189"`.
+   - Creado `CQ-1795201776608` (Caja 1, `sessionId: 4690`) con los datos completos de su Reporte Z `#1578`.
+
+**Files modified**:
+- `shared/schema.ts`
+- `server/odoo.ts`
+- `client/src/main.tsx`
+- `client/src/pages/CuadreForm.tsx`
+- `AGENTS.md`
+
+**Commands run**:
+- `npm run build` — OK
+- Verificación `getFiscalSummary(4690)`, `getFiscalSummary(4693)`, `getFiscalSummary(4688)` contra Odoo — OK
+
+---
+
+## Last Session - 2026-09-22
+
+### Task: Corregir duplicación de pagos POS en el cálculo de Abonos
+
+**Problem**: El cuadre CQ-1790028420029 mostraba un sobrante falso de casi 400.000 Bs (el cajero forzó el cuadre con un ajuste manual de -403.150,20 Bs dejando una diferencia de -4.002,80 Bs). Al analizar los datos, descubrimos que para la factura 00035601 (Tu Tiendita Express 2023), el cliente pagó 516,91 USD por punto de venta al momento de facturar, dejando solo una deuda a crédito de 47,08 USD. 
+El backend en `server/odoo.ts` usaba `search_read` en `account.payment` para todos los pagos del partner de ese día y sumaba esos 516,91 USD como un "Abono", a pesar de que el dinero ya estaba contabilizado en `totalMetodosReal` del cajero (pagos de POS). Esto duplicaba el monto pagado inflando el `totalJustificado` artificialmente por el valor exacto pagado en el punto de venta.
+
+**Solution implemented**:
+1. Modificado el loop de procesamiento de pagos (`account.payment`) en `server/odoo.ts` (función `getCreditSales`) para descartar pagos cuyo `ref` o `name` incluyan palabras clave de órdenes POS ("tpv", "caja-") o que coincidan con la referencia de una orden POS de esa misma sesión (`pos_reference` o `name`).
+2. De esta forma los pagos originados desde la sesión POS son omitidos en la suma de "Abonos" evitando la duplicación de ingresos.
+
+**Files modified**:
+- server/odoo.ts (exclusión de pagos POS en abonos)
+
+**Commands run**:
+- git push origin main - OK (commit dbdfddc)
+
+---## Last Session - 2026-09-08
+
+### Task: Corregir duplicación de retenciones en cálculo de abonos
+
+**Problem**: El cuadre CQ-1788286479986 mostraba un sobrante de 38.257,11 Bs. Al analizar los datos de Odoo vs Z, se descubrió que el `totalAbonosReal` reportaba pagos por 490.366,30 Bs para ventas a crédito cuyo monto en POS fue de 452.178,23 Bs.
+Esto ocurría porque al calcular el `abonoAmountBs` de una factura pagada en Odoo, la función agregaba TODOS los pagos entrantes a la factura sin filtrar el diario (journal_id). Cuando un cliente pagaba con transferencia y retenía IVA, la retención se registraba como un pago con el diario "Retenciones de IVA Clientes". Este pago se sumaba a `totalAbonosReal` y, dado que la retención también se declara en el RIVAC (`totalRetencionesReal`), el monto de la retención se sumaba DOS VECES al `totalJustificado`, inflando artificialmente el cuadre y provocando un sobrante falso. Además, el `creditAmountPOS` (la deuda original registrada por el POS) ya excluía el monto de retención, por lo que este no debía sumarse al abono de todas formas.
+
+**Solution implemented**:
+1. Modificado el loop de procesamiento de pagos en `server/odoo.ts` para extraer el nombre del diario y omitir el pago si el nombre contiene la palabra "retenci" (insensible a mayúsculas/minúsculas).
+2. Esto asegura que solo el dinero real pagado por transferencia/efectivo se considere como Abono, eliminando el conteo doble en `totalJustificado` y cuadrando correctamente.
+
+**Files modified**:
+- server/odoo.ts (líneas 1751-1761: exclusión de retenciones en abonos)
+
+**Commands run**:
+- git push origin main - OK (commit 4b96d9e)
+
+---
+
 ## Last Session - 2026-07-23
 
 ### Task: Depuración de cuadre CQ-1784754974280 y corrección de bugs

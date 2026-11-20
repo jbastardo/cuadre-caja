@@ -112,6 +112,18 @@ export interface FiscalSummary {
   mainJournalCode?: string;
   mainCajaName?: string;
   companionCajaName?: string;
+  // Suggested Z report data from Odoo fiscal machine fields (pos.session / account.move / pos.order)
+  zReportNumber?: string;
+  zVentaBrutaBs?: number;
+  zNotasCreditoBs?: number;
+  zBaseImponibleBs?: number;
+  zExentoBs?: number;
+  zIvaBs?: number;
+  zIgtfBs?: number;
+  zPrimeraFactura?: string;
+  zUltimaFactura?: string;
+  zPrimeraNC?: string;
+  zUltimaNC?: string;
 }
 
 // Retention row (from RIVAC journal cross-reference)
@@ -417,6 +429,17 @@ export const createCuadreSchema = z.object({
     mainJournalCode: z.string().optional(),
     mainCajaName: z.string().optional(),
     companionCajaName: z.string().optional(),
+    zReportNumber: z.string().optional(),
+    zVentaBrutaBs: z.number().optional(),
+    zNotasCreditoBs: z.number().optional(),
+    zBaseImponibleBs: z.number().optional(),
+    zExentoBs: z.number().optional(),
+    zIvaBs: z.number().optional(),
+    zIgtfBs: z.number().optional(),
+    zPrimeraFactura: z.string().optional(),
+    zUltimaFactura: z.string().optional(),
+    zPrimeraNC: z.string().optional(),
+    zUltimaNC: z.string().optional(),
     payments: z.array(z.object({
       methodId: z.number(),
       methodName: z.string(),

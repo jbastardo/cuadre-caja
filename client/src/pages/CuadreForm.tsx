@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
@@ -108,8 +108,8 @@ export default function CuadreForm() {
   const [matchNew] = useRoute("/cuadre/new");
   const [matchEdit, paramsEdit] = useRoute("/cuadre/:id");
 
-  const isNew = matchNew;
-  const cuadreId = paramsEdit?.id;
+  const isNew = Boolean(matchNew || (paramsEdit?.id && paramsEdit.id.startsWith("new")));
+  const cuadreId = isNew ? undefined : paramsEdit?.id;
 
   // Read sessionId from hash query params OR from window.location.search
   // wouter hash routing: navigate("/cuadre/new?sessionId=3762") → hash = "#/cuadre/new?sessionId=3762"
@@ -131,6 +131,7 @@ export default function CuadreForm() {
 
   const sessionId = isNew ? getSessionIdFromUrl() : 0;
 
+  const zAutoFilledRef = useRef<string>("");
   const [isNavigating, setIsNavigating] = useState(false);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [metodos, setMetodos] = useState<MetodoRow[]>([]);
@@ -423,6 +424,72 @@ export default function CuadreForm() {
     }
     // Intentionally no else-branch: existing cuadres keep their saved value.
   }, [isNew, totalRetencionesRegistradas_Bs]);
+
+  const getOdooZReport = (summary: FiscalSummary, sess?: any): ZReportData => {
+    const sessZ = typeof sess?.report_z === "string" ? sess.report_z.trim() : "";
+    return {
+      zNumero: summary.zReportNumber || sessZ || "",
+      ventaBrutaZ: summary.zVentaBrutaBs || 0,
+      notasCreditoZ: summary.zNotasCreditoBs || 0,
+      baseImponibleZ: summary.zBaseImponibleBs || 0,
+      exentoZ: summary.zExentoBs || 0,
+      ivaZ: summary.zIvaBs || 0,
+      igtfZ: summary.zIgtfBs || 0,
+      primeraFacturaZ: summary.zPrimeraFactura || "",
+      ultimaFacturaZ: summary.zUltimaFactura || "",
+      primeraNCZ: summary.zPrimeraNC || "",
+      ultimaNCZ: summary.zUltimaNC || "",
+    };
+  };
+
+  // Auto-populate Reporte Z fields from Odoo for new cuadres or existing cuadres missing Z data
+  useEffect(() => {
+    if (!fiscalSummary || !effectiveSessionId) return;
+    const odooZ = getOdooZReport(fiscalSummary, session);
+
+    if (isNew) {
+      const key = `new-${effectiveSessionId}`;
+      if (zAutoFilledRef.current === key) return;
+      zAutoFilledRef.current = key;
+      setZData((prev) => ({
+        zNumero: prev.zNumero || odooZ.zNumero,
+        ventaBrutaZ: prev.ventaBrutaZ || odooZ.ventaBrutaZ,
+        notasCreditoZ: prev.notasCreditoZ || odooZ.notasCreditoZ,
+        baseImponibleZ: prev.baseImponibleZ || odooZ.baseImponibleZ,
+        exentoZ: prev.exentoZ || odooZ.exentoZ,
+        ivaZ: prev.ivaZ || odooZ.ivaZ,
+        igtfZ: prev.igtfZ || odooZ.igtfZ,
+        primeraFacturaZ: prev.primeraFacturaZ || odooZ.primeraFacturaZ,
+        ultimaFacturaZ: prev.ultimaFacturaZ || odooZ.ultimaFacturaZ,
+        primeraNCZ: prev.primeraNCZ || odooZ.primeraNCZ,
+        ultimaNCZ: prev.ultimaNCZ || odooZ.ultimaNCZ,
+      }));
+      return;
+    }
+
+    if (!existingCuadre) return;
+    const key = `edit-${existingCuadre.id}`;
+    if (zAutoFilledRef.current === key) return;
+    zAutoFilledRef.current = key;
+
+    const missingZNumber = !existingCuadre.zNumero && !!odooZ.zNumero;
+    const missingZAmounts = existingCuadre.ventaBrutaZ === 0 && existingCuadre.baseImponibleZ === 0 && odooZ.ventaBrutaZ > 0;
+    if (missingZNumber || missingZAmounts) {
+      setZData((prev) => ({
+        zNumero: prev.zNumero || odooZ.zNumero,
+        ventaBrutaZ: missingZAmounts ? (prev.ventaBrutaZ || odooZ.ventaBrutaZ) : prev.ventaBrutaZ,
+        notasCreditoZ: missingZAmounts ? (prev.notasCreditoZ || odooZ.notasCreditoZ) : prev.notasCreditoZ,
+        baseImponibleZ: missingZAmounts ? (prev.baseImponibleZ || odooZ.baseImponibleZ) : prev.baseImponibleZ,
+        exentoZ: missingZAmounts ? (prev.exentoZ || odooZ.exentoZ) : prev.exentoZ,
+        ivaZ: missingZAmounts ? (prev.ivaZ || odooZ.ivaZ) : prev.ivaZ,
+        igtfZ: missingZAmounts ? (prev.igtfZ || odooZ.igtfZ) : prev.igtfZ,
+        primeraFacturaZ: prev.primeraFacturaZ || odooZ.primeraFacturaZ,
+        ultimaFacturaZ: prev.ultimaFacturaZ || odooZ.ultimaFacturaZ,
+        primeraNCZ: prev.primeraNCZ || odooZ.primeraNCZ,
+        ultimaNCZ: prev.ultimaNCZ || odooZ.ultimaNCZ,
+      }));
+    }
+  }, [isNew, effectiveSessionId, existingCuadre, fiscalSummary, session]);
 
   // Z Report calculated fields
   const ventaNetaZ = Math.round((zData.ventaBrutaZ - zData.notasCreditoZ) * 100) / 100;
@@ -943,11 +1010,30 @@ export default function CuadreForm() {
           </CardContent>
         </Card>
 
-        {/* Section 1: Datos del Reporte Z (manual input) */}
+        {/* Section 1: Datos del Reporte Z (auto from Odoo + editable) */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">1. Datos del Reporte Z</CardTitle>
-            <p className="text-xs text-muted-foreground">Ingrese los datos del ticket Z impreso (fuente fiscal oficial). Todos los montos en Bs.</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-base">1. Datos del Reporte Z</CardTitle>
+                <p className="text-xs text-muted-foreground">Datos pre-cargados desde Odoo (verificables contra el ticket Z impreso). Todos los montos en Bs.</p>
+              </div>
+              {!isLocked && fiscalSummary && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const odooZ = getOdooZReport(fiscalSummary, session);
+                    setZData(odooZ);
+                    toast({ title: "Datos del Reporte Z cargados desde Odoo" });
+                  }}
+                >
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                  Cargar Z desde Odoo
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* --- Identificación --- */}
