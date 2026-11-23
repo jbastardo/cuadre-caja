@@ -1857,8 +1857,29 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
         // Extract the correlativo from invoice name (e.g., "INV/2026/00030221" -> "00030221")
         const correlativo = invoiceNumber.split("/").pop() || invoiceNumber;
 
-        // Find REAL PAYMENTS from pre-fetched allPayments
-        const payments = allPayments.filter((p: any) => p.partner_id && p.partner_id[0] === partnerId);
+        // Find REAL PAYMENTS from pre-fetched allPayments for THIS specific invoice.
+        // Filter by reconciled_invoice_ids first so a partner with multiple credit invoices
+        // on the same day (e.g. IKSAN GTZ) does not duplicate payments across invoices.
+        const partnerOrderCount = (orders || []).filter((o: any) => {
+          const mid = o.account_move && o.account_move.length > 0 ? o.account_move[0] : null;
+          const inv = mid ? invoiceMap[mid] : null;
+          const pid = inv?.partner_id ? (Array.isArray(inv.partner_id) ? inv.partner_id[0] : inv.partner_id) : (o.partner_id ? o.partner_id[0] : null);
+          return pid === partnerId;
+        }).length;
+
+        const payments = allPayments.filter((p: any) => {
+          if (!p.partner_id || p.partner_id[0] !== partnerId) return false;
+          const recIds: number[] = Array.isArray(p.reconciled_invoice_ids) ? p.reconciled_invoice_ids : [];
+          if (recIds.length > 0) {
+            return recIds.includes(moveId);
+          }
+          // Unreconciled same-day payment: match by invoice reference/correlativo if present,
+          // otherwise only allow if this partner has a single credit invoice in this session.
+          const pRef = String(p.ref || "").toLowerCase();
+          if (correlativo && pRef.includes(correlativo.toLowerCase())) return true;
+          if (invoiceNumber && pRef.includes(invoiceNumber.toLowerCase())) return true;
+          return partnerOrderCount === 1 && !pRef;
+        });
 
         const journalsSeen = new Set<string>();
         for (const payment of payments) {
@@ -1958,6 +1979,23 @@ export async function getCreditSales(sessionId: number): Promise<CreditSaleRow[]
         if (!abonoByJournal[abonoJournal]) {
           abonoByJournal[abonoJournal] = { usd: abonoAmount, bs: abonoAmountBs };
         }
+      }
+    }
+
+    // Cap abono at creditAmountPOS for positive invoices:
+    // If the client paid the full invoice via bank transfer (including the portion marked as
+    // Retención de IVA in POS), the retention portion is already counted in Section 4
+    // (totalRetencionesReal + retencionesPorCobrar). Capping abonoAmount to creditAmountPOS
+    // prevents double-counting that retention in totalJustificado.
+    if (!isRefund && creditAmountPOS > 0 && abonoAmount > creditAmountPOS + 0.01) {
+      const ratio = creditAmountPOS / abonoAmount;
+      abonoAmount = creditAmountPOS;
+      abonoAmountBs = Math.round(creditAmountPOS * rate * 100) / 100;
+      for (const j of Object.keys(abonoByJournal)) {
+        abonoByJournal[j] = {
+          usd: Math.round(abonoByJournal[j].usd * ratio * 100) / 100,
+          bs: Math.round(abonoByJournal[j].bs * ratio * 100) / 100,
+        };
       }
     }
 

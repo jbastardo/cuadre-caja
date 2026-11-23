@@ -1,5 +1,29 @@
 # AGENTS.md - Project Context for Claude Code
 
+## Last Session - 2026-11-23
+
+### Task: Corregir duplicación de abonos por partner y doble conteo de retenciones pagadas por banco en `getCreditSales`
+
+**Problem**: En el análisis del cuadre de Caja 2 del `17/11/2026` (`CQ-1795012726240`, diferencia `+6.406,88 Bs`) se detectaron dos bugs en `getCreditSales` (`server/odoo.ts`):
+1. El filtro de pagos en `allPayments` solo comparaba `partner_id` y no `reconciled_invoice_ids`, provocando que cuando un mismo cliente tenía varias facturas a crédito el mismo día (ej. `IKSAN GTZ, C.A` con `00038174` y `00038203`), se sumaran todos sus pagos en cada factura.
+2. Cuando un cliente pagaba el 100% de la factura por transferencia incluyendo la porción marcada como Retención de IVA en el POS (ej. `00038174` por `62.261,84 Bs` vs crédito POS `55.824,12 Bs`), `abonoAmount` / `abonoAmountBs` no se topaba a `creditAmountPOS`, provocando que la retención (`6.437,72 Bs`) se contara dos veces (en Sección 5 como Abono y en Sección 4 como Retención por cobrar).
+
+**Solution implemented**:
+1. `server/odoo.ts` (`getCreditSales`):
+   - Filtrado de `allPayments` por `reconciled_invoice_ids.includes(moveId)` (con fallback por referencia/correlativo para pagos del mismo día aún sin conciliar).
+   - Tope de `abonoAmount` y `abonoAmountBs` (y ajuste proporcional de `abonoByJournal`) contra `creditAmountPOS` cuando el abono bancario excede la porción a crédito del POS en facturas positivas, evitando el doble conteo con la Sección 4 de retenciones.
+2. No se modificó `CQ-1795012726240` en BD (Michelle Maita realizará el ajuste manual directamente en el cuadre).
+
+**Files modified**:
+- `server/odoo.ts`
+- `AGENTS.md`
+
+**Commands run**:
+- `npm run build` — OK
+- Verificación `getCreditSales(4693)` contra Odoo (`totalCredBs: 352115.03`, `totalAbonosBs: 352113.37`, `diff: -1.66`) — OK
+
+---
+
 ## Last Session - 2026-11-20
 
 ### Task: Auto-lectura de Reportes Z desde Odoo, corrección de ruteo hash y filtro de NCs por serial fiscal (17/11)
