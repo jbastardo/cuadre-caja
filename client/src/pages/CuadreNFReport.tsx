@@ -1,3 +1,4 @@
+import { useMemo, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -17,8 +18,17 @@ function getMethodDisplayName(methodId: number, methodName: string): string {
 export default function CuadreNFReport() {
   const [, navigate] = useLocation();
 
-  function getSessionIdFromUrl(): number {
-    const hashParts = window.location.hash.split("?");
+  const hashString = useSyncExternalStore(
+    (cb) => {
+      window.addEventListener("hashchange", cb);
+      return () => window.removeEventListener("hashchange", cb);
+    },
+    () => window.location.hash,
+    () => ""
+  );
+
+  const sessionId = useMemo(() => {
+    const hashParts = hashString.split("?");
     if (hashParts[1]) {
       const params = new URLSearchParams(hashParts[1]);
       const id = params.get("sessionId");
@@ -28,9 +38,7 @@ export default function CuadreNFReport() {
     const id = fallbackParams.get("sessionId");
     if (id) return Number(id);
     return 0;
-  }
-
-  const sessionId = getSessionIdFromUrl();
+  }, [hashString]);
 
   const { data: session } = useQuery({
     queryKey: ["session", sessionId],
@@ -78,7 +86,7 @@ export default function CuadreNFReport() {
   if (!nonFiscalSummary || nonFiscalSummary.receiptCount === 0) {
     return (
       <div className="min-h-screen bg-white p-6">
-        <Button variant="outline" size="sm" onClick={() => navigate(`/cuadre-nf?sessionId=${sessionId}`)}>
+        <Button variant="outline" size="sm" onClick={() => navigate(sessionId ? `/cuadre-nf?sessionId=${sessionId}` : "/")}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Volver
         </Button>
         <p className="mt-4 text-muted-foreground">Sin operaciones no fiscales en esta sesion.</p>
@@ -90,7 +98,7 @@ export default function CuadreNFReport() {
     <div className="min-h-screen bg-white">
       {/* Print toolbar */}
       <div className="no-print bg-gray-100 border-b p-3 flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => navigate(`/cuadre-nf?sessionId=${sessionId}`)}>
+        <Button variant="outline" size="sm" onClick={() => navigate(sessionId ? `/cuadre-nf?sessionId=${sessionId}` : "/")}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Volver
         </Button>
         <Button size="sm" onClick={() => window.print()}>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useSyncExternalStore } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
@@ -137,9 +137,18 @@ export default function CuadreNFForm() {
     setRealAmounts(prev => ({ ...prev, [methodId]: value }));
   }, []);
 
-  // Read sessionId from URL query params (hash routing)
-  function getSessionIdFromUrl(): number {
-    const hashParts = window.location.hash.split("?");
+  // Read sessionId reactively from URL query params (hash routing)
+  const hashString = useSyncExternalStore(
+    (cb) => {
+      window.addEventListener("hashchange", cb);
+      return () => window.removeEventListener("hashchange", cb);
+    },
+    () => window.location.hash,
+    () => ""
+  );
+
+  const sessionId = useMemo(() => {
+    const hashParts = hashString.split("?");
     if (hashParts[1]) {
       const params = new URLSearchParams(hashParts[1]);
       const id = params.get("sessionId");
@@ -149,9 +158,7 @@ export default function CuadreNFForm() {
     const id = fallbackParams.get("sessionId");
     if (id) return Number(id);
     return 0;
-  }
-
-  const sessionId = getSessionIdFromUrl();
+  }, [hashString]);
 
   // Check if a cuadre already exists for this session (for navigation back to fiscal page)
   const { data: cuadresForDate } = useQuery<any[]>({
@@ -216,6 +223,13 @@ export default function CuadreNFForm() {
 
   // Load existing data when existingCuadre changes
   const [loadedCuadreId, setLoadedCuadreId] = useState<string | null>(null);
+  useEffect(() => {
+    setLoadedCuadreId(null);
+    setRealAmounts({});
+    setObservacionesNF("");
+    setMetodosObservaciones({});
+    setAjustesManuales([]);
+  }, [sessionId]);
   useEffect(() => {
     if (existingCuadre && existingCuadre.id && existingCuadre.id !== loadedCuadreId) {
       setLoadedCuadreId(existingCuadre.id);
@@ -500,9 +514,9 @@ const fecha = session?.start_at?.split(" ")[0] || new Date().toISOString().split
             <span className="bg-purple-100 text-purple-800 text-xs font-bold px-1.5 py-0.5 rounded mr-1">NF</span>
             No Fiscal
           </button>
-                      <button
+            <button
               className="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-[#0A4083] hover:border-[#0A4083] ml-auto"
-              onClick={() => navigate("/cuadre-nf/report")}
+              onClick={() => navigate(`/cuadre-nf/report?sessionId=${sessionId}`)}
             >
               Reporte NF
             </button>

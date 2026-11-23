@@ -1,5 +1,26 @@
 # AGENTS.md - Project Context for Claude Code
 
+## Last Session - 2026-11-23 (Parte 2)
+
+### Task: Corregir pérdida de `sessionId` en navegación a Reporte No Fiscal (`/cuadre-nf/report`) y reactividad de query params en hash
+
+**Problem**: Al abrir "Reporte NF" desde `CuadreNFForm.tsx`, la pantalla mostraba `"Sin operaciones no fiscales en esta sesion."` a pesar de que Odoo sí devolvía operaciones no fiscales (ej. 23 recibos en Caja 2 y 25 en Caja 1 el `23/11/2026`). La causa era que el botón `"Reporte NF"` navegaba a `"/cuadre-nf/report"` sin incluir `?sessionId=${sessionId}` (antes funcionaba por accidente solo si quedaba un `?sessionId=` residual en `window.location.search`, que `cleanHashNavigate` ahora limpia correctamente). Además, al cambiar de sesión con `Anterior`/`Siguiente` dentro de `/cuadre-nf`, el componente no reaccionaba a cambios en el query string del hash.
+
+**Solution implemented**:
+1. `client/src/pages/CuadreNFForm.tsx`:
+   - Corregida navegación de `"Reporte NF"` a ``navigate(`/cuadre-nf/report?sessionId=${sessionId}`)``.
+   - Lectura reactiva de `sessionId` mediante `useSyncExternalStore` suscrito a `hashchange` y limpieza de estado del formulario al cambiar de sesión.
+2. `client/src/pages/CuadreNFReport.tsx`:
+   - Lectura reactiva de `sessionId` mediante `useSyncExternalStore` suscrito a `hashchange`.
+   - Botón `Volver` ahora redirige a `"/"` si `sessionId` es `0` (evitando caer en `/cuadre-nf?sessionId=0`).
+
+**Files modified**:
+- `client/src/pages/CuadreNFForm.tsx`
+- `client/src/pages/CuadreNFReport.tsx`
+- `AGENTS.md`
+
+---
+
 ## Last Session - 2026-11-23
 
 ### Task: Corregir duplicación de abonos por partner y doble conteo de retenciones pagadas por banco en `getCreditSales`
