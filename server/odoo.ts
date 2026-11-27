@@ -714,7 +714,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
           "id", "journal_id", "state", "move_type",
           "amount_total", "amount_untaxed", "amount_tax",
           "foreign_total_billed", "foreign_taxable_income", "foreign_rate",
-          "name", "mf_invoice_number", "mf_reportz", "mf_serial",
+          "name", "ref", "mf_invoice_number", "mf_reportz", "mf_serial",
         ],
       }
     );
@@ -912,6 +912,25 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
   const mfInvNumbers: string[] = [];
   const mfNcNumbers: string[] = [];
   const zNumberCandidates: string[] = [];
+  const historicalNCs: NonNullable<FiscalSummary["historicalNCs"]> = [];
+
+  const checkHistoricalNC = (doc: any) => {
+    const amountUSD = Math.round(Math.abs(doc.amount_total || 0) * 100) / 100;
+    const odooBs = Math.round(Math.abs(doc.foreign_total_billed || 0) * 100) / 100;
+    const todayBs = Math.round(amountUSD * rate * 100) / 100;
+    const diffBs = Math.round((todayBs - odooBs) * 100) / 100;
+    // Flag NC when Odoo's foreign_total_billed diverges from today's BCV rate by > 1 Bs
+    if (amountUSD > 0 && rate > 0 && Math.abs(diffBs) > 1) {
+      historicalNCs.push({
+        name: doc.name || `#${doc.id}`,
+        ref: typeof doc.ref === "string" && doc.ref.trim() ? doc.ref.trim() : undefined,
+        amountUSD,
+        odooBs,
+        todayBs,
+        diffBs,
+      });
+    }
+  };
 
   for (const inv of invoices) {
     const linkedOrder = orderByMoveId[inv.id];
@@ -923,6 +942,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
 
     if (inv.move_type === "out_refund") {
       ncTotalBs += inv.foreign_total_billed || 0;
+      checkHistoricalNC(inv);
       const mfNc = (typeof inv.mf_invoice_number === "string" && inv.mf_invoice_number.trim())
         || (typeof linkedOrder?.mf_invoice_number === "string" && linkedOrder.mf_invoice_number.trim())
         || "";
@@ -940,6 +960,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
 
   for (const nc of includedDirectNCs) {
     ncTotalBs += nc.foreign_total_billed || 0;
+    checkHistoricalNC(nc);
     const mfNc = typeof nc.mf_invoice_number === "string" ? nc.mf_invoice_number.trim() : "";
     if (mfNc) mfNcNumbers.push(mfNc);
     const rzNc = typeof nc.mf_reportz === "string" ? nc.mf_reportz.trim() : "";
@@ -1106,6 +1127,7 @@ export async function getFiscalSummary(sessionId: number): Promise<FiscalSummary
     zUltimaFactura: mfInvNumbers[mfInvNumbers.length - 1] || "",
     zPrimeraNC: mfNcNumbers[0] || "",
     zUltimaNC: mfNcNumbers[mfNcNumbers.length - 1] || "",
+    historicalNCs: historicalNCs.length > 0 ? historicalNCs : undefined,
   };
 }
 

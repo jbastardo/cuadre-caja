@@ -1,5 +1,24 @@
 # AGENTS.md - Project Context for Claude Code
 
+## Last Session - 2026-11-27
+
+### Task: Alerta visual de Notas de Crédito de días anteriores en Sección 1 (Reporte Z)
+
+**Problem**: Al auto-cargar el Reporte Z desde Odoo (`zNotasCreditoBs` basado en `account.move.foreign_total_billed`), las Notas de Crédito que revierten facturas de días anteriores vienen valoradas a la tasa histórica de la factura original, generando un monto menor al impreso en el Reporte Z físico (detectado en Caja 2 el 26/11 `-442,61 Bs` y el 27/11 `-1.970,89 Bs`).
+
+**Solution implemented**:
+1. `shared/schema.ts`: Agregado campo opcional `historicalNCs` en `FiscalSummary` y `createCuadreSchema.fiscalSummary`.
+2. `server/odoo.ts` (`getFiscalSummary`): Detecta cada NC (`out_refund` de POS o directa) cuyo `foreign_total_billed` difiere en más de `1 Bs` respecto a `amount_total × rate` (tasa BCV del día), devolviendo el detalle en `historicalNCs`.
+3. `client/src/pages/CuadreForm.tsx`: Resalta el campo `Notas de Crédito (Bs)` y muestra un banner ámbar de advertencia listando las NCs históricas con su monto en Odoo vs tasa del día, recordando sobrescribir el campo con el valor exacto del Reporte Z físico.
+
+**Files modified**:
+- `shared/schema.ts`
+- `server/odoo.ts`
+- `client/src/pages/CuadreForm.tsx`
+- `AGENTS.md`
+
+---
+
 ## Last Session - 2026-11-23 (Parte 2)
 
 ### Task: Corregir pérdida de `sessionId` en navegación a Reporte No Fiscal (`/cuadre-nf/report`) y reactividad de query params en hash

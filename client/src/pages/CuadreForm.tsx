@@ -1066,12 +1066,18 @@ export default function CuadreForm() {
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Notas de Crédito (Bs)</Label>
+                  <Label className="text-xs flex items-center gap-1">
+                    Notas de Crédito (Bs)
+                    {fiscalSummary?.historicalNCs && fiscalSummary.historicalNCs.length > 0 && (
+                      <span className="text-amber-700 font-semibold">(Verificar Z)</span>
+                    )}
+                  </Label>
                   <Input
                     type="number" step="0.01"
                     value={zData.notasCreditoZ || ""}
                     onChange={(e) => updateZ("notasCreditoZ", Number(e.target.value) || 0)}
                     disabled={!!isLocked}
+                    className={fiscalSummary?.historicalNCs && fiscalSummary.historicalNCs.length > 0 ? "border-amber-400 focus-visible:ring-amber-400" : ""}
                   />
                 </div>
                 <div className="bg-blue-50 rounded p-2 flex flex-col justify-center">
@@ -1115,6 +1121,38 @@ export default function CuadreForm() {
                   />
                 </div>
               </div>
+              {fiscalSummary?.historicalNCs && fiscalSummary.historicalNCs.length > 0 && (
+                <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1 flex-1">
+                      <p className="font-semibold">
+                        {fiscalSummary.historicalNCs.length === 1
+                          ? "Hay 1 Nota de Crédito de una factura de día anterior."
+                          : `Hay ${fiscalSummary.historicalNCs.length} Notas de Crédito de facturas de días anteriores.`}
+                      </p>
+                      <p className="text-amber-800">
+                        Odoo registra estas NCs a la tasa histórica de la factura original, por lo que el monto auto-cargado en{" "}
+                        <strong>Notas de Crédito (Bs)</strong> suele ser menor al impreso en la máquina fiscal.{" "}
+                        <strong>Verifica y corrige este campo con el valor exacto del Reporte Z físico.</strong>
+                      </p>
+                      <div className="mt-1 space-y-0.5 text-[11px] font-mono text-amber-950">
+                        {fiscalSummary.historicalNCs.map((nc) => (
+                          <div key={nc.name} className="flex flex-wrap items-center gap-x-2">
+                            <span className="font-semibold">{nc.name}</span>
+                            {nc.ref && <span className="text-amber-700">({nc.ref})</span>}
+                            <span>Odoo: {formatBs(nc.odooBs)}</span>
+                            <span>→ Tasa hoy: {formatBs(nc.todayBs)}</span>
+                            <span className="font-semibold text-amber-800">
+                              (Dif: {nc.diffBs > 0 ? "+" : ""}{formatBs(nc.diffBs)})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* --- Facturas --- */}

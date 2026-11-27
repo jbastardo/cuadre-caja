@@ -124,6 +124,15 @@ export interface FiscalSummary {
   zUltimaFactura?: string;
   zPrimeraNC?: string;
   zUltimaNC?: string;
+  // Credit notes reversing invoices from previous days (Odoo foreign_total_billed uses historical rate)
+  historicalNCs?: Array<{
+    name: string;
+    ref?: string;
+    amountUSD: number;
+    odooBs: number;
+    todayBs: number;
+    diffBs: number;
+  }>;
 }
 
 // Retention row (from RIVAC journal cross-reference)
@@ -440,6 +449,14 @@ export const createCuadreSchema = z.object({
     zUltimaFactura: z.string().optional(),
     zPrimeraNC: z.string().optional(),
     zUltimaNC: z.string().optional(),
+    historicalNCs: z.array(z.object({
+      name: z.string(),
+      ref: z.string().optional(),
+      amountUSD: z.number(),
+      odooBs: z.number(),
+      todayBs: z.number(),
+      diffBs: z.number(),
+    })).optional(),
     payments: z.array(z.object({
       methodId: z.number(),
       methodName: z.string(),
